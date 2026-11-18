@@ -4,7 +4,7 @@
 
 An embeddable scripting language for Rust. It looks like Luau (syntax, gradual typing with `--!strict`), embeds as easily as Rhai, and compiles to register-based bytecode run by a VM. Nothing is tree-walked.
 
-> **Status: milestone 24.** Release readiness: CI on Linux, macOS and Windows, crates ready for crates.io, every public item of `rhue` documented, runnable examples and a [changelog](CHANGELOG.md). That's on top of faster calls, builtin fast paths and allocation-free coroutine switches (23), table templates, `table.move` and a faster `table.create` (22), the REPL and `rhue test` (21), vectors (20), embedding II (19: natives that suspend scripts, tasks and the `task` library, environments, `serde`), the standard library II of 18 (`bit32`, buffers, frozen tables, `debug`), the editor features of 17 (inlay hints, quick fixes, symbols, semantic highlighting, navigation across modules), types II (16: read-only and write-only properties, loops, fields methods add, exact types in saved chunks), the performance round of 15 (1–10% fewer instructions, a linear-time checker, measurements against Luau and Rhai), types that travel (14: type packs, defaults, flow typing, typed saved chunks), saved chunks, the incremental language server and smarter breakpoints (13), the debugger and debug hooks (12), the tooling of 11 (`rhue-lsp`, `rhue fmt`), patterns, `utf8`/`os` and typed modules (10), coroutines and in-loop metamethods (9), metatables, tail calls, interpolation and the memory limit (8), the performance pass and bytecode verifier (7), Luau-style gradual typing (6), and the embedding API, tables, garbage collector, closures and standard library of milestones 1–5. See [`docs/DESIGN.md`](docs/DESIGN.md).
+> **Status: milestone 25.** Async hosts: async Rust functions scripts can wait on, `eval_async`, the `task` clock on real time, and interrupting scripts from anywhere. That's on top of release prep (24), faster calls, builtin fast paths and allocation-free coroutine switches (23), table templates, `table.move` and a faster `table.create` (22), the REPL and `rhue test` (21), vectors (20), embedding II (19: natives that suspend scripts, tasks and the `task` library, environments, `serde`), the standard library II of 18 (`bit32`, buffers, frozen tables, `debug`), the editor features of 17 (inlay hints, quick fixes, symbols, semantic highlighting, navigation across modules), types II (16: read-only and write-only properties, loops, fields methods add, exact types in saved chunks), the performance round of 15 (1–10% fewer instructions, a linear-time checker, measurements against Luau and Rhai), types that travel (14: type packs, defaults, flow typing, typed saved chunks), saved chunks, the incremental language server and smarter breakpoints (13), the debugger and debug hooks (12), the tooling of 11 (`rhue-lsp`, `rhue fmt`), patterns, `utf8`/`os` and typed modules (10), coroutines and in-loop metamethods (9), metatables, tail calls, interpolation and the memory limit (8), the performance pass and bytecode verifier (7), Luau-style gradual typing (6), and the embedding API, tables, garbage collector, closures and standard library of milestones 1–5. See [`docs/DESIGN.md`](docs/DESIGN.md).
 
 ```console
 $ cargo run -q -p rhue-cli -- examples/tables.rhue
@@ -411,6 +411,26 @@ loop {
 }
 ```
 
+### Async hosts
+
+If your host is async, register async functions with `register_async` and run scripts with `eval_async`. The script just calls the function like normal and sits there until the future's done, without blocking anything.
+
+```rust
+engine.register_async("fetch", |url: String| async move {
+    let res = reqwest::get(url).await.map_err(|e| e.to_string())?;
+    res.text().await.map_err(|e| e.to_string())
+});
+engine.set_sleep(tokio::time::sleep); // lets task.wait run on real time
+
+let page = engine.eval_async(r#"return fetch("https://example.com")"#).await?;
+```
+
+An `Err` from the future gets raised where the script called it, so `pcall` works on it like anything else. `task.spawn` a few calls and they all wait at once. `run_until_idle` finishes off anything still waiting after the main script's done.
+
+Rhue doesn't care which runtime you use, but its futures aren't `Send`, so on tokio use a current-thread runtime or a `LocalSet`. Drop the `eval_async` future (a `tokio::time::timeout`, say) and the script's cancelled along with it.
+
+To stop a script from somewhere else, grab `engine.interrupt_handle()`. It's `Send`, and `interrupt()` stops whatever's running with an error `pcall` can't catch. A script stuck in a loop is holding its thread, so on a single-threaded runtime that call has to come from another thread. Checking for it is free until the script's instruction budget slice runs out, so it doesn't slow anything down.
+
 ### Environments
 
 `Engine::create_environment` makes a separate set of globals, for running several scripts (plugins, players' mods) in one engine without them seeing each other's. A script run with `eval_in`, `run_in` or `spawn_in` reads globals from its environment first, then from the engine's (the standard library and everything the host registered), and every global it assigns stays in its environment; functions it defines keep using it wherever they're called from. The type checker follows: a chunk is checked against the engine's globals plus its own environment's. `env.globals()` is a table the host can seed, read or freeze.
@@ -550,6 +570,7 @@ Every compiled chunk passes a **bytecode verifier** (registers, constants, jump 
 | `sandbox` | untrusted plugins, each in its own environment, with instruction and memory limits |
 | `modules` | `require` from source, from a chunk compiled ahead of time, and from a loader; types across modules |
 | `tasks` | the `task` library driven by a game loop: scripts that wait, delay and spawn |
+| `async_host` | tokio: async functions, lookups that overlap, stopping a runaway script |
 | `bench` | the benchmark runner (`--release`) |
 
 `examples/*.rhue` are scripts for the command line (`rhue examples/tour.rhue`).
@@ -575,7 +596,7 @@ Every compiled chunk passes a **bytecode verifier** (registers, constants, jump 
 ## Development
 
 ```sh
-cargo test             # 545 tests (550 with --all-features, which adds serde): property tests over ~38,000 generated or damaged programs (including a type-soundness property, verifier and chunk-loading fuzz tests, metamethod-vs-plain arithmetic, the same arithmetic with a coroutine yield at every step, Lua patterns against the regex crate, and formatting that ignores how the input was spaced), a table-vs-HashMap model test, and suites re-run with the GC collecting at every safe point
+cargo test             # 556 tests (561 with --all-features, which adds serde): property tests over ~38,000 generated or damaged programs (including a type-soundness property, verifier and chunk-loading fuzz tests, metamethod-vs-plain arithmetic, the same arithmetic with a coroutine yield at every step, Lua patterns against the regex crate, and formatting that ignores how the input was spaced), a table-vs-HashMap model test, and suites re-run with the GC collecting at every safe point
 cargo run --release -p rhue --example bench
 cargo clippy --all-targets
 cargo run -p rhue-cli  # REPL

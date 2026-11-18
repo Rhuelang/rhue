@@ -11,6 +11,14 @@ crates are its implementation.
 
 ## [0.1.0] - Unreleased
 
+### Async hosts (milestone 25)
+
+- Feat: Async Rust functions scripts can call and wait on (`register_async`). An `Err` gets raised where the script called it.
+- Feat: `eval_async`, `call_async` and `run_until_idle` to run those scripts. Dropping the future cancels the script.
+- Feat: `task.wait` and `task.delay` run on real time under the async drivers, through whatever sleep function the host passes to `set_sleep`.
+- Feat: `interrupt_handle()` stops a running or waiting script from any thread. Doesn't cost anything until the instruction budget's slice runs out.
+- Feat: `Error::is_interrupted`, and the `async_host` example on tokio.
+
 ### Release readiness (milestone 24)
 
 - Continuous integration on GitHub Actions: build and tests on Linux, macOS
