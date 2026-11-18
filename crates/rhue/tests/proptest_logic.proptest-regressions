@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 5f0e22bc9f173b16e0aeed8b8b9cd8bd17d61e090f2a2e8d87cd4b73b6301113 # shrinks to env = [Num(0.0), Nil, Nil, Nil], e = Or(Not(Or(Lit(Nil), Var(0))), Var(0))
+cc 1ca9a3be0382f40200abfa7d58138416fd55ae8ba333e7590506bf40cad59de6 # shrinks to env = [Nil, Nil, Nil, Num(0.0)], e = If(If(Lit(Nil), Lit(Nil), Lit(Nil)), Lit(Nil), Lit(Bool(false)))
+cc 8b2aab8323c24df9bf3fe8cbbebb4f17a4aec4971b2c79282d873ab42f1781d9 # shrinks to env = [Bool(true), Nil, Nil, Nil], e = Or(If(Var(0), Var(0), Lit(Nil)), Neg(Lit(Nil)))
