@@ -1,0 +1,21 @@
+[package]
+name = "rhue-fmt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Formatter for Rhue source code"
+keywords = ["rhue", "formatter"]
+categories = ["development-tools"]
+
+[lints]
+workspace = true
+
+[dependencies]
+rhue-common.workspace = true
+rhue-lexer.workspace = true
+rhue-parser.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
