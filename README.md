@@ -6,7 +6,7 @@ An embeddable scripting language for Rust. It looks like Luau (syntax, gradual t
 
 > **Status: milestone 25.** Async hosts: async Rust functions scripts can wait on, `eval_async`, the `task` clock on real time, and interrupting scripts from anywhere. That's on top of release prep (24), faster calls, builtin fast paths and allocation-free coroutine switches (23), table templates, `table.move` and a faster `table.create` (22), the REPL and `rhue test` (21), vectors (20), embedding II (19: natives that suspend scripts, tasks and the `task` library, environments, `serde`), the standard library II of 18 (`bit32`, buffers, frozen tables, `debug`), the editor features of 17 (inlay hints, quick fixes, symbols, semantic highlighting, navigation across modules), types II (16: read-only and write-only properties, loops, fields methods add, exact types in saved chunks), the performance round of 15 (1–10% fewer instructions, a linear-time checker, measurements against Luau and Rhai), types that travel (14: type packs, defaults, flow typing, typed saved chunks), saved chunks, the incremental language server and smarter breakpoints (13), the debugger and debug hooks (12), the tooling of 11 (`rhue-lsp`, `rhue fmt`), patterns, `utf8`/`os` and typed modules (10), coroutines and in-loop metamethods (9), metatables, tail calls, interpolation and the memory limit (8), the performance pass and bytecode verifier (7), Luau-style gradual typing (6), and the embedding API, tables, garbage collector, closures and standard library of milestones 1–5. See [`docs/DESIGN.md`](docs/DESIGN.md).
 
-```console
+```bash
 $ cargo run -q -p rhue-cli -- examples/tables.rhue
 3 kinds, total $5.00
 brown, fox, jumps, quick, the
@@ -38,7 +38,7 @@ local function firstTag(item: Item): string
 end
 ```
 
-```console
+```bash
 $ rhue --check examples/typed.rhue     # type-check only
 $ rhue --strict script.rhue            # check every file strictly, then run
 ```
@@ -196,7 +196,7 @@ engine.eval(r#"--!strict
 
 `rhue FILE` runs a script, `rhue -e '...'` a snippet, and `rhue compile`, `rhue fmt` and `rhue --check` do what they say. `rhue` on its own is a REPL:
 
-```console
+```bash
 $ rhue
 Rhue 0.1.0. Globals persist between entries; :help for commands, Ctrl-D to exit.
 > local function fib(n)
@@ -229,7 +229,7 @@ describe("cart", function()
 end)
 ```
 
-```console
+```bash
 $ rhue test
 tests/cart_test.rhue
   ✓ cart > totals prices (0.1 ms)
@@ -244,7 +244,7 @@ tests/cart_test.rhue
 
 ## Editor support
 
-```console
+```bash
 $ cargo install --path crates/rhue-lsp      # the language server, `rhue-lsp`
 $ rhue fmt src/*.rhue                        # format in place (tabs; --indent 4 for spaces)
 $ rhue fmt --check src/*.rhue                # CI: list files that need formatting
@@ -264,7 +264,7 @@ The formatter keeps your line breaks, blank lines (at most one in a row) and com
 
 ## Debugging
 
-```console
+```bash
 $ cargo install --path crates/rhue-dap      # the debug adapter, `rhue-dap`
 ```
 
@@ -470,7 +470,7 @@ let proto = other_engine.load(&std::fs::read("main.rhuec")?)?; // ErrorKind::Loa
 other_engine.run(&proto)?;
 ```
 
-```console
+```bash
 $ rhue compile main.rhue          # writes main.rhuec (-o to choose; --strict to check strictly)
 $ rhue main.rhuec                 # runs it; the source file isn't needed
 ```

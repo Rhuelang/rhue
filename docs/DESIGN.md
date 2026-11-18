@@ -5,7 +5,7 @@ How Rhue fits together and why things ended up the way they did, milestone by mi
 ## Pipeline
 
 ```
-source ─► rhue-lexer ─► rhue-parser ─► resolver ─► fold + codegen ─► Proto tree ─► rhue-vm
+source -> rhue-lexer -> rhue-parser -> resolver -> fold + codegen -> Proto tree -> rhue-vm
              tokens          AST        bindings,    (rhue-compiler)  (one per       frames,
                                         captures                      function)      upvalues
 ```
