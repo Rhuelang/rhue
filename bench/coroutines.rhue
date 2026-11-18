@@ -1,0 +1,26 @@
+-- expect: 45000150000 300000
+-- Generators: a coroutine.wrap producer yields 300,000 values to a
+-- consumer loop, and a resume/yield ping-pong passes a counter back and
+-- forth.
+local function range(n)
+	return coroutine.wrap(function()
+		for i = 1, n do
+			coroutine.yield(i)
+		end
+	end)
+end
+local sum = 0
+for i in range(300000) do
+	sum += i
+end
+local pong = coroutine.create(function(v)
+	while true do
+		v = coroutine.yield(v + 1)
+	end
+end)
+local v = 0
+for _ = 1, 150000 do
+	local _, nv = coroutine.resume(pong, v)
+	v = nv
+end
+return sum, v * 2

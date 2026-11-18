@@ -1,0 +1,32 @@
+-- expect: 2706800000 150
+-- Upvalue reads and writes, closure creation, small function calls.
+local function counter()
+	local n = 0
+	return function(by: number)
+		n += by
+		return n
+	end
+end
+local total = 0
+for i = 1, 2000 do
+	local c = counter()
+	for j = 1, 200 do
+		total += c(j)
+	end
+end
+local function map(t: { number }, f: (number) -> number): { number }
+	local out = table.create(#t)
+	for i = 1, #t do
+		out[i] = f(t[i])
+	end
+	return out
+end
+local xs = {}
+for i = 1, 1000 do
+	xs[i] = i
+end
+local scale = 3
+for _ = 1, 300 do
+	xs = map(xs, function(x) return (x * scale) % 1009 end)
+end
+return total, xs[1]

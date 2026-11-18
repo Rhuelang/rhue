@@ -1,0 +1,29 @@
+-- expect: 2399997 400000
+-- Metatable-based classes: methods found through `__index`, an `__add`
+-- metamethod, and `__eq` (the same work as methods.rhue, written the way
+-- Luau code usually is).
+local Vec = {}
+Vec.__index = Vec
+local function new(x: number, y: number)
+	return setmetatable({ x = x, y = y }, Vec)
+end
+function Vec.__add(a, b)
+	return new(a.x + b.x, a.y + b.y)
+end
+function Vec.__eq(a, b)
+	return a.x == b.x and a.y == b.y
+end
+function Vec:len2()
+	return self.x * self.x + self.y * self.y
+end
+local acc = new(0, 0)
+local step = new(1, -1)
+local s, same = 0, 0
+for i = 1, 400000 do
+	acc = acc + step
+	s += acc:len2() % 13
+	if acc == new(i, -i) then
+		same += 1
+	end
+end
+return s, same

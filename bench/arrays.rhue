@@ -1,0 +1,43 @@
+-- expect: 4950000 125750 1250 77
+-- Array building and bulk copies: table.create, table.move, table.insert,
+-- and shifting a window along a buffer.
+local total = 0
+for _ = 1, 1000 do
+	local t = table.create(100, 1)
+	for i = 1, 100 do
+		t[i] = i - 1
+	end
+	local copy = table.move(t, 1, 100, 1, table.create(100))
+	for i = 1, #copy do
+		total += copy[i]
+	end
+end
+
+local shifted = 0
+local window = table.create(1000, 0)
+for i = 1, 1000 do
+	window[i] = i
+end
+for _ = 1, 500 do
+	table.move(window, 2, 1000, 1)
+	window[1000] = 0
+	shifted += window[1]
+end
+
+local queue = {}
+for i = 1, 2500 do
+	table.insert(queue, i % 2)
+end
+local ones = 0
+for _, v in queue do
+	ones += v
+end
+
+local merged = table.move({ 1, 2, 3 }, 1, 3, 1, table.create(0))
+table.move({ 70, 1 }, 1, 2, #merged + 1, merged)
+local mergedSum = 0
+for _, v in merged do
+	mergedSum += v
+end
+
+return total, shifted, ones, mergedSum

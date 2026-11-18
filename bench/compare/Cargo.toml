@@ -1,0 +1,19 @@
+# Compares Rhue with Luau and Rhai on the same programs. Not part of the
+# main workspace (it builds Luau from source through mlua):
+#
+#   cargo run --release --manifest-path bench/compare/Cargo.toml -- [--runs N] [FILTER]
+[package]
+name = "rhue-compare"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+rhue = { path = "../../crates/rhue" }
+mlua = { version = "0.11", features = ["luau", "vendored"] }
+rhai = "1"
+
+[profile.release]
+debug = false

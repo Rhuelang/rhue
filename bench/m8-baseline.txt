@@ -1,0 +1,9 @@
+classes 365.45
+closures 72.55
+fib 36.78
+host 197.23
+loops 147.08
+methods 214.25
+natives 431.21
+strings 77.74
+tables 82.86
