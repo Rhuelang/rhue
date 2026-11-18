@@ -36,7 +36,7 @@ jobs:
       - name: Examples
         shell: bash
         run: |
-          for example in hello sandbox modules tasks embed; do
+          for example in hello sandbox modules tasks embed async_host; do
             echo "::group::$example"
             cargo run --locked -p rhue --example "$example"
             echo "::endgroup::"
