@@ -1,8 +1,6 @@
 # Rhue design notes
 
-The living design doc is **Rhue — Language & VM Design**: https://claude.ai/artifact/X7tkHofoBdMKTVbcvziYBo
-
-It covers goals, the crate pipeline, the lexer, parser, bytecode format, compiler and VM. It also covers the planned resolver, upvalues, GC, embedding API and type checker, plus milestones and testing. This file holds the short version so it travels with the repo.
+How Rhue fits together and why things ended up the way they did, milestone by milestone.
 
 ## Pipeline
 
