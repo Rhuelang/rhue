@@ -1,0 +1,16 @@
+[package]
+name = "rhue-bytecode"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Rhue bytecode: instructions, prototypes, the saved-chunk format and the verifier"
+keywords = ["rhue", "bytecode"]
+categories = ["compilers"]
+
+[lints]
+workspace = true
+
+[dependencies]
+rhue-common.workspace = true
