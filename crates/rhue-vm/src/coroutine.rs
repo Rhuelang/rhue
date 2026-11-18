@@ -44,11 +44,19 @@ impl Vm {
         if !self.is_running() {
             self.reset_budget();
         }
+        self.heap.thread_mut(co).by_host = true;
         match self.resume_thread(co, args) {
             Ok(Ok(values)) => Ok(values.into_vec()),
             Ok(Err(t)) => Err(Rethrown(t)),
             Err(m) => Err(Rethrown(self.throw_here(m))),
         }
+    }
+
+    /// Whether the running coroutine was last resumed by the host (or a
+    /// native, through [`resume`](Self::resume)), rather than by a script's
+    /// `coroutine.resume` or `wrap`: a yield goes back to the host.
+    pub fn resumed_by_host(&self) -> bool {
+        self.current != self.main_thread && self.heap.thread(self.current).by_host
     }
 
     /// `coroutine.status`, as seen from the running thread.
@@ -259,6 +267,7 @@ impl Vm {
             let m = resume_arg_error(co, nargs);
             return Err(self.throw(f, pc, m));
         };
+        self.heap.thread_mut(co).by_host = false;
         // The caller waits in `frames` (now part of its thread's state),
         // where the collector and tracebacks see it.
         let placeholder = self.placeholder_frame(f.closure);

@@ -150,6 +150,7 @@
 
 #![warn(missing_docs)]
 
+mod asyncs;
 mod context;
 mod convert;
 mod debug;
@@ -169,6 +170,7 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::Arc;
 
+pub use asyncs::InterruptHandle;
 pub use context::{Context, ScriptError};
 pub use convert::{
     ArgError, Args, ConversionError, FromArg, FromValue, FromValues, IntoValue, IntoValues,
@@ -178,7 +180,7 @@ pub use debug::{DebugEvent, Debugger, HookMask, StackFrame};
 pub use environment::Environment;
 pub use hints::{HintKind, InlayHint};
 pub use modules::Analysis;
-pub use native::{IntoNative, IntoNativeResult, WithContext};
+pub use native::{IntoAsyncNative, IntoNative, IntoNativeResult, WithContext};
 pub use outline::{
     Base, Exports, FieldUse, Outline, SemanticToken, Symbol, SymbolKind, TokenKind, outline,
 };
@@ -250,6 +252,16 @@ impl Error {
         Error::new(ErrorKind::Runtime, vec![e.to_diagnostic()], &e.source)
     }
 
+    /// Whether the script was stopped through an
+    /// [`InterruptHandle`].
+    pub fn is_interrupted(&self) -> bool {
+        self.kind == ErrorKind::Runtime
+            && self
+                .diagnostics
+                .first()
+                .is_some_and(|d| d.message == rhue_vm::INTERRUPTED)
+    }
+
     /// An error from Rust-side work (a conversion, a native) or a script.
     fn from_script(e: ScriptError) -> Self {
         match e.0 {
@@ -304,6 +316,8 @@ pub struct Engine {
     vm: rhue_vm::Vm,
     /// The `task` library's scheduler, once [`Engine::open_tasks`] adds it.
     tasks: Option<std::rc::Rc<std::cell::RefCell<tasks::Scheduler>>>,
+    /// Futures async natives are waiting on (see [`Engine::eval_async`]).
+    asyncs: std::rc::Rc<std::cell::RefCell<asyncs::AsyncState>>,
 }
 
 /// The type-checking environment, kept with the VM so natives that set up
@@ -325,7 +339,11 @@ impl Engine {
     pub fn new() -> Self {
         let mut vm = rhue_vm::Vm::new();
         *vm.host_data() = Some(Box::new(modules::HostState::new(rhue_types::Env::new())));
-        let mut engine = Engine { vm, tasks: None };
+        let mut engine = Engine {
+            vm,
+            tasks: None,
+            asyncs: Default::default(),
+        };
         engine.register("require", modules::require);
         engine
     }
@@ -334,7 +352,11 @@ impl Engine {
     pub fn bare() -> Self {
         let mut vm = rhue_vm::Vm::bare();
         *vm.host_data() = Some(Box::new(modules::HostState::new(rhue_types::Env::bare())));
-        Engine { vm, tasks: None }
+        Engine {
+            vm,
+            tasks: None,
+            asyncs: Default::default(),
+        }
     }
 
     /// How chunks without a `--!strict` / `--!nonstrict` / `--!nocheck`

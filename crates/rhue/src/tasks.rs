@@ -93,6 +93,38 @@ impl Scheduler {
         self.timers.retain(|x| x.thread != *t);
         self.deferred.retain(|(x, _)| x != t);
     }
+
+    /// Forgets a task its driver gave up on.
+    pub(crate) fn abandon(&mut self, t: &Thread) {
+        self.forget(t);
+        self.tasks.retain(|(x, _)| x != t);
+    }
+
+    /// Whether `t` waits on a timer or is deferred.
+    pub(crate) fn waits(&self, t: &Thread) -> bool {
+        self.timers.iter().any(|x| x.thread == *t) || self.deferred.iter().any(|(x, _)| x == t)
+    }
+
+    pub(crate) fn is_idle(&self) -> bool {
+        self.timers.is_empty() && self.deferred.is_empty()
+    }
+
+    pub(crate) fn has_deferred(&self) -> bool {
+        !self.deferred.is_empty()
+    }
+
+    /// Clock time until the earliest timer, if there is one.
+    pub(crate) fn next_timer_in(&self) -> Option<f64> {
+        self.timers
+            .iter()
+            .map(|t| t.at)
+            .min_by(f64::total_cmp)
+            .map(|at| (at - self.now).max(0.0))
+    }
+
+    pub(crate) fn take_errors(&mut self) -> Vec<Error> {
+        std::mem::take(&mut self.errors)
+    }
 }
 
 /// What `step` will do at most in one call, so a task that keeps
@@ -114,7 +146,12 @@ fn thread_of(cx: &mut Context<'_>, v: &Value, f: &str) -> Result<Thread, ScriptE
 
 /// Resumes `t`, recording an error instead of raising it, and updating
 /// the host's [`Task`] for it if there is one.
-fn run(cx: &mut Context<'_>, sched: &Rc<RefCell<Scheduler>>, t: &Thread, args: Vec<Value>) {
+pub(crate) fn run(
+    cx: &mut Context<'_>,
+    sched: &Rc<RefCell<Scheduler>>,
+    t: &Thread,
+    args: Vec<Value>,
+) {
     if cx.thread_status(t) != "suspended" {
         return;
     }

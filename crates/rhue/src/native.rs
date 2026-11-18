@@ -201,3 +201,81 @@ natives!(A, B, C, D, E);
 natives!(A, B, C, D, E, F);
 natives!(A, B, C, D, E, F, G);
 natives!(A, B, C, D, E, F, G, H);
+
+/// An async Rust function that can be registered with
+/// [`Engine::register_async`](crate::Engine::register_async): parameters as
+/// for [`IntoNative`], returning a future whose output is
+/// [`IntoNativeResult`]. The future doesn't borrow the engine, so it takes
+/// its arguments by value (`async move`).
+pub trait IntoAsyncNative<Marker> {
+    /// Wraps the function as a native that parks its future in `state`.
+    #[doc(hidden)]
+    fn into_async_native(
+        self,
+        name: Rc<str>,
+        state: Rc<std::cell::RefCell<crate::asyncs::AsyncState>>,
+    ) -> NativeFn;
+
+    /// The function's Luau type (what the script sees: the future's
+    /// output, not the future).
+    fn signature() -> String
+    where
+        Self: Sized;
+
+    #[doc(hidden)]
+    fn declare_types(_vm: &mut rhue_vm::Vm)
+    where
+        Self: Sized,
+    {
+    }
+}
+
+macro_rules! async_natives {
+    ($($A:ident),*) => {
+        impl<Func, Fut, Ret, $($A,)*> IntoAsyncNative<(Fut, Ret, $($A,)*)> for Func
+        where
+            Func: Fn($($A),*) -> Fut + 'static,
+            Fut: std::future::Future<Output = Ret> + 'static,
+            Ret: IntoNativeResult + 'static,
+            $($A: FromArg,)*
+        {
+            #[allow(non_snake_case, unused_variables, unused_mut)]
+            fn into_async_native(
+                self,
+                name: Rc<str>,
+                state: Rc<std::cell::RefCell<crate::asyncs::AsyncState>>,
+            ) -> NativeFn {
+                Rc::new(move |ctx, args| {
+                    run_native(ctx, args, 1, |cx, args, _out| {
+                        $(let $A = $A::from_arg(args, cx)
+                            .map_err(|e| ScriptError::argument(&name, e))?;)*
+                        let future = (self)($($A),*);
+                        let future = Box::pin(async move {
+                            let out = future.await;
+                            Box::new(move |cx: &mut Context<'_>| out.into_native_result(cx))
+                                as crate::asyncs::Finish
+                        });
+                        crate::asyncs::suspend(cx, &name, &state, future)
+                    })
+                })
+            }
+
+            fn signature() -> String {
+                fn_signature(&[$($A::param_type()),*], &Ret::result_type())
+            }
+
+            #[allow(unused_variables)]
+            fn declare_types(vm: &mut rhue_vm::Vm) {
+                $($A::declare_types(vm);)*
+                Ret::declare_types(vm);
+            }
+        }
+    };
+}
+async_natives!();
+async_natives!(A);
+async_natives!(A, B);
+async_natives!(A, B, C);
+async_natives!(A, B, C, D);
+async_natives!(A, B, C, D, E);
+async_natives!(A, B, C, D, E, F);

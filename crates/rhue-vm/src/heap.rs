@@ -123,6 +123,9 @@ pub struct Thread {
     pub(crate) base_depth: usize,
     /// Bytes counted for this thread's saved stack.
     pub(crate) bytes: usize,
+    /// Last resumed by the host rather than a script (see
+    /// [`Vm::resumed_by_host`](crate::Vm::resumed_by_host)).
+    pub(crate) by_host: bool,
 }
 
 impl Thread {
@@ -615,6 +618,7 @@ impl Heap {
             status,
             base_depth: 0,
             bytes,
+            by_host: false,
         });
         ThreadRef { index, generation }
     }

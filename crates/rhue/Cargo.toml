@@ -30,6 +30,7 @@ serde = ["dep:serde"]
 
 [dev-dependencies]
 serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["rt", "time", "macros", "test-util"] }
 proptest.workspace = true
 rhue-fmt.workspace = true
 regex.workspace = true
