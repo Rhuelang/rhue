@@ -51,6 +51,8 @@ impl LexErrorKind {
 /// `continue`, `type`, `export`, and `typeof` are contextual keywords in Luau,
 /// so they lex as [`Token::Ident`].
 #[derive(Logos, Clone, Copy, Debug, PartialEq)]
+// newer clippy reads two patterns sharing a callback as a duplicate attribute
+#[allow(clippy::duplicated_attributes)]
 #[logos(error = LexErrorKind)]
 #[logos(skip r"[ \t\r\n\f\v]+")]
 pub enum Token {
