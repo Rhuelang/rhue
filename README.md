@@ -4,8 +4,6 @@
 
 An embeddable scripting language for Rust. It looks like Luau (syntax, gradual typing with `--!strict`), embeds as easily as Rhai, and compiles to register-based bytecode run by a VM. Nothing is tree-walked.
 
-> **Status: milestone 25.** Async hosts: async Rust functions scripts can wait on, `eval_async`, the `task` clock on real time, and interrupting scripts from anywhere. That's on top of release prep (24), faster calls, builtin fast paths and allocation-free coroutine switches (23), table templates, `table.move` and a faster `table.create` (22), the REPL and `rhue test` (21), vectors (20), embedding II (19: natives that suspend scripts, tasks and the `task` library, environments, `serde`), the standard library II of 18 (`bit32`, buffers, frozen tables, `debug`), the editor features of 17 (inlay hints, quick fixes, symbols, semantic highlighting, navigation across modules), types II (16: read-only and write-only properties, loops, fields methods add, exact types in saved chunks), the performance round of 15 (1–10% fewer instructions, a linear-time checker, measurements against Luau and Rhai), types that travel (14: type packs, defaults, flow typing, typed saved chunks), saved chunks, the incremental language server and smarter breakpoints (13), the debugger and debug hooks (12), the tooling of 11 (`rhue-lsp`, `rhue fmt`), patterns, `utf8`/`os` and typed modules (10), coroutines and in-loop metamethods (9), metatables, tail calls, interpolation and the memory limit (8), the performance pass and bytecode verifier (7), Luau-style gradual typing (6), and the embedding API, tables, garbage collector, closures and standard library of milestones 1–5. See [`docs/DESIGN.md`](docs/DESIGN.md).
-
 ```bash
 $ cargo run -q -p rhue-cli -- examples/tables.rhue
 3 kinds, total $5.00
@@ -15,6 +13,27 @@ longest:	5
 abc	->	error: examples/tables.rhue:49: not a number: abc
 heap after churn: 82 KB
 ```
+
+## Status
+
+Milestone 25's done. Here's what Rhue has so far:
+
+- **Language** — Luau syntax, string interpolation, metatables and `setmetatable` classes, tail calls, coroutines, generic `for` with `__iter`, vectors
+- **Types** — gradual typing with `--!strict` and `--!nonstrict`, generics and type packs, narrowing and flow typing, read-only and write-only properties
+- **Standard library** — `table`, `string` with Lua patterns, `math`, `utf8`, a sandbox-safe `os`, `bit32`, `buffer`, `vector`, `debug`, frozen tables
+- **Embedding** — typed `register`, `#[derive(UserData)]`, calling scripts from Rust, natives that pause scripts, the `task` library, separate environments for plugins, `serde`, instruction and memory limits
+- **Async** — async Rust functions scripts can wait on, `eval_async`, `task.wait` on real time, stopping scripts from any thread
+- **Modules and chunks** — `require` with typed modules from the host, saved bytecode that gets checked by a verifier before it runs
+- **Tooling** — the `rhue` CLI (REPL, `rhue test`, `rhue fmt`, compiling to bytecode), a language server, a debug adapter
+- **Speed** — register bytecode, inline caches, table templates, fast paths for builtins. Luau's interpreter is still 1–3.5× faster depending on the script, Rhai is 4–15× slower
+
+The whole history is in [`CHANGELOG.md`](CHANGELOG.md) and the reasoning's in [`docs/DESIGN.md`](docs/DESIGN.md).
+
+### Planned
+
+1. **Hot reload (M26)** — reload modules while scripts are running. Functions get swapped in place so anything holding them picks up the new code, module state carries over, plus a file-watching example host, and the language server and debugger keep up.
+2. **Publish 1.0.0** — the crates already package fine, it just needs pushing to crates.io.
+3. **Faster calls, again** — calls are still where Luau's furthest ahead (`callbacks` is about 3.3× faster there), so another round on that.
 
 ## Types
 
