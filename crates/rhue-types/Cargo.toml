@@ -1,0 +1,20 @@
+[package]
+name = "rhue-types"
+description = "Rhue's type checker (Luau-style gradual typing)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["rhue", "types", "typechecker"]
+categories = ["compilers", "development-tools"]
+
+[lints]
+workspace = true
+
+[dependencies]
+foldhash.workspace = true
+rhue-common.workspace = true
+rhue-parser.workspace = true
+rhue-compiler.workspace = true
+stacker.workspace = true
