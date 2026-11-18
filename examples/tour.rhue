@@ -1,0 +1,96 @@
+--!strict
+-- A quick tour of Rhue: types, classes, coroutines, patterns, and the
+-- standard library. Run it with `rhue examples/tour.rhue`.
+
+-- Types: aliases, generics, optionals, and flow typing.
+type Item = { name: string, price: number, tags: { string }? }
+
+local function sum<T>(xs: { T }, f: (T) -> number): number
+	local total = 0
+	for _, x in xs do
+		total += f(x)
+	end
+	return total
+end
+
+local cart: { Item } = {
+	{ name = "kibble", price = 12.5, tags = { "food" } },
+	{ name = "squeaky toy", price = 4 },
+	{ name = "leash", price = 15, tags = { "walks", "gear" } },
+}
+print(`cart total: ${sum(cart, function(item) return item.price end)}`)
+
+local function firstTag(item: Item): string
+	if not item.tags then
+		return "untagged" -- without this check: "could be nil"
+	end
+	return item.tags[1]
+end
+for _, item in cart do
+	print(`  {item.name}: {firstTag(item)}`)
+end
+
+-- Classes: metatables, methods, operators, `__tostring`.
+local Vec = {}
+Vec.__index = Vec
+
+function Vec.new(x: number, y: number)
+	return setmetatable({ x = x, y = y }, Vec)
+end
+
+function Vec.__add(a, b) return Vec.new(a.x + b.x, a.y + b.y) end
+function Vec.__tostring(v) return `({v.x}, {v.y})` end
+function Vec:length(): number return math.sqrt(self.x ^ 2 + self.y ^ 2) end
+
+local walk = Vec.new(3, 0) + Vec.new(0, 4)
+print(`walked {tostring(walk)}, {walk:length()} units`)
+
+-- Coroutines: a generator.
+local function range(n: number)
+	return coroutine.wrap(function()
+		for i = 1, n do
+			coroutine.yield(i * i)
+		end
+	end)
+end
+local gen = range(5)
+local seen = {}
+for _ = 1, 5 do
+	table.insert(seen, tostring(gen()))
+end
+print("squares: " .. table.concat(seen, " "))
+
+-- Patterns and strings.
+local log = "warn: disk 91% | info: ok | warn: fan 3200rpm"
+for level, msg in log:gmatch("(%a+): ([^|]+)") do
+	if level == "warn" then
+		print(`  ⚠ {msg:gsub("%s+$", "")}`)
+	end
+end
+
+-- Errors are values; pcall catches them.
+local ok, err = pcall(function()
+	local frozen = table.freeze({ hp = 10 })
+	frozen.hp = 0
+end)
+print(`frozen write: {ok}, "{err}"`)
+
+-- Binary data: buffers and bit32.
+local packet = buffer.create(6)
+buffer.writeu16(packet, 0, 0xBEEF)
+buffer.writeu32(packet, 2, 1234567)
+local flags = bit32.bor(bit32.lshift(1, 3), 1)
+print(`packet: {buffer.len(packet)} bytes, id {string.format("%X", buffer.readu16(packet, 0))}, `
+	.. `payload {buffer.readu32(packet, 2)}, flags {flags} (bit 3 set: {bit32.btest(flags, 8)})`)
+
+-- Vectors: three floats, no allocation.
+local velocity = vector.create(3, 0, 4)
+local position = vector.zero + velocity * 2
+print(`position {position}, speed {vector.magnitude(velocity)}`)
+
+-- Introspection.
+local function whereAmI(): string
+	local source, line = debug.info(1, "sl")
+	return `{source}:{line}`
+end
+print("this line is " .. whereAmI())

@@ -1,0 +1,57 @@
+--!strict
+-- Milestone 6: Luau-style types. Try `rhue --check examples/typed.rhue`,
+-- then break something (say, `total(cart) .. 1` → `total(cart) + "1"`).
+
+type Item = { name: string, price: number, tags: {string}? }
+type Cart = { items: {Item}, coupon: ("HALF" | "TENOFF")? }
+
+local function total(cart: Cart): number
+    local sum = 0
+    for _, item in cart.items do
+        sum += item.price
+    end
+    if cart.coupon == "HALF" then
+        sum /= 2
+    elseif cart.coupon == "TENOFF" then
+        sum = math.max(sum - 10, 0)
+    end
+    return sum
+end
+
+-- Generic: works for any element type.
+local function filter<T>(list: {T}, keep: (T) -> boolean): {T}
+    local out: {T} = {}
+    for _, v in list do
+        if keep(v) then
+            table.insert(out, v)
+        end
+    end
+    return out
+end
+
+local function names(items: {Item}): string
+    local out: {string} = {}
+    for _, item in items do
+        table.insert(out, item.name)
+    end
+    table.sort(out, function(a, b) return a < b end)
+    return table.concat(out, ", ")
+end
+
+local cart: Cart = {
+    items = {
+        { name = "tea", price = 4, tags = {"drink"} },
+        { name = "scone", price = 3 },
+        { name = "coffee", price = 5, tags = {"drink", "hot"} },
+    },
+    coupon = "HALF",
+}
+
+-- `item.tags` may be nil: the checker insists on a check before use.
+local drinks = filter(cart.items, function(item)
+    local tags = item.tags
+    return tags ~= nil and table.find(tags, "drink") ~= nil
+end)
+
+print("total: " .. total(cart))
+print("drinks: " .. names(drinks))

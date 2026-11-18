@@ -1,0 +1,23 @@
+[package]
+name = "rhue-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "The rhue command: run Rhue scripts, a REPL, a test runner, a formatter and bytecode compilation"
+keywords = ["scripting", "luau", "repl", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+readme = "../../README.md"
+
+[lints]
+workspace = true
+
+[dependencies]
+rhue.workspace = true
+rhue-fmt.workspace = true
+rustyline = { version = "15", features = ["derive"] }
+
+[[bin]]
+name = "rhue"
+path = "src/main.rs"

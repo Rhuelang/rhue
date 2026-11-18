@@ -1,0 +1,57 @@
+--!strict
+-- Milestone 4: tables, methods, iteration, pcall and the standard library.
+-- Run with `rhue examples/tables.rhue`.
+
+-- A tiny class with methods.
+local Inventory = {}
+
+function Inventory.new()
+    return { items = {}, count = 0, add = Inventory.add, total = Inventory.total }
+end
+
+function Inventory:add(name, qty, price)
+    self.items[name] = { qty = qty, price = price }
+    self.count += 1
+    return self
+end
+
+function Inventory:total()
+    local sum = 0
+    for _, item in self.items do -- Luau-style generalized iteration
+        sum += item.qty * item.price
+    end
+    return sum
+end
+
+local inv = Inventory.new()
+inv:add("apple", 3, 0.5):add("pear", 2, 0.75):add("fig", 10, 0.2)
+print(string.format("%d kinds, total $%.2f", inv.count, inv:total()))
+
+-- Arrays and the table library.
+local words = ("the quick brown fox jumps"):split(" ")
+table.sort(words)
+print(table.concat(words, ", "))
+
+local lengths = {}
+for i, w in ipairs(words) do
+    lengths[i] = #w
+end
+print("longest:", math.max(table.unpack(lengths)))
+
+-- Errors as values.
+local function parse_age(s)
+    local n = tonumber(s)
+    if not n then error("not a number: " .. s, 2) end
+    return n
+end
+
+for _, input in { "42", "abc" } do
+    local ok, result = pcall(parse_age, input)
+    print(input, "->", if ok then result else "error: " .. result)
+end
+
+-- Plenty of garbage; the collector keeps memory flat.
+for i = 1, 100000 do
+    local tmp = { i, tostring(i) }
+end
+print(string.format("heap after churn: %.0f KB", collectgarbage("count")))
