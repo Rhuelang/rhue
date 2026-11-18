@@ -42,7 +42,7 @@ impl Vm {
     /// returned values, or the error that killed it.
     pub fn resume(&mut self, co: ThreadRef, args: &[Value]) -> Result<Vec<Value>, Rethrown> {
         if !self.is_running() {
-            self.budget = self.instruction_limit.unwrap_or(u64::MAX);
+            self.reset_budget();
         }
         match self.resume_thread(co, args) {
             Ok(Ok(values)) => Ok(values.into_vec()),

@@ -48,7 +48,9 @@ use std::collections::HashMap;
 
 use hash::{FxHashMap, FxIndexMap};
 use std::rc::{Rc, Weak};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::task::Waker;
 
 pub use debug::{DebugCtx, DebugEvent, DebugHook, FrameInfo, HookMask};
 pub use heap::{
@@ -466,6 +468,51 @@ struct UdType {
 
 type PinTable = Rc<RefCell<HashMap<PinKey, usize>>>;
 
+/// How much of the instruction budget is handed out at a time. Each time a
+/// slice runs out the VM checks for an [`Interrupt`], so scripts notice one
+/// within about this many loop iterations or calls.
+const BUDGET_SLICE: u64 = 1 << 14;
+
+/// The error a script stops with when it's interrupted.
+pub const INTERRUPTED: &str = "script interrupted";
+
+/// Stops a VM's running script from another task or thread: the script
+/// fails with [`INTERRUPTED`] (which `pcall` can't catch) the next time it
+/// loops or calls something. If nothing is running, the next script run is
+/// the one stopped. Hosts waiting on a script can register a waker to hear
+/// about it.
+#[derive(Debug, Default)]
+pub struct Interrupt {
+    flag: AtomicBool,
+    waker: Mutex<Option<Waker>>,
+}
+
+impl Interrupt {
+    /// Asks the script to stop.
+    pub fn interrupt(&self) {
+        self.flag.store(true, Ordering::Release);
+        if let Some(w) = self.waker.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            w.wake();
+        }
+    }
+
+    /// Whether an interrupt is waiting to be delivered.
+    pub fn is_set(&self) -> bool {
+        self.flag.load(Ordering::Acquire)
+    }
+
+    /// Takes a waiting interrupt, for a host that delivers it itself (a
+    /// script waiting on the host rather than running).
+    pub fn take(&self) -> bool {
+        self.flag.swap(false, Ordering::AcqRel)
+    }
+
+    /// Wakes `waker` when [`interrupt`](Self::interrupt) is called.
+    pub fn register(&self, waker: &Waker) {
+        *self.waker.lock().unwrap_or_else(|e| e.into_inner()) = Some(waker.clone());
+    }
+}
+
 /// Keeps a table or function alive across garbage collections while the
 /// host holds it. Unpins on drop.
 pub struct Pin {
@@ -537,8 +584,14 @@ pub struct Vm {
     /// How many natives are running inside each other (each one that calls
     /// back into the VM uses Rust stack).
     native_depth: usize,
-    /// Instructions left before the limit error, shared by nested runs.
+    /// Instructions left in the current slice of the budget, shared by
+    /// nested runs. When it runs out, `charge_slow` checks for an interrupt
+    /// and refills it from `reserve`.
     budget: u64,
+    /// The rest of the instruction limit, not handed out yet.
+    reserve: u64,
+    /// Set from anywhere to stop the running script (see [`Interrupt`]).
+    interrupt: Arc<Interrupt>,
     /// The main thread, and the thread running now (the main thread or a
     /// coroutine). The running thread's state is in the fields above.
     main_thread: ThreadRef,
@@ -627,7 +680,9 @@ impl Vm {
             native_roots: Vec::new(),
             boundary: 0,
             native_depth: 0,
-            budget: u64::MAX,
+            budget: 0,
+            reserve: u64::MAX,
+            interrupt: Arc::default(),
             placeholder: Rc::new(LuaClosure {
                 proto: Rc::new(Proto::default()),
                 upvalues: Rc::from(Vec::new()),
@@ -1123,7 +1178,7 @@ impl Vm {
     fn call_top_thrown(&mut self, func: Value, args: &[Value], main: bool) -> Result<Rets, Thrown> {
         let outermost = !self.is_running();
         if outermost {
-            self.budget = self.instruction_limit.unwrap_or(u64::MAX);
+            self.reset_budget();
             self.stack.clear();
             self.stack_top = 0;
             self.open_upvalues.clear();
@@ -1603,6 +1658,49 @@ impl Vm {
 
     #[cold]
     #[inline(never)]
+    /// Starts a run's budget: the whole instruction limit in reserve and an
+    /// empty slice, so the first charge also checks for an interrupt.
+    fn reset_budget(&mut self) {
+        self.budget = 0;
+        self.reserve = self.instruction_limit.unwrap_or(u64::MAX);
+    }
+
+    /// The current slice can't pay for `n`: stops for an interrupt or the
+    /// limit, otherwise refills it. Kept out of line so the check in the
+    /// dispatch loop stays a compare and a subtract.
+    pub(crate) fn charge_slow(&mut self, f: &Frame, pc: usize, n: u64) -> Result<(), Thrown> {
+        self.refill_budget(f, pc, n)?;
+        self.budget -= n;
+        Ok(())
+    }
+
+    /// Makes the slice big enough for `n` without spending it, unless the
+    /// script was interrupted or the limit is reached.
+    #[cold]
+    #[inline(never)]
+    fn refill_budget(&mut self, f: &Frame, pc: usize, n: u64) -> Result<(), Thrown> {
+        if self.interrupt.flag.swap(false, Ordering::AcqRel) {
+            let mut t = self.throw(f, pc, INTERRUPTED.into());
+            t.catchable = false;
+            return Err(t);
+        }
+        while self.budget < n {
+            if self.reserve == 0 {
+                return Err(self.limit_reached(f, pc));
+            }
+            let take = self.reserve.min(BUDGET_SLICE);
+            self.reserve -= take;
+            self.budget += take;
+        }
+        Ok(())
+    }
+
+    /// The flag that interrupts this VM's scripts, to hand to other tasks or
+    /// threads.
+    pub fn interrupt_handle(&self) -> Arc<Interrupt> {
+        self.interrupt.clone()
+    }
+
     fn limit_reached(&mut self, f: &Frame, pc: usize) -> Thrown {
         let limit = self.instruction_limit.unwrap_or(u64::MAX);
         let mut t = self.throw(
@@ -1639,9 +1737,11 @@ impl Vm {
             if by < 0 {
                 let n = by.unsigned_abs() as u64;
                 if self.budget < n {
-                    return Err(self.limit_reached(f, f.pc));
+                    let pc = f.pc;
+                    self.charge_slow(f, pc, n)?;
+                } else {
+                    self.budget -= n;
                 }
-                self.budget -= n;
             }
             f.pc = offset(f.pc + 1, by);
         }
@@ -1988,16 +2088,6 @@ impl Vm {
                 }
             };
         }
-        // Charges `n` instructions to the budget (see `set_instruction_limit`).
-        macro_rules! charge {
-            ($pc:expr, $n:expr) => {{
-                let n = $n as u64;
-                if self.budget < n {
-                    return Err(self.limit_reached(f, $pc));
-                }
-                self.budget -= n;
-            }};
-        }
         // The compiler only jumps backwards with JMP, FORLOOP and TFORLOOP,
         // but any backward jump could loop, so every one is charged.
         macro_rules! back_edge {
@@ -2030,6 +2120,21 @@ impl Vm {
 
             loop {
                 let at = pc;
+                // Charges `n` instructions to the budget (see `set_instruction_limit`).
+                // When the slice runs out it's refilled (or the script stopped) and
+                // the instruction runs again from the start, which is why every
+                // instruction charges before it changes anything.
+                macro_rules! charge {
+                    ($pc:expr, $n:expr) => {{
+                        let n = $n as u64;
+                        if self.budget < n {
+                            self.refill_budget(f, $pc, n)?;
+                            pc = at;
+                            continue;
+                        }
+                        self.budget -= n;
+                    }};
+                }
                 if hooked && let Some(event) = self.hook_due(&f.cl.proto, at) {
                     self.hook_event(f, at, event)?;
                     continue 'frame;
@@ -2541,7 +2646,11 @@ impl Vm {
                                 self.iter_meta(f, at, base + a)?;
                                 let a = base + a;
                                 self.stack.copy_within(a..a + 3, a + 3);
-                                charge!(at, 1);
+                                // `__iter` already ran, so no going back.
+                                if self.budget < 1 {
+                                    self.refill_budget(f, at, 1)?;
+                                }
+                                self.budget -= 1;
                                 self.call(f, at, a + 3, 2, Some(nvars), top, false)?;
                                 gc!();
                                 continue 'frame;

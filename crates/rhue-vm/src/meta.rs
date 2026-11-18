@@ -206,9 +206,10 @@ impl Vm {
         dest: MetaDest,
     ) -> Result<(), Thrown> {
         if self.budget == 0 {
-            return Err(self.limit_reached(f, pc));
+            self.charge_slow(f, pc, 1)?;
+        } else {
+            self.budget -= 1;
         }
-        self.budget -= 1;
         let slot = f.base + f.proto().max_stack as usize;
         let n = args.len();
         if !self.ensure_stack(slot + 1 + n) {
