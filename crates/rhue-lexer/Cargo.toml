@@ -1,0 +1,17 @@
+[package]
+name = "rhue-lexer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Lexer for the Rhue scripting language"
+keywords = ["rhue", "lexer"]
+categories = ["compilers", "parsing"]
+
+[lints]
+workspace = true
+
+[dependencies]
+rhue-common.workspace = true
+logos.workspace = true
