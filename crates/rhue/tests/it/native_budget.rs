@@ -123,3 +123,42 @@ fn host_natives_can_charge_the_budget() {
     let err = e.eval("return pcall(spin, 1e12)").unwrap_err();
     assert!(err.to_string().contains("instruction limit"), "{err}");
 }
+
+#[test]
+fn empty_and_bad_arguments_stay_cheap() {
+    let mut e = Engine::new();
+    e.set_instruction_limit(Some(1_000_000));
+    // an empty result doesn't build 10^12 empty pieces
+    assert_eq!(
+        e.eval_as::<String>(r#"return string.rep("", 1e12)"#)
+            .unwrap(),
+        ""
+    );
+    assert_eq!(
+        e.eval_as::<String>(r#"return string.rep("", 1e12, "")"#)
+            .unwrap(),
+        ""
+    );
+    // a j way past the end is still an error pcall catches, not the limit
+    let ok: bool = e
+        .eval_as(r#"return (pcall(table.concat, {}, "", 1, 1e15))"#)
+        .unwrap();
+    assert!(!ok);
+}
+
+#[test]
+fn concat_is_charged_for_what_it_joins() {
+    // #t is 0 when t[1] is nil, so a run starting at 2 has to be charged as
+    // it goes, not by the table's length
+    let mut e = Engine::new();
+    e.set_instruction_limit(Some(5_000_000));
+    let t = Instant::now();
+    let err = e
+        .eval(
+            "local t = {} for i = 2, 200000 do t[i] = 'x' end \
+             while true do table.concat(t, '', 2, 200000) end",
+        )
+        .unwrap_err();
+    assert!(err.to_string().contains("instruction limit"), "{err}");
+    assert!(t.elapsed() < Duration::from_secs(10), "{:?}", t.elapsed());
+}

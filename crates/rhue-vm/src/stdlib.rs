@@ -626,11 +626,11 @@ fn table_concat(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let n = ctx.heap().table(t).len() as i64;
     let i = opt_int(args, 2, "concat", 1)?;
     let j = opt_int(args, 3, "concat", n)?;
-    if j >= i {
-        ctx.charge(j.abs_diff(i) + 1)?;
-    }
     let mut out = String::new();
     for k in i..=j {
+        // charged as it goes, a huge j only costs what's actually there before
+        // the loop hits a hole and errors
+        ctx.charge(1)?;
         // checked as it grows (the final size isn't known up front)
         ctx.reserve(out.len())?;
         match ctx.heap().table(t).get(Value::Number(k as f64)) {
@@ -905,9 +905,19 @@ fn string_rep(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     if size > 1 << 28 {
         return Err("resulting string too large".into());
     }
+    // ("", 1e12) is empty, and building it piece by piece would take forever
+    if size == 0 {
+        return Ok(smallvec![ctx.string("")]);
+    }
     ctx.reserve(size)?;
     ctx.charge(n as u64 + size as u64 / 64)?;
-    let out = vec![s.as_str(); n].join(&sep);
+    let mut out = String::with_capacity(size);
+    for i in 0..n {
+        if i > 0 {
+            out.push_str(&sep);
+        }
+        out.push_str(&s);
+    }
     Ok(smallvec![ctx.string(&out)])
 }
 
