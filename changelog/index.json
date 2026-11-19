@@ -1,0 +1,168 @@
+{
+  "entries": [
+    {
+      "file": "v1.0.0.md",
+      "tag": "1.0.0",
+      "title": "First release",
+      "version": "1.0.0",
+      "date": "2026-11-18"
+    },
+    {
+      "file": "m26.md",
+      "tag": "M26",
+      "title": "Hot reload",
+      "version": "1.0.0",
+      "date": "2026-11-18"
+    },
+    {
+      "file": "m25.md",
+      "tag": "M25",
+      "title": "Async hosts",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m24.md",
+      "tag": "M24",
+      "title": "Release readiness",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m23.md",
+      "tag": "M23",
+      "title": "Performance IV: calls",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m22.md",
+      "tag": "M22",
+      "title": "Performance III",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m21.md",
+      "tag": "M21",
+      "title": "Tooling III",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m20.md",
+      "tag": "M20",
+      "title": "Vectors",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m19.md",
+      "tag": "M19",
+      "title": "Embedding II",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m18.md",
+      "tag": "M18",
+      "title": "Standard library II",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m17.md",
+      "tag": "M17",
+      "title": "Editor II",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m16.md",
+      "tag": "M16",
+      "title": "Types II",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m15.md",
+      "tag": "M15",
+      "title": "Performance II",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m14.md",
+      "tag": "M14",
+      "title": "Types that travel",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m13.md",
+      "tag": "M13",
+      "title": "Saved chunks and incremental tooling",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m12.md",
+      "tag": "M12",
+      "title": "Debugging",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m11.md",
+      "tag": "M11",
+      "title": "Tooling",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m10.md",
+      "tag": "M10",
+      "title": "Patterns and modules",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m9.md",
+      "tag": "M9",
+      "title": "Coroutines",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m8.md",
+      "tag": "M8",
+      "title": "Language completeness",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m7.md",
+      "tag": "M7",
+      "title": "Performance and the verifier",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m6.md",
+      "tag": "M6",
+      "title": "Type checker",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m5.md",
+      "tag": "M5",
+      "title": "Embedding",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m4.md",
+      "tag": "M4",
+      "title": "Tables and the collector",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m3.md",
+      "tag": "M3",
+      "title": "Functions",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m2.md",
+      "tag": "M2",
+      "title": "Statements",
+      "version": "1.0.0"
+    },
+    {
+      "file": "m1.md",
+      "tag": "M1",
+      "title": "Expressions",
+      "version": "1.0.0"
+    }
+  ]
+}
