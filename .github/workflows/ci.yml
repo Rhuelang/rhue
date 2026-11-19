@@ -74,6 +74,40 @@ jobs:
       - name: Check
         run: cargo check --workspace --all-features --locked
 
+  # instruction counts from callgrind, which don't drift like wall times do.
+  # fails if a benchmark gets more than 2% worse than bench/counts.json
+  bench:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            bench/compare
+      - name: Install valgrind
+        run: sudo apt-get update && sudo apt-get install -y valgrind
+      - name: Instruction counts
+        run: bench/counts.sh --check
+      # its own workspace, so nothing else builds it
+      - name: Build the Luau/Rhai comparison
+        run: cargo build --release --locked --manifest-path bench/compare/Cargo.toml
+
+  audit:
+    name: Advisories
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: EmbarkStudios/cargo-deny-action@17aeb3c839e42274e2b8adf721c8c65edfdc74dd # v2.1.3
+        with:
+          command: check advisories
+      - uses: EmbarkStudios/cargo-deny-action@17aeb3c839e42274e2b8adf721c8c65edfdc74dd # v2.1.3
+        with:
+          command: check advisories
+          manifest-path: bench/compare/Cargo.toml
+
   package:
     name: Package for crates.io
     runs-on: ubuntu-latest

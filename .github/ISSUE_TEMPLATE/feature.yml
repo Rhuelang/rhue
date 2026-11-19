@@ -1,0 +1,16 @@
+name: Feature
+description: Something Rhue should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What you want
+      description: If Luau already does it, say how, Rhue follows Luau where it can.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What it's for
+      description: What you're building that needs it.

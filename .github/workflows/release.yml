@@ -1,0 +1,54 @@
+name: release
+
+# pushing a v* tag publishes every crate and makes the GitHub release from
+# changelog/<tag>.md. it uses crates.io trusted publishing, so no token sits in
+# the repo's secrets. each crate needs rhuelang/rhue + release.yml added as a
+# trusted publisher on crates.io before this works
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # the GitHub release
+      id-token: write # trusted publishing
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Tag matches the version
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "rhue") | .version')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME doesn't match Cargo.toml's $version" >&2
+            exit 1
+          fi
+          if [ ! -f "changelog/$GITHUB_REF_NAME.md" ]; then
+            echo "there's no changelog/$GITHUB_REF_NAME.md" >&2
+            exit 1
+          fi
+
+      - name: Test
+        run: cargo test --workspace --all-features --locked
+
+      - uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+        id: auth
+
+      # cargo works out the order and waits for each crate to show up on the
+      # index before publishing the ones that need it
+      - name: Publish
+        run: cargo publish --workspace --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+      - uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
+        with:
+          name: Rhue ${{ github.ref_name }}
+          body_path: changelog/${{ github.ref_name }}.md

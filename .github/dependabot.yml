@@ -1,0 +1,27 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # one PR for everything that doesn't break, instead of one per crate
+      minor:
+        update-types: [minor, patch]
+
+  - package-ecosystem: cargo
+    directory: /bench/compare
+    schedule:
+      interval: monthly
+    groups:
+      everything:
+        patterns: ["*"]
+
+  # also keeps the pinned commit hashes current
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
