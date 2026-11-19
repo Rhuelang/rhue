@@ -7,6 +7,7 @@ repository.workspace = true
 homepage.workspace = true
 rust-version.workspace = true
 description = "The Rhue virtual machine: values, tables, the garbage collector, coroutines and the standard library"
+readme = "README.md"
 keywords = ["rhue", "vm", "interpreter"]
 categories = ["compilers"]
 

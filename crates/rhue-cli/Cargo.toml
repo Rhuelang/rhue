@@ -9,7 +9,7 @@ rust-version.workspace = true
 description = "The rhue command: run Rhue scripts, a REPL, a test runner, a formatter and bytecode compilation"
 keywords = ["scripting", "luau", "repl", "cli"]
 categories = ["command-line-utilities", "development-tools"]
-readme = "../../README.md"
+readme = "README.md"
 
 [lints]
 workspace = true

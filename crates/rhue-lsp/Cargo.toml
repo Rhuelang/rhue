@@ -7,6 +7,7 @@ repository.workspace = true
 homepage.workspace = true
 rust-version.workspace = true
 description = "Language server for Rhue: diagnostics, completion, hover, navigation, refactors and inlay hints"
+readme = "README.md"
 keywords = ["rhue", "lsp", "language-server"]
 categories = ["development-tools"]
 

@@ -7,6 +7,7 @@ repository.workspace = true
 homepage.workspace = true
 rust-version.workspace = true
 description = "Formatter for Rhue source code"
+readme = "README.md"
 keywords = ["rhue", "formatter"]
 categories = ["development-tools"]
 

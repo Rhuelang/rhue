@@ -7,6 +7,7 @@ repository.workspace = true
 homepage.workspace = true
 rust-version.workspace = true
 description = "Parser and syntax tree for the Rhue scripting language"
+readme = "README.md"
 keywords = ["rhue", "parser"]
 categories = ["compilers", "parsing"]
 
