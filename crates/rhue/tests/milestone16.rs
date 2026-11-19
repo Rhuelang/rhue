@@ -383,48 +383,18 @@ fn setmetatable_type_function() {
 }
 
 #[test]
-fn older_chunk_formats_still_load() {
-    use rhue_bytecode::{MAGIC, read_chunk, write_chunk};
+fn other_chunk_formats_are_refused() {
+    use rhue_bytecode::MAGIC;
     let src =
         "--!strict\nlocal M = {}\nfunction M.twice(n: number): number return n * 2 end\nreturn M";
     let bytes = Engine::new().compile_to_bytes("m", src).unwrap();
-    let (proto, types) = read_chunk(&bytes).unwrap();
-    let mut types = types.unwrap();
-    types.aliases.clear();
-    // format 2 is format 3 without the alias list: drop its (zero) count
-    let with = write_chunk(&proto, Some(&types));
-    let without = write_chunk(&proto, None);
-    let header = with
-        .iter()
-        .zip(&without)
-        .take_while(|(a, b)| a == b)
-        .count();
-    let proto_len = without.len() - header - 1;
-    let mut v2 = with.clone();
-    assert_eq!(v2.remove(with.len() - proto_len - 1), 0);
-    v2[MAGIC.len()] = 2;
-    let mut v1 = without;
-    v1[MAGIC.len()] = 1;
-    v1.remove(header); // format 1 has no types flag at all
-
-    for (version, bytes) in [(2, v2), (1, v1)] {
-        let mut e = Engine::new();
-        e.add_module_bytes("m", &bytes)
-            .unwrap_or_else(|err| panic!("v{version}: {err}"));
-        assert_eq!(
-            e.eval_as::<f64>("return require('m').twice(21)").unwrap(),
-            42.0
-        );
-        let typed = e.check(
-            "main.rhue",
-            "--!strict\nlocal s: string = require('m').twice(1)",
-        );
-        assert_eq!(typed.is_err(), version == 2, "v{version}");
+    // 1 to 3 only ever existed before 1.0, 9 doesn't exist yet
+    for version in [1, 2, 3, 9] {
+        let mut old = bytes.clone();
+        old[MAGIC.len()] = version;
+        let err = Engine::new().add_module_bytes("m", &old).unwrap_err();
+        assert!(err.to_string().contains("reads format 4"), "{err}");
     }
-    let mut v9 = bytes.clone();
-    v9[MAGIC.len()] = 9;
-    let err = Engine::new().add_module_bytes("m", &v9).unwrap_err();
-    assert!(err.to_string().contains("formats 1 to 4"), "{err}");
 }
 
 #[test]

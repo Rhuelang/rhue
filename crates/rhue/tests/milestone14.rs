@@ -391,22 +391,12 @@ fn loaded_chunks_declare_their_globals() {
 }
 
 #[test]
-fn older_and_untyped_chunks_still_load() {
+fn untyped_chunks_load() {
     let mut e = Engine::new();
-    let proto = e.compile("old.rhue", "return 1 + 1").unwrap();
-    // format 1: no types section
-    let v2 = proto.to_bytes();
-    let mut v1 = v2.clone();
-    let magic = rhue_bytecode::MAGIC.len();
-    v1[magic] = 1;
-    // the types flag comes after the name and text (both short here)
-    let flag = magic + 1 + 1 + "old.rhue".len() + 1 + "return 1 + 1".len();
-    assert_eq!(v1.remove(flag), 0);
-    for bytes in [v1, v2] {
-        let mut fresh = Engine::new();
-        let p = fresh.load(&bytes).unwrap();
-        assert_eq!(fresh.run(&p).unwrap(), vec![rhue::Value::Number(2.0)]);
-    }
+    let chunk = e.compile("old.rhue", "return 1 + 1").unwrap();
+    let mut fresh = Engine::new();
+    let p = fresh.load(&chunk.to_bytes()).unwrap();
+    assert_eq!(fresh.run(&p).unwrap(), vec![rhue::Value::Number(2.0)]);
     // a compiled module without types is `any` to the checker
     let untyped = Engine::new()
         .compile("m", "return { f = function(x: number) return x end }")
