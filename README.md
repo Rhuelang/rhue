@@ -490,7 +490,7 @@ Any runtime works, but the futures aren't `Send`, so on tokio use a current-thre
 
 `engine.interrupt_handle()` stops a script from somewhere else with an error `pcall` can't catch. A script stuck in a loop is hogging its thread, so on a single-threaded runtime the interrupt has to come from another thread. It only gets checked when the instruction budget refills, so it costs basically nothing.
 
-Time spent in the standard library counts against the instruction limit too, so a pattern that backtracks forever or a huge `table.move` gets stopped the same way a loop does. Your own natives can do the same with `cx.charge(n)` when they do a lot of work in one call.
+The heavy parts of the standard library count against the instruction limit too (the pattern functions, `table.move`, `table.concat` and `string.rep`), so a pattern that backtracks forever or a huge `table.move` gets stopped the same way a loop does. Your own natives can do the same with `cx.charge(n)` when they do a lot of work in one call.
 
 ### Hot reload
 
