@@ -22,7 +22,7 @@ The site's at [rhue.dev](https://rhue.dev) and the API docs are on [docs.rs](htt
 
 ```toml
 [dependencies]
-rhue = "1"
+rhue = "2"
 ```
 
 ```rust
@@ -59,7 +59,7 @@ heap after churn: 82 KB
 
 ## ✨ Status
 
-1.0.0 is out, 26 milestones in. What's in it:
+2.0.0 is out, 26 milestones in (2.0 was a quick API cleanup right after 1.0). What's in it:
 
 - **Language** — Luau syntax, string interpolation, metatables and `setmetatable` classes, tail calls, coroutines, generic `for` with `__iter`, vectors
 - **Types** — gradual typing with `--!strict` and `--!nonstrict`, generics and type packs, narrowing and flow typing, read-only and write-only properties
@@ -259,7 +259,7 @@ engine.eval(r#"--!strict
 
 ```bash
 $ rhue
-Rhue 1.0.0. Globals persist between entries; :help for commands, Ctrl-D to exit.
+Rhue 2.0.0. Globals persist between entries; :help for commands, Ctrl-D to exit.
 > local function fib(n)
     if n < 2 then return n end
     return fib(n - 1) + fib(n - 2)
@@ -642,7 +642,7 @@ Measured at M23. Luau's had years of tuning and it shows, though plain arithmeti
 ## 🛠️ Development
 
 ```bash
-cargo test             # 571 tests, 576 with --all-features
+cargo test             # 578 tests, 583 with --all-features
 cargo clippy --all-targets
 cargo run --release -p rhue --example bench
 cargo run -p rhue-cli  # REPL

@@ -15,7 +15,7 @@ I write a lot of Luau and a lot of Rust, and wanted the first one inside the sec
 
 ```toml
 [dependencies]
-rhue = "1"
+rhue = "2"
 ```
 
 ```rust
