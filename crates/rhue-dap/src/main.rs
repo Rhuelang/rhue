@@ -8,6 +8,9 @@
 //! in a frame, and the script's `print` output. Hovers only read names and
 //! field paths like `player.stats.hp`, so they never run code.
 //!
+//! Save a module the script `require`d and it gets hot reloaded, checked about
+//! every 300ms while running and right before resuming from a stop.
+//!
 //! One thread reads the protocol from stdin and hands each message to the
 //! session thread, which owns the engine (engines aren't `Send`). While the
 //! script runs the hook checks for new messages every line, and while it's
@@ -20,6 +23,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use rhue::{DebugEvent, Debugger, Engine, HookMask, Table, Value};
 use serde_json::{Value as Json, json};
@@ -188,6 +192,10 @@ struct State {
     pause: bool,
     /// Module name → file, for sources `require` loaded.
     module_files: Rc<RefCell<HashMap<String, PathBuf>>>,
+    /// What each module's file said when it was last loaded, to spot edits.
+    module_texts: Rc<RefCell<HashMap<String, String>>>,
+    /// When the files were last checked for edits.
+    last_check: Instant,
     refs: Vec<VarRef>,
     started: bool,
     terminate: bool,
@@ -213,6 +221,8 @@ impl Session {
                 mode: Mode::Run,
                 pause: false,
                 module_files: Rc::new(RefCell::new(HashMap::new())),
+                module_texts: Rc::new(RefCell::new(HashMap::new())),
+                last_check: Instant::now(),
                 refs: Vec::new(),
                 started: false,
                 terminate: false,
@@ -248,13 +258,18 @@ impl Session {
     }
 
     fn launch_program(&self) {
-        let (program, out, module_files) = {
+        let (program, out, module_files, module_texts) = {
             let mut st = self.state.borrow_mut();
             if st.started {
                 return;
             }
             st.started = true;
-            (st.program.clone(), st.out.clone(), st.module_files.clone())
+            (
+                st.program.clone(),
+                st.out.clone(),
+                st.module_files.clone(),
+                st.module_texts.clone(),
+            )
         };
         let Some(program) = program else {
             out.event(
@@ -295,6 +310,9 @@ impl Session {
                     module_files
                         .borrow_mut()
                         .insert(name.to_string(), canonical(&p));
+                    module_texts
+                        .borrow_mut()
+                        .insert(name.to_string(), text.clone());
                     Some(text)
                 })
         });
@@ -675,6 +693,39 @@ fn evaluate_path(dbg: &mut Debugger<'_, '_>, level: usize, expr: &str) -> Option
 
 /// The hook. Decides whether to stop at `line`, and serves requests while
 /// stopped.
+/// How often a running script's modules get checked for edits.
+const RELOAD_EVERY: Duration = Duration::from_millis(300);
+
+/// Reloads modules whose files changed since they were loaded, so an edit
+/// shows up without restarting the session. A broken edit gets reported and
+/// the old code keeps running.
+fn reload_changed(st: &mut State, dbg: &mut Debugger<'_, '_>) {
+    st.last_check = Instant::now();
+    let files: Vec<(String, PathBuf)> = st
+        .module_files
+        .borrow()
+        .iter()
+        .map(|(n, p)| (n.clone(), p.clone()))
+        .collect();
+    for (name, path) in files {
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        if st.module_texts.borrow().get(&name) == Some(&text) {
+            continue;
+        }
+        st.module_texts
+            .borrow_mut()
+            .insert(name.clone(), text.clone());
+        let (category, output) = match dbg.context().reload_module(&name, &text) {
+            Ok(_) => ("console", format!("reloaded {name}\n")),
+            Err(e) => ("stderr", e.render(false)),
+        };
+        st.out
+            .event("output", json!({ "category": category, "output": output }));
+    }
+}
+
 fn on_line(
     state: &Rc<RefCell<State>>,
     dbg: &mut Debugger<'_, '_>,
@@ -697,6 +748,9 @@ fn on_line(
             Err(TryRecvError::Empty) => break,
             Err(TryRecvError::Disconnected) => return Err("the debugger went away".into()),
         }
+    }
+    if st.last_check.elapsed() >= RELOAD_EVERY {
+        reload_changed(&mut st, dbg);
     }
     let depth = dbg.depth();
     let source = dbg.frame(0).map(|f| st.source_path(&f.source));
@@ -752,6 +806,8 @@ fn on_line(
                     json!({})
                 };
                 st.out.respond(&msg, body);
+                // edits made while it sat here apply before it carries on
+                reload_changed(&mut st, dbg);
                 return Ok(());
             }
             None => {

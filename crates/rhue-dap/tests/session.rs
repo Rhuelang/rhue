@@ -471,3 +471,45 @@ fn hit_counts_and_broken_conditions() {
     c.request("disconnect", json!({}));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn edited_modules_reload_mid_session() {
+    let dir = script("reload", &[("main.rhue", MAIN), ("util.rhue", UTIL)]);
+    let main = dir.join("main.rhue");
+    let mut c = Client::start();
+    c.request("initialize", json!({ "adapterID": "rhue" }));
+    c.event("initialized");
+    c.request("launch", json!({ "program": main }));
+    c.request(
+        "setBreakpoints",
+        json!({ "source": { "path": main }, "breakpoints": [{ "line": 5 }] }),
+    );
+    c.request("configurationDone", json!({}));
+    assert_eq!(c.event("stopped")["body"]["reason"], "breakpoint");
+
+    // edit util while stopped, before it's ever called
+    std::fs::write(dir.join("util.rhue"), UTIL.replace("x * 2", "x * 3")).unwrap();
+    c.request(
+        "setBreakpoints",
+        json!({ "source": { "path": main }, "breakpoints": [] }),
+    );
+    c.request("continue", json!({ "threadId": 1 }));
+
+    let mut outputs = Vec::new();
+    loop {
+        let e = c.event("output");
+        let text = e["body"]["output"].as_str().unwrap().to_string();
+        let done = text.starts_with("total");
+        outputs.push(text);
+        if done {
+            break;
+        }
+    }
+    assert!(
+        outputs.contains(&"reloaded util\n".to_string()),
+        "{outputs:?}"
+    );
+    // all three went through the new double: (1 + 2 + 3) * 3
+    assert_eq!(outputs.last().unwrap(), "total\t18\n");
+    c.event("terminated");
+}
