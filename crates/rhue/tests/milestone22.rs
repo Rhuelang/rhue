@@ -45,7 +45,9 @@ fn constructors_with_constant_keys_use_templates() {
             "t",
             "local a = { x = 1, y = 2 }\nlocal b = { 1, 2, 3 }\nreturn a, b",
         )
-        .unwrap();
+        .unwrap()
+        .proto()
+        .clone();
     assert_eq!(p.templates.len(), 1);
     assert_eq!(p.templates[0].array, 0);
     assert_eq!(p.templates[0].hash, 2);
@@ -169,7 +171,11 @@ fn templates_survive_saved_chunks() {
 #[test]
 fn the_verifier_checks_templates() {
     let mut e = Engine::new();
-    let good = e.compile("t", "return { x = 1, y = 2 }").unwrap();
+    let good = e
+        .compile("t", "return { x = 1, y = 2 }")
+        .unwrap()
+        .proto()
+        .clone();
     let broken = |change: &dyn Fn(&mut Proto)| {
         let mut p = (*good).clone();
         change(&mut p);
@@ -198,7 +204,10 @@ fn the_verifier_checks_templates() {
         keys: vec![],
     });
     rhue_bytecode::verify(&p).unwrap();
-    assert_eq!(e.run(&Rc::new(p)).unwrap().len(), 1);
+    assert_eq!(
+        e.run(&rhue::Chunk::from_proto(Rc::new(p))).unwrap().len(),
+        1
+    );
 }
 
 #[test]

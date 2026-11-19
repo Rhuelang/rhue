@@ -199,7 +199,7 @@ impl Engine {
     /// inside `pcall`'d functions.
     pub fn spawn(&mut self, name: &str, source: &str) -> Result<Task, Error> {
         let proto = self.compile(name, source)?;
-        let f = self.vm.load(&proto);
+        let f = self.vm.load(&proto.0);
         let Value::Function(f) = self.context().lift(f) else {
             unreachable!("loading a chunk gives a function")
         };

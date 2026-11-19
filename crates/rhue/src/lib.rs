@@ -151,6 +151,7 @@
 #![warn(missing_docs)]
 
 mod asyncs;
+mod chunk;
 mod context;
 mod convert;
 mod debug;
@@ -168,9 +169,12 @@ mod value;
 use std::fmt;
 use std::marker::PhantomData;
 use std::rc::Rc;
+
+use rhue_bytecode::Proto;
 use std::sync::Arc;
 
 pub use asyncs::InterruptHandle;
+pub use chunk::Chunk;
 pub use context::{Context, ScriptError};
 pub use convert::{
     ArgError, Args, ConversionError, FromArg, FromValue, FromValues, IntoValue, IntoValues,
@@ -184,7 +188,7 @@ pub use native::{IntoAsyncNative, IntoNative, IntoNativeResult, WithContext};
 pub use outline::{
     Base, Exports, FieldUse, Outline, SemanticToken, Symbol, SymbolKind, TokenKind, outline,
 };
-pub use rhue_bytecode::{Proto, is_chunk};
+pub use rhue_bytecode::is_chunk;
 pub use rhue_common::{Diagnostic, Severity, SourceFile, Span};
 pub use rhue_compiler::CompileOptions;
 pub use rhue_derive::UserData;
@@ -631,7 +635,7 @@ impl Engine {
     /// Compiles a chunk without running it (to inspect or cache it, say).
     /// Type-checks it first if its directive (or the default mode) says to. The
     /// globals it defines become known to chunks checked later.
-    pub fn compile(&mut self, name: &str, source: &str) -> Result<Rc<Proto>, Error> {
+    pub fn compile(&mut self, name: &str, source: &str) -> Result<Chunk, Error> {
         let file = SourceFile::new(name, source);
         let chunk = rhue_parser::parse_chunk(source)
             .map_err(|d| Error::new(ErrorKind::Syntax, d, &file))?;
@@ -639,7 +643,7 @@ impl Engine {
     }
 
     /// Compiles a single expression as `return <expr>`.
-    pub fn compile_expr(&mut self, name: &str, source: &str) -> Result<Rc<Proto>, Error> {
+    pub fn compile_expr(&mut self, name: &str, source: &str) -> Result<Chunk, Error> {
         let file = SourceFile::new(name, source);
         let chunk =
             rhue_parser::parse_expr(source).map_err(|d| Error::new(ErrorKind::Syntax, d, &file))?;
@@ -650,8 +654,8 @@ impl Engine {
         &mut self,
         chunk: &rhue_parser::ast::Chunk,
         file: &Rc<SourceFile>,
-    ) -> Result<Rc<Proto>, Error> {
-        modules::compile_ast(&mut self.vm, chunk, file).map(|c| c.proto)
+    ) -> Result<Chunk, Error> {
+        modules::compile_ast(&mut self.vm, chunk, file).map(|c| Chunk(c.proto))
     }
 
     /// Analyzes a chunk for editor tooling without compiling or running it: its
@@ -705,17 +709,17 @@ impl Engine {
         }
     }
 
-    /// Loads a chunk saved with [`Proto::to_bytes`] (see also
+    /// Loads a chunk saved with [`Chunk::to_bytes`] (see also
     /// [`compile_to_bytes`](Self::compile_to_bytes)) without parsing or
     /// type-checking it. The bytes go through the bytecode verifier, so damaged
     /// or hand-made chunks get refused ([`ErrorKind::Load`]) instead of run.
     /// The result can be [`run`](Self::run) as many times as you want.
-    pub fn load(&mut self, bytes: &[u8]) -> Result<Rc<Proto>, Error> {
+    pub fn load(&mut self, bytes: &[u8]) -> Result<Chunk, Error> {
         let (proto, types) = self.read_chunk(bytes)?;
         if let Some(types) = &types {
             modules::declare_chunk_types(&mut self.vm, types);
         }
-        Ok(proto)
+        Ok(Chunk(proto))
     }
 
     /// Reads and verifies a chunk, without declaring its types.
@@ -776,7 +780,8 @@ impl Engine {
     /// A prototype that didn't come from [`compile`](Self::compile) gets
     /// verified first (once), and rejected with [`ErrorKind::Compile`] if its
     /// bytecode is malformed.
-    pub fn run(&mut self, proto: &Rc<Proto>) -> Result<Vec<Value>, Error> {
+    pub fn run(&mut self, chunk: &Chunk) -> Result<Vec<Value>, Error> {
+        let proto = &chunk.0;
         self.verify(proto)?;
         let values = self
             .vm

@@ -540,11 +540,11 @@ let config: Config = rhue::serde::from_value(&mut engine.context(), value)?;
 Compile once, load later without parsing or type-checking (about 9× faster than compiling):
 
 ```rust
-let bytes = engine.compile_to_bytes("main.rhue", &source)?; // or proto.to_bytes()
+let bytes = engine.compile_to_bytes("main.rhue", &source)?; // or chunk.to_bytes(), without the types
 std::fs::write("main.rhuec", &bytes)?;
 
-let proto = other_engine.load(&std::fs::read("main.rhuec")?)?; // ErrorKind::Load if it's not valid
-other_engine.run(&proto)?;
+let chunk = other_engine.load(&std::fs::read("main.rhuec")?)?; // ErrorKind::Load if it's not valid
+other_engine.run(&chunk)?;
 ```
 
 ```bash
@@ -618,7 +618,7 @@ Measured at M23. Luau's had years of tuning and it shows, though plain arithmeti
 | `rhue-common` | spans and diagnostics |
 | `rhue-lexer` | the lexer (logos) |
 | `rhue-parser` | the parser and AST |
-| `rhue-bytecode` | opcodes, `Proto`, the verifier, the chunk format |
+| `rhue-bytecode` | opcodes, `Proto` (what a `Chunk` wraps), the verifier, the chunk format |
 | `rhue-compiler` | name resolution, constant folding, the register compiler |
 | `rhue-types` | the type checker |
 | `rhue-vm` | values, the GC, the interpreter, coroutines, the stdlib |

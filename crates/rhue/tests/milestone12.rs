@@ -52,15 +52,10 @@ fn line_events_follow_execution() {
 fn call_and_return_events_name_their_functions() {
     let mut e = Engine::new();
     let src = "local function inner() return 1 end\nlocal function outer()\n  return inner() + 1\nend\nouter()";
-    let events = trace(
-        &mut e,
-        all().line(false),
-        src,
-        |dbg, ev| {
-            let f = dbg.frame(0)?;
-            Some(format!("{ev:?} {} depth {}", f.function, dbg.depth()))
-        },
-    );
+    let events = trace(&mut e, all().line(false), src, |dbg, ev| {
+        let f = dbg.frame(0)?;
+        Some(format!("{ev:?} {} depth {}", f.function, dbg.depth()))
+    });
     assert_eq!(
         events,
         [

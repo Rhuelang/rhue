@@ -53,7 +53,7 @@ impl Engine {
         env: &Environment,
         name: &str,
         source: &str,
-    ) -> Result<Rc<crate::Proto>, Error> {
+    ) -> Result<crate::Chunk, Error> {
         // the checker sees the engine's script globals with this environment's
         // on top (reads fall back to the engine's), and whatever the chunk
         // defines gets recorded as this environment's only
@@ -71,15 +71,12 @@ impl Engine {
                 None => types.push((n, t)),
             }
         }
-        Ok(compiled.proto)
+        Ok(crate::Chunk(compiled.proto))
     }
 
     /// Runs a compiled chunk in `env`.
-    pub fn run_in(
-        &mut self,
-        env: &Environment,
-        proto: &Rc<crate::Proto>,
-    ) -> Result<Vec<Value>, Error> {
+    pub fn run_in(&mut self, env: &Environment, chunk: &crate::Chunk) -> Result<Vec<Value>, Error> {
+        let proto = &chunk.0;
         self.verify(proto)?;
         let table = self.context().table_ref_of(&env.table);
         let values = self
@@ -99,9 +96,9 @@ impl Engine {
     /// [`spawn`](Self::spawn), in `env`.
     pub fn spawn_in(&mut self, env: &Environment, name: &str, source: &str) -> Result<Task, Error> {
         let proto = self.compile_in(env, name, source)?;
-        self.verify(&proto)?;
+        self.verify(&proto.0)?;
         let table = self.context().table_ref_of(&env.table);
-        let f = self.vm.load_in(&proto, table);
+        let f = self.vm.load_in(&proto.0, table);
         let crate::Value::Function(f) = self.context().lift(f) else {
             unreachable!("loading a chunk gives a function")
         };

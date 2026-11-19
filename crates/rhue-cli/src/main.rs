@@ -34,9 +34,7 @@ mod pretty;
 mod repl;
 mod testing;
 
-use std::rc::Rc;
-
-use rhue::{CompileOptions, Engine, Error, ErrorKind, Proto, TypeMode, Value};
+use rhue::{Chunk, CompileOptions, Engine, Error, ErrorKind, TypeMode, Value};
 
 struct Args {
     dump: bool,
@@ -315,7 +313,7 @@ pub(crate) fn run(
     dump: bool,
     expr_mode: bool,
 ) -> Result<Vec<Value>, Error> {
-    let proto: Rc<Proto> = if expr_mode {
+    let proto: Chunk = if expr_mode {
         match engine.compile_expr(name, src) {
             Ok(p) => p,
             // report whichever reading the user most likely meant

@@ -185,7 +185,7 @@ impl Engine {
         let proto = self
             .compile(&format!("[async {name}]"), WRAPPER)
             .expect("the async wrapper compiles");
-        let chunk = self.vm.load(&proto);
+        let chunk = self.vm.load(&proto.0);
         let table = self.vm.global("table");
         let field = |vm: &mut rhue_vm::Vm, k: &str| match table {
             rhue_vm::Value::Table(t) => {
