@@ -1,0 +1,41 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/rhuelang/rhue"
+homepage = "https://rhue.dev"
+rust-version = "1.88"
+
+[workspace.dependencies]
+rhue-common = { path = "crates/rhue-common", version = "1.0.0" }
+rhue-lexer = { path = "crates/rhue-lexer", version = "1.0.0" }
+rhue-parser = { path = "crates/rhue-parser", version = "1.0.0" }
+rhue-bytecode = { path = "crates/rhue-bytecode", version = "1.0.0" }
+rhue-compiler = { path = "crates/rhue-compiler", version = "1.0.0" }
+rhue-vm = { path = "crates/rhue-vm", version = "1.0.0" }
+rhue-types = { path = "crates/rhue-types", version = "1.0.0" }
+rhue = { path = "crates/rhue", version = "1.0.0" }
+rhue-derive = { path = "crates/rhue-derive", version = "1.0.0" }
+rhue-fmt = { path = "crates/rhue-fmt", version = "1.0.0" }
+logos = "0.16"
+ariadne = "0.6"
+proptest = "1"
+regex = { version = "1", default-features = false, features = ["std", "perf"] }
+stacker = "0.1"
+smallvec = { version = "1.15", features = ["union", "const_generics"] }
+hashbrown = { version = "0.17", default-features = false }
+foldhash = "0.2"
+indexmap = "2"
+syn = { version = "2", default-features = false, features = ["derive", "parsing", "printing", "proc-macro"] }
+quote = "1"
+proc-macro2 = "1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[profile.release]
+debug = 1

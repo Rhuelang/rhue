@@ -1,0 +1,31 @@
+-- expect: 180000600000 10000100000 237502500
+-- Array fills and reads, field access, ipairs/pairs.
+local t = {}
+for i = 1, 300000 do
+	t[i] = i * 2
+end
+local s = 0
+for _, v in ipairs(t) do
+	s += v
+end
+for i = 1, #t do
+	s += t[i]
+end
+local points = {}
+for i = 1, 100000 do
+	points[i] = { x = i, y = i * 2, z = -i }
+end
+local acc = 0
+for _, p in points do
+	acc += p.x + p.y + p.z
+	p.x = p.y
+end
+local h = {}
+for i = 1, 50000 do
+	h["k" .. (i % 5000)] = i
+end
+local n = 0
+for k, v in pairs(h) do
+	n += v
+end
+return s, acc, n

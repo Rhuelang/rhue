@@ -1,0 +1,20 @@
+[package]
+name = "rhue-compiler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+description = "Compiles Rhue syntax trees to register bytecode"
+keywords = ["rhue", "compiler"]
+categories = ["compilers"]
+
+[lints]
+workspace = true
+
+[dependencies]
+rhue-common.workspace = true
+rhue-parser.workspace = true
+rhue-bytecode.workspace = true
+stacker.workspace = true

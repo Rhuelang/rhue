@@ -1,0 +1,9 @@
+{
+  "items": [
+    {
+      "tag": "Next",
+      "title": "Faster calls, again",
+      "body": "Calls are still where Luau is furthest ahead (`callbacks` is about 3.3× faster there), so another round on that."
+    }
+  ]
+}

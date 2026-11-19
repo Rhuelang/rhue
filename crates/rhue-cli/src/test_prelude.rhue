@@ -1,0 +1,153 @@
+-- The globals `rhue test` gives test files: `test`, `describe` and
+-- `expect`. Runs before each file; returns the list of tests it collected.
+
+local tests = {}
+local prefix = ""
+
+function test(name: string, fn: () -> ())
+	table.insert(tests, { name = prefix .. name, fn = fn })
+end
+
+function describe(name: string, fn: () -> ())
+	local outer = prefix
+	prefix = outer .. name .. " > "
+	fn()
+	prefix = outer
+end
+
+-- A value as a failure message shows it.
+local function show(v: any, depth: number?): string
+	local d = depth or 0
+	if type(v) == "string" then
+		return string.format("%q", v)
+	elseif type(v) == "table" and d < 2 then
+		local mt = getmetatable(v)
+		if type(mt) == "table" and mt.__tostring then
+			return tostring(v)
+		end
+		local parts = {}
+		local n = #v
+		for i = 1, n do
+			table.insert(parts, show(v[i], d + 1))
+		end
+		local keys = {}
+		for k in v do
+			if not (type(k) == "number" and k >= 1 and k <= n and k % 1 == 0) then
+				table.insert(keys, k)
+			end
+		end
+		table.sort(keys, function(a, b)
+			return tostring(a) < tostring(b)
+		end)
+		for _, k in keys do
+			local key = if type(k) == "string" and k:match("^[%a_][%w_]*$") then k else "[" .. show(k, d + 1) .. "]"
+			table.insert(parts, key .. " = " .. show(v[k], d + 1))
+		end
+		return if #parts == 0 then "{}" else "{ " .. table.concat(parts, ", ") .. " }"
+	end
+	return tostring(v)
+end
+
+-- Deep equality: same keys, values deeply equal (metatables aside).
+local function same(a: any, b: any, seen: { [any]: any }): boolean
+	if a == b then
+		return true
+	end
+	if type(a) ~= "table" or type(b) ~= "table" then
+		-- NaN equals NaN here.
+		return type(a) == "number" and type(b) == "number" and a ~= a and b ~= b
+	end
+	if seen[a] == b then
+		return true
+	end
+	seen[a] = b
+	for k, v in a do
+		if not same(v, b[k], seen) then
+			return false
+		end
+	end
+	for k in b do
+		if a[k] == nil then
+			return false
+		end
+	end
+	return true
+end
+
+local function matchers(actual: any, negated: boolean)
+	local m = {}
+	local function check(ok: boolean, message: string)
+		if ok == negated then
+			local text = if negated then message:gsub("^expected ", "expected not ") else message
+			error(text, 3)
+		end
+	end
+	function m.toBe(expected: any)
+		check(rawequal(actual, expected), `expected {show(actual)} to be {show(expected)}`)
+	end
+	function m.toEqual(expected: any)
+		check(same(actual, expected, {}), `expected {show(actual)} to equal {show(expected)}`)
+	end
+	function m.toBeNil()
+		check(actual == nil, `expected {show(actual)} to be nil`)
+	end
+	function m.toBeTruthy()
+		check(not not actual, `expected {show(actual)} to be truthy`)
+	end
+	function m.toBeFalsy()
+		check(not actual, `expected {show(actual)} to be falsy`)
+	end
+	function m.toBeCloseTo(expected: number, digits: number?)
+		local tolerance = 10 ^ -(digits or 2) / 2
+		check(
+			type(actual) == "number" and math.abs(actual - expected) < tolerance,
+			`expected {show(actual)} to be close to {show(expected)}`
+		)
+	end
+	function m.toBeGreaterThan(n: number)
+		check(type(actual) == "number" and actual > n, `expected {show(actual)} to be greater than {show(n)}`)
+	end
+	function m.toBeLessThan(n: number)
+		check(type(actual) == "number" and actual < n, `expected {show(actual)} to be less than {show(n)}`)
+	end
+	function m.toHaveLength(n: number)
+		local ok, len = pcall(function()
+			return #actual
+		end)
+		check(ok and len == n, `expected {show(actual)} to have length {n}`)
+	end
+	function m.toContain(item: any)
+		local found = false
+		if type(actual) == "string" and type(item) == "string" then
+			found = actual:find(item, 1, true) ~= nil
+		elseif type(actual) == "table" then
+			for _, v in actual do
+				if v == item then
+					found = true
+					break
+				end
+			end
+		end
+		check(found, `expected {show(actual)} to contain {show(item)}`)
+	end
+	function m.toThrow(text: string?)
+		if type(actual) ~= "function" then
+			error(`expected a function to call, got {show(actual)}`, 2)
+		end
+		local ok, err = pcall(actual)
+		local message = if ok then "" else tostring(err)
+		local matched = not ok and (text == nil or message:find(text, 1, true) ~= nil)
+		local what = if text then ` an error containing {show(text)}` else " an error"
+		local got = if ok then "it returned" else `it threw {show(message)}`
+		check(matched, `expected{what}, but {got}`)
+	end
+	return m
+end
+
+function expect(actual: any)
+	local m = matchers(actual, false)
+	m.never = matchers(actual, true)
+	return m
+end
+
+return tests

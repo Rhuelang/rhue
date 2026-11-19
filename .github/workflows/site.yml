@@ -1,0 +1,66 @@
+name: site
+
+# keeps rhue.dev in step with this repo. when something the site shows changes on
+# main, rhue-site rebuilds. PRs touching the same files get built against the site
+# first, so bad json or a changelog entry pointing at a missing file fails here
+# instead of on rhue.dev
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/DESIGN.md
+      - CHANGELOG.md
+      - "changelog/**"
+      - bench/results.json
+      - assets/Logo.svg
+      - assets/Icon.svg
+      - Cargo.toml
+  pull_request:
+    paths:
+      - docs/DESIGN.md
+      - CHANGELOG.md
+      - "changelog/**"
+      - bench/results.json
+      - assets/Logo.svg
+      - assets/Icon.svg
+      - Cargo.toml
+
+jobs:
+  check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: rhue
+
+      - uses: actions/checkout@v4
+        with:
+          repository: rhuelang/rhue-site
+          path: site
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: site/package.json
+
+      - run: bun install --frozen-lockfile
+        working-directory: site
+
+      # same thing the site's deploy does, just pointed at this PR
+      - run: bun run sync && bun run build
+        working-directory: site
+        env:
+          RHUE_DIR: ../rhue
+
+  dispatch:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      # SITE_DISPATCH_TOKEN: fine-grained token on rhuelang/rhue-site with Contents read and write
+      - uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.SITE_DISPATCH_TOKEN }}
+          repository: rhuelang/rhue-site
+          event-type: rhue-updated
+          client-payload: '{"ref": "${{ github.sha }}"}'

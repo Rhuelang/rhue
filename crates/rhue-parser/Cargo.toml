@@ -1,0 +1,19 @@
+[package]
+name = "rhue-parser"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+description = "Parser and syntax tree for the Rhue scripting language"
+keywords = ["rhue", "parser"]
+categories = ["compilers", "parsing"]
+
+[lints]
+workspace = true
+
+[dependencies]
+rhue-common.workspace = true
+rhue-lexer.workspace = true
+stacker.workspace = true

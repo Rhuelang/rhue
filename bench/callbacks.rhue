@@ -1,0 +1,31 @@
+-- expect: 1608000 8000
+-- Closures made in a hot loop (callbacks, small adapters), each with
+-- string constants: creation cost, not calls, dominates.
+local items = {}
+for i = 1, 200 do
+	items[i] = { name = "item" .. i, value = i }
+end
+local function each(t: { any }, f: (any) -> ())
+	for i = 1, #t do
+		f(t[i])
+	end
+end
+local total, labels = 0, 0
+for round = 1, 400 do
+	for i = 1, #items, 10 do
+		local item = items[i]
+		local describe = function(prefix: string)
+			return prefix .. ": " .. item.name .. " = " .. tostring(item.value)
+		end
+		local check = function(x)
+			if x.value > 100 then
+				return "big", "number", "value"
+			end
+			return "small", "number", "value"
+		end
+		total += item.value * 2 + #check(item)
+		labels += if describe("label") ~= "" then 1 else 0
+	end
+	each(items, function(x) total += x.value % 2 end)
+end
+return total, labels

@@ -1,0 +1,21 @@
+-- expect: 40000 120000 80000
+-- Lua patterns: parse key=value lines with match, count words with
+-- gmatch, and rewrite with gsub (string and function replacements).
+local lines = {}
+for i = 1, 40000 do
+	lines[i] = `key{i % 97} = value {i} ; flag{i % 3}`
+end
+local parsed, words, rewrites = 0, 0, 0
+for _, line in lines do
+	local k, v = line:match("^(%w+)%s*=%s*(.-)%s*;")
+	if k and v then
+		parsed += 1
+	end
+	for _ in line:gmatch("%a+") do
+		words += 1
+	end
+	local _, n = line:gsub("%d+", function(d) return #d end)
+	local _, m = line:gsub("flag", "f")
+	rewrites += n - m
+end
+return parsed, words, rewrites

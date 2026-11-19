@@ -1,0 +1,38 @@
+--!strict
+-- a header comment
+local   Vec={}
+Vec.__index=Vec
+
+
+function Vec.new(x:number,y:number)  -- constructor
+return setmetatable({x=x,y=y},Vec)
+end
+function Vec:len():number
+    return math.sqrt(self.x*self.x+self.y*self.y)
+  end
+local function map<T,U>(xs:{T},f:(T)->U):{U}
+local out={}
+for i,v in xs do out[i]=f(v) end
+return out
+end
+local t={1,2,
+3,
+  4}
+foo(function()
+print("hi")
+end,function() return -1 end)
+local y=if t[1]>0 then"pos"elseif t[1]<0 then"neg"else"zero"
+if y=="pos"then
+print(#t,not true,- -1,2^-3,`v={y}`)
+elseif y then
+--[[ block
+   comment ]] print'x'
+else
+  repeat local z=1 until z>0
+end
+local s=a
+..b
+..c
+local long=[[
+  keep   this
+]]

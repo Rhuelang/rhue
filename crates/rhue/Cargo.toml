@@ -1,0 +1,37 @@
+[package]
+name = "rhue"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+description = "An embeddable, Luau-flavoured scripting language for Rust: register functions, run scripts, check types"
+keywords = ["scripting", "luau", "lua", "embedded", "language"]
+categories = ["compilers", "development-tools", "game-development"]
+readme = "../../README.md"
+
+[lints]
+workspace = true
+
+[dependencies]
+rhue-common.workspace = true
+rhue-lexer.workspace = true
+rhue-parser.workspace = true
+rhue-bytecode.workspace = true
+rhue-compiler.workspace = true
+rhue-vm.workspace = true
+rhue-derive.workspace = true
+rhue-types.workspace = true
+serde = { version = "1", optional = true }
+
+[features]
+# `rhue::serde`: converting between Rhue values and Rust types.
+serde = ["dep:serde"]
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["rt", "time", "macros", "test-util"] }
+proptest.workspace = true
+rhue-fmt.workspace = true
+regex.workspace = true

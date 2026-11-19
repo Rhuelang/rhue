@@ -1,0 +1,26 @@
+[package]
+name = "rhue-vm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+description = "The Rhue virtual machine: values, tables, the garbage collector, coroutines and the standard library"
+keywords = ["rhue", "vm", "interpreter"]
+categories = ["compilers"]
+
+[lints]
+workspace = true
+
+[dependencies]
+rhue-common.workspace = true
+rhue-bytecode.workspace = true
+indexmap.workspace = true
+stacker.workspace = true
+smallvec.workspace = true
+hashbrown.workspace = true
+foldhash.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

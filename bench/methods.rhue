@@ -1,0 +1,20 @@
+-- expect: 2399997
+-- Method calls on tables (OOP style) with field reads and writes.
+local Vec = {}
+local function new(x: number, y: number)
+	return { x = x, y = y, add = Vec.add, len2 = Vec.len2 }
+end
+function Vec.add(self, o)
+	return new(self.x + o.x, self.y + o.y)
+end
+function Vec.len2(self)
+	return self.x * self.x + self.y * self.y
+end
+local acc = new(0, 0)
+local step = new(1, -1)
+local s = 0
+for i = 1, 400000 do
+	acc = acc:add(step)
+	s += acc:len2() % 13
+end
+return s

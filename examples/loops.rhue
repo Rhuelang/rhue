@@ -1,0 +1,30 @@
+--!strict
+-- Milestone 2: locals, loops, conditions and strings.
+-- Run with `rhue examples/loops.rhue`, or add `--dump` to see the bytecode.
+
+local fizzbuzz = ""
+for i = 1, 15 do
+    local word = if i % 15 == 0 then "FizzBuzz"
+        elseif i % 3 == 0 then "Fizz"
+        elseif i % 5 == 0 then "Buzz"
+        else i
+    fizzbuzz ..= word
+    if i < 15 then fizzbuzz ..= " " end
+end
+
+-- Collatz: steps for 27 to reach 1.
+local n, steps = 27, 0
+while n ~= 1 do
+    n = if n % 2 == 0 then n // 2 else 3 * n + 1
+    steps += 1
+end
+
+-- Smallest prime factor of a number, with `continue` and `break`.
+local target, factor = 2021, nil
+for d = 2, target do
+    if target % d ~= 0 then continue end
+    factor = d
+    break
+end
+
+return fizzbuzz, steps, factor
