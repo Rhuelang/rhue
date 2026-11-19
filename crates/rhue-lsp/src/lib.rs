@@ -208,6 +208,9 @@ impl Docs {
     /// The path of the module `name` as `uri`'s document would `require` it, if
     /// there is one (open in the editor or on disk).
     pub fn module_path(&self, uri: &Url, name: &str) -> Option<PathBuf> {
+        if !rhue::is_module_name(name) {
+            return None;
+        }
         let dir = uri.to_file_path().ok()?.parent()?.to_path_buf();
         rhue::module_paths(&dir, name)
             .into_iter()
@@ -302,6 +305,9 @@ impl Docs {
         let seen = deps.clone();
         engine.set_module_loader(move |name| {
             let dir = dir.as_ref()?;
+            if !rhue::is_module_name(name) {
+                return None;
+            }
             stats.module_loads.set(stats.module_loads.get() + 1);
             let candidates = rhue::module_paths(dir, name);
             // both candidates count, creating the missing one changes things

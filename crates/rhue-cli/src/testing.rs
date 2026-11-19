@@ -130,6 +130,9 @@ fn engine_for(file: &Path) -> Result<(Engine, Table), rhue::Error> {
         PathBuf::from("."),
     ];
     engine.set_module_loader(move |name| {
+        if !rhue::is_module_name(name) {
+            return None;
+        }
         bases.iter().find_map(|base| {
             rhue::module_paths(base, name)
                 .iter()

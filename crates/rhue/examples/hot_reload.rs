@@ -49,6 +49,9 @@ return M
 
 /// The file `require(name)` reads, same as the CLI.
 fn module_path(dir: &Path, name: &str) -> Option<PathBuf> {
+    if !rhue::is_module_name(name) {
+        return None;
+    }
     rhue::module_paths(dir, name)
         .into_iter()
         .find(|p| p.is_file())

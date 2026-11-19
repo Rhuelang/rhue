@@ -242,6 +242,9 @@ fn main() -> ExitCode {
         _ => std::path::PathBuf::from("."),
     };
     engine.set_module_loader(move |name| {
+        if !rhue::is_module_name(name) {
+            return None;
+        }
         rhue::module_paths(&base, name)
             .iter()
             .find_map(|p| std::fs::read_to_string(p).ok())

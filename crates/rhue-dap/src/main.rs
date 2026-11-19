@@ -301,6 +301,9 @@ impl Session {
         });
         let dir = program.parent().map(Path::to_path_buf).unwrap_or_default();
         engine.set_module_loader(move |name| {
+            if !rhue::is_module_name(name) {
+                return None;
+            }
             rhue::module_paths(&dir, name).into_iter().find_map(|p| {
                 let text = std::fs::read_to_string(&p).ok()?;
                 module_files

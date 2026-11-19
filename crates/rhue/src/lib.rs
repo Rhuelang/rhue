@@ -212,6 +212,10 @@ pub use rhue_vm::HeapStats;
 /// [loader](Engine::set_module_loader) that uses it agrees with them. It only
 /// builds the paths, nothing gets read.
 ///
+/// It doesn't check the name either: `require("/etc/passwd")` would get
+/// `/etc/passwd.rhue`. Scripts pick the name, so check it with
+/// [`is_module_name`] first.
+///
 /// ```
 /// use std::path::Path;
 ///
@@ -225,6 +229,21 @@ pub fn module_paths(dir: &std::path::Path, name: &str) -> [std::path::PathBuf; 2
         dir.join(rel.with_extension("rhue")),
         dir.join(rel.join("init.rhue")),
     ]
+}
+
+/// Whether `name` is a module name that [`module_paths`] keeps inside its
+/// folder: parts split by `.`, none of them empty, and nothing that a path
+/// would treat specially (`/`, `\\`, `:`).
+///
+/// ```
+/// assert!(rhue::is_module_name("npc.brain"));
+/// assert!(!rhue::is_module_name("/etc/passwd"));
+/// assert!(!rhue::is_module_name("..secrets"));
+/// assert!(!rhue::is_module_name("C:\\x"));
+/// ```
+pub fn is_module_name(name: &str) -> bool {
+    name.split('.')
+        .all(|part| !part.is_empty() && !part.contains(['/', '\\', ':', '\0']))
 }
 
 /// Which phase an [`Error`] came from.
