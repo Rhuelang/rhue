@@ -1,20 +1,20 @@
-//! The object heap: strings, tables, functions and upvalue cells, plus the
+//! The object heap (strings, tables, functions and upvalue cells) and the
 //! mark-and-sweep garbage collector.
 //!
-//! **Handles, not pointers.** Every object lives in a `Slab` and is named
-//! by `index + generation`. Freeing a slot bumps its generation, so a stale
-//! handle fails a check instead of silently aliasing whatever reused the
-//! slot. `Value` stays `Copy`, and the workspace forbids `unsafe` (see `Cargo.toml`).
+//! **Handles, not pointers.** Every object lives in a `Slab` and gets named by
+//! `index + generation`. Freeing a slot bumps its generation, so a stale handle
+//! fails a check instead of quietly aliasing whatever reused the slot. `Value`
+//! stays `Copy`, and the workspace forbids `unsafe` (see `Cargo.toml`).
 //!
-//! **Interning.** All strings are interned: equal text means an equal
-//! handle, so string equality and table-key hashing are O(1). The intern map
-//! is weak: the collector drops entries for strings it frees.
+//! **Interning.** Every string is interned, equal text means an equal handle,
+//! so string equality and table-key hashing are O(1). The intern map is weak,
+//! the collector drops entries for strings it frees.
 //!
 //! **Collection.** [`Heap::collect`] marks from the roots the VM hands it
-//! (stack, frames, globals, open upvalues, host pins) with an explicit
-//! worklist (no recursion, so deep structures can't overflow the stack),
-//! then sweeps every slab. The VM only collects at *safe points* (the top
-//! of its dispatch loop), when every live value is reachable from a root.
+//! (stack, frames, globals, open upvalues, host pins) with an explicit worklist
+//! (no recursion, so deep structures can't blow the stack), then sweeps every
+//! slab. The VM only collects at *safe points* (the top of its dispatch loop),
+//! when every live value can be reached from a root.
 
 use std::cell::Cell;
 use std::fmt;
@@ -57,10 +57,10 @@ handle!(
     TableRef
 );
 /// An upvalue cell, shared by every closure that captures the variable
-/// (reference-counted: reading one is a single `Cell::get`, with no heap
-/// lookup). A closed cell holds a `Value` handle, which doesn't own
-/// anything, so cells can't form reference cycles; the collector marks what
-/// closed cells hold through the closures that reach them.
+/// (reference-counted, so reading one is a single `Cell::get` with no heap
+/// lookup). A closed cell holds a `Value` handle, which doesn't own anything,
+/// so cells can't make reference cycles. The collector marks what closed cells
+/// hold through the closures that reach them.
 pub type UpvalRef = Rc<Cell<Upvalue>>;
 handle!(
     /// A handle to a userdata object (a Rust value owned by the VM).
@@ -71,20 +71,20 @@ handle!(
     ThreadRef
 );
 handle!(
-    /// A handle to a buffer: a fixed-size, mutable array of bytes.
+    /// A handle to a buffer, a fixed-size mutable array of bytes.
     BufRef
 );
 
 /// Where a coroutine is in its life (`coroutine.status`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CoStatus {
-    /// Created and not started, or stopped in `coroutine.yield`.
+    /// Made and not started yet, or stopped in `coroutine.yield`.
     Suspended,
     /// The thread running right now.
     Running,
     /// Waiting for a coroutine it resumed.
     Normal,
-    /// Returned, raised an error, or was closed.
+    /// Returned, errored, or got closed.
     Dead,
 }
 
@@ -99,9 +99,9 @@ impl CoStatus {
     }
 }
 
-/// A thread's execution state while it isn't the one running: its value
-/// stack, call frames and open upvalues. The running thread's state lives
-/// in the VM itself; resuming and yielding swap these.
+/// A thread's execution state while it isn't the one running: its value stack,
+/// call frames and open upvalues. The running thread's state lives in the VM
+/// itself, and resuming and yielding swap these.
 #[derive(Default)]
 pub(crate) struct ThreadState {
     pub(crate) stack: Vec<Value>,
@@ -109,8 +109,8 @@ pub(crate) struct ThreadState {
     pub(crate) frames: Vec<crate::Frame>,
     pub(crate) open_upvalues: Vec<(usize, UpvalRef)>,
     pub(crate) boundary: usize,
-    /// For a coroutine stopped in `yield`: where that call's results go
-    /// (the call's slot, how many it wants).
+    /// For a coroutine stopped in `yield`: where that call's results go (the
+    /// call's slot, how many it wants).
     pub(crate) pending: Option<(usize, Option<usize>)>,
 }
 
@@ -118,12 +118,12 @@ pub(crate) struct ThreadState {
 pub struct Thread {
     pub(crate) state: ThreadState,
     pub(crate) status: CoStatus,
-    /// The VM's nesting depth while this thread runs at its base: `yield`
-    /// is only possible there (not from inside a native's callback).
+    /// The VM's nesting depth while this thread runs at its base. `yield` only
+    /// works there (not from inside a native's callback).
     pub(crate) base_depth: usize,
     /// Bytes counted for this thread's saved stack.
     pub(crate) bytes: usize,
-    /// Last resumed by the host rather than a script (see
+    /// Last resumed by the host instead of a script (see
     /// [`Vm::resumed_by_host`](crate::Vm::resumed_by_host)).
     pub(crate) by_host: bool,
 }
@@ -140,9 +140,9 @@ impl fmt::Debug for Thread {
     }
 }
 
-/// A Rust value a script can hold: `data` is whatever the host stored
-/// (the `rhue` crate stores an `Rc<RefCell<T>>`), `type_id` indexes the
-/// VM's userdata types, which say how scripts index it.
+/// A Rust value a script can hold. `data` is whatever the host stored (the
+/// `rhue` crate stores an `Rc<RefCell<T>>`), and `type_id` indexes the VM's
+/// userdata types, which say how scripts index it.
 pub struct UserData {
     pub type_id: u32,
     pub data: Rc<dyn std::any::Any>,
@@ -155,9 +155,9 @@ impl fmt::Debug for UserData {
 }
 
 /// An upvalue is *open* while the variable it captures is still alive in a
-/// stack register, and *closed* once that register's scope has ended (the
-/// value then lives in the cell itself). Every closure capturing the same
-/// variable shares one cell, so they all see each other's writes.
+/// stack register, and *closed* once that register's scope ends (then the value
+/// lives in the cell itself). Every closure capturing the same variable shares
+/// one cell, so they all see each other's writes.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Upvalue {
     /// Register `index` of `thread`'s stack.
@@ -168,16 +168,15 @@ pub enum Upvalue {
     Closed(Value),
 }
 
-/// What a native returns: up to three values are stored inline, so most
-/// native calls allocate nothing.
+/// What a native returns. Up to three values are stored inline, so most native
+/// calls don't allocate.
 pub type Rets = smallvec::SmallVec<[Value; 3]>;
 
-/// A native function: receives its arguments, returns its results or an
-/// error.
+/// A native function. Gets its arguments, returns its results or an error.
 pub type NativeFn = Rc<dyn Fn(&mut NativeCtx<'_>, &[Value]) -> Result<Rets, NativeError>>;
 
-/// Natives the VM implements itself because they need to call back into
-/// the interpreter.
+/// Natives the VM implements itself, since they need to call back into the
+/// interpreter.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Special {
     Pcall,
@@ -195,8 +194,8 @@ pub struct Native {
     /// A shortcut for the common case of a builtin (see [`FastFn`]).
     pub fast: Option<FastFn>,
     pub special: Option<Special>,
-    /// A value the native carries (the coroutine of a `coroutine.wrap`
-    /// function); the collector keeps it alive.
+    /// A value the native carries around (the coroutine of a `coroutine.wrap`
+    /// function), the collector keeps it alive.
     pub bound: Value,
 }
 
@@ -206,13 +205,13 @@ impl fmt::Debug for Native {
     }
 }
 
-/// A builtin's fast path: given up to three arguments, its results, or
-/// `None` to run the full native instead (for anything unusual, including
-/// every error, so messages come from one place). It runs without a native
+/// A builtin's fast path. Given up to three arguments it returns its results,
+/// or `None` to run the full native instead (for anything unusual, every error
+/// included, so messages come from one place). It runs without a native
 /// context, argument buffer or result vector.
 pub type FastFn = fn(&mut crate::Vm, &[Value]) -> Option<Fast>;
 
-/// What a fast path returns: one result, or two (an iterator's step).
+/// What a fast path returns, one result or two (an iterator's step).
 #[derive(Clone, Copy, Debug)]
 pub enum Fast {
     One(Value),
@@ -225,25 +224,25 @@ pub struct LuaClosure {
     pub upvalues: Rc<[UpvalRef]>,
     /// The prototype's constants as runtime values (strings interned).
     pub constants: Rc<[Value]>,
-    /// The same, and those of the prototypes nested in it (what `CLOSURE`
+    /// The same, plus those of the prototypes nested in it (what `CLOSURE`
     /// gives the closures it makes).
     pub tree: Rc<Constants>,
-    /// The table its global reads and writes go to, when it runs in an
-    /// environment (see [`crate::Vm::load_in`]); `None` for the VM's own
+    /// The table its global reads and writes go to when it runs in an
+    /// environment (see [`crate::Vm::load_in`]). `None` for the VM's own
     /// globals. Closures it makes inherit it.
     pub env: Option<TableRef>,
 }
 
 /// A prototype's constants as runtime values, and (in the same order as
-/// [`Proto::protos`]) its nested prototypes'. Built once when a chunk is
-/// loaded and shared by every closure made from it, so creating a closure
-/// doesn't convert or intern anything.
+/// [`Proto::protos`]) its nested prototypes'. Built once when a chunk loads and
+/// shared by every closure made from it, so making a closure doesn't convert or
+/// intern anything.
 #[derive(Debug, Default)]
 pub struct Constants {
     pub values: Rc<[Value]>,
     pub children: Box<[Rc<Constants>]>,
-    /// The collection that last marked this tree (so a tree shared by many
-    /// closures is walked once per collection).
+    /// The collection that last marked this tree (so a tree shared by a ton of
+    /// closures only gets walked once per collection).
     marked: Cell<u64>,
 }
 
@@ -271,7 +270,7 @@ impl Constants {
 
 #[derive(Debug)]
 pub enum Function {
-    /// Shared so a call frame can hold the closure with one reference count.
+    /// Shared so a call frame can hold the closure with one refcount.
     Lua(Rc<LuaClosure>),
     Native(Native),
 }
@@ -340,7 +339,7 @@ impl<T> Slab<T> {
         self.slots.len() - self.free.len()
     }
 
-    /// Frees every live slot `keep` says no to; calls `on_free` with each.
+    /// Frees every live slot `keep` says no to, calling `on_free` with each.
     fn sweep(&mut self, keep: &[bool], mut on_free: impl FnMut(T)) {
         for (i, slot) in self.slots.iter_mut().enumerate() {
             if slot.value.is_some() && !keep[i] {
@@ -376,9 +375,9 @@ const THREAD_BYTES: usize = 128;
 const BUFFER_BYTES: usize = 32;
 const MIN_THRESHOLD: usize = 256 * 1024;
 
-/// The weak intern map: string contents → handle. Hashed with foldhash,
-/// seeded randomly per heap (so scripts can't pick colliding keys ahead of
-/// time), and looked up by `&str` with the hash computed once.
+/// The weak intern map, string contents → handle. Hashed with foldhash, seeded
+/// randomly per heap (so scripts can't pick colliding keys ahead of time), and
+/// looked up by `&str` with the hash computed once.
 struct InternTable {
     table: hashbrown::HashTable<(Rc<str>, StrRef)>,
     state: foldhash::fast::RandomState,
@@ -435,7 +434,7 @@ pub struct Heap {
     userdata: Slab<UserData>,
     threads: Slab<Thread>,
     buffers: Slab<Box<[u8]>>,
-    /// Reused by each collection.
+    /// Reused by every collection.
     marks: Marks,
     /// Names of the userdata types, indexed by `UserData::type_id`.
     ud_type_names: Vec<Rc<str>>,
@@ -446,7 +445,7 @@ pub struct Heap {
     /// After a collection, `threshold = live bytes * pause / 100`.
     pause_percent: usize,
     collections: u64,
-    /// Collect at every safe point (testing aid for finding missing roots).
+    /// Collect at every safe point (a testing aid for finding missing roots).
     stress: bool,
     /// The memory limit, if any (see [`Heap::set_limit`]).
     limit: Option<usize>,
@@ -479,9 +478,9 @@ impl Heap {
         Self::default()
     }
 
-    // --- strings -----------------------------------------------------------
+    // ─ Strings ───────────────────────────────────────────────────────────────
 
-    /// Returns the handle for `text`, allocating it if it isn't interned yet.
+    /// The handle for `text`, allocating it if it isn't interned yet.
     pub fn intern(&mut self, text: &str) -> StrRef {
         let hash = self.interned.hash(text);
         if let Some(r) = self.interned.get(hash, text) {
@@ -490,8 +489,8 @@ impl Heap {
         self.insert_string(hash, Rc::from(text))
     }
 
-    /// Like [`Heap::intern`], but takes ownership (avoids a copy for freshly
-    /// built strings such as concatenation results).
+    /// Like [`Heap::intern`] but takes ownership (saves a copy for freshly
+    /// built strings like concatenation results).
     pub fn intern_owned(&mut self, text: String) -> StrRef {
         let hash = self.interned.hash(&text);
         if let Some(r) = self.interned.get(hash, &text) {
@@ -517,7 +516,7 @@ impl Heap {
         self.strings.get(r.index, r.generation, "string").clone()
     }
 
-    // --- userdata ----------------------------------------------------------
+    // ─ Userdata ──────────────────────────────────────────────────────────────
 
     pub fn alloc_userdata(&mut self, ud: UserData) -> UdRef {
         self.bytes += USERDATA_BYTES + std::mem::size_of_val(&*ud.data);
@@ -535,12 +534,12 @@ impl Heap {
         (self.ud_type_names.len() - 1) as u32
     }
 
-    /// The type name of a userdata (`"Player"`), as `typeof` returns it.
+    /// The type name of a userdata (`"Player"`), what `typeof` returns.
     pub fn userdata_type_name(&self, r: UdRef) -> &str {
         &self.ud_type_names[self.userdata(r).type_id as usize]
     }
 
-    // --- buffers -----------------------------------------------------------
+    // ─ Buffers ───────────────────────────────────────────────────────────────
 
     /// A buffer of `len` zero bytes (callers check the memory limit).
     pub fn alloc_buffer(&mut self, bytes: Box<[u8]>) -> BufRef {
@@ -557,7 +556,7 @@ impl Heap {
         self.buffers.get_mut(r.index, r.generation, "buffer")
     }
 
-    // --- tables ------------------------------------------------------------
+    // ─ Tables ────────────────────────────────────────────────────────────────
 
     pub fn alloc_table(&mut self, table: Table) -> TableRef {
         self.bytes += table.bytes();
@@ -569,13 +568,13 @@ impl Heap {
         self.tables.get(r.index, r.generation, "table")
     }
 
-    /// A table to change in a way that can't grow it (overwriting an
-    /// existing entry); anything else goes through [`with_table`](Self::with_table).
+    /// A table to change in a way that can't grow it (overwriting an existing
+    /// entry). Anything else goes through [`with_table`](Self::with_table).
     pub(crate) fn table_mut(&mut self, r: TableRef) -> &mut Table {
         self.tables.get_mut(r.index, r.generation, "table")
     }
 
-    /// Mutates a table, keeping the byte count in step with its growth.
+    /// Mutates a table, keeping the byte count in step with how it grew.
     pub fn with_table<R>(&mut self, r: TableRef, f: impl FnOnce(&mut Table) -> R) -> R {
         let t = self.tables.get_mut(r.index, r.generation, "table");
         let before = t.bytes();
@@ -585,7 +584,7 @@ impl Heap {
         result
     }
 
-    // --- functions ---------------------------------------------------------
+    // ─ Functions ─────────────────────────────────────────────────────────────
 
     pub fn alloc_function(&mut self, f: Function) -> FnRef {
         self.bytes += FUNCTION_BYTES
@@ -608,7 +607,7 @@ impl Heap {
         }
     }
 
-    // --- threads -----------------------------------------------------------
+    // ─ Threads ───────────────────────────────────────────────────────────────
 
     pub(crate) fn alloc_thread(&mut self, state: ThreadState, status: CoStatus) -> ThreadRef {
         let bytes = THREAD_BYTES + state.stack.capacity() * 16;
@@ -661,23 +660,23 @@ impl Heap {
         std::mem::take(&mut self.threads.get_mut(r.index, r.generation, "thread").state)
     }
 
-    // --- upvalues ----------------------------------------------------------
+    // ─ Upvalues ──────────────────────────────────────────────────────────────
 
-    /// A new upvalue cell (its memory counts as part of the closures that
-    /// hold it).
+    /// A new upvalue cell (its memory counts as part of the closures holding
+    /// it).
     pub fn alloc_upvalue(&mut self, u: Upvalue) -> UpvalRef {
         Rc::new(Cell::new(u))
     }
 
-    // --- collection --------------------------------------------------------
+    // ─ Collection ────────────────────────────────────────────────────────────
 
-    /// Whether enough has been allocated since the last collection.
+    /// Whether enough's been allocated since the last collection.
     #[inline]
     pub fn should_collect(&self) -> bool {
         self.stress || self.bytes >= self.threshold || self.over_limit()
     }
 
-    /// Caps (approximately) how many bytes scripts may keep allocated.
+    /// Caps (roughly) how many bytes scripts can keep allocated.
     pub fn set_limit(&mut self, limit: Option<usize>) {
         self.limit = limit;
     }
@@ -699,8 +698,8 @@ impl Heap {
             .is_some_and(|l| self.bytes.saturating_add(extra) > l)
     }
 
-    /// Stress mode: collect at every safe point. Very slow; for tests that
-    /// hunt for objects the collector can't see.
+    /// Stress mode, collect at every safe point. Really slow, it's for tests
+    /// hunting down objects the collector can't see.
     pub fn set_stress(&mut self, on: bool) {
         self.stress = on;
     }
@@ -710,8 +709,8 @@ impl Heap {
         self.threshold = 0;
     }
 
-    /// Sets the pause: after a collection, the next one starts once the heap
-    /// has grown to `percent`% of what survived (default 200, i.e. double).
+    /// Sets the pause. After a collection the next one starts once the heap
+    /// grows to `percent`% of what survived (default 200, so double).
     pub fn set_pause(&mut self, percent: usize) {
         self.pause_percent = percent.max(100);
     }
@@ -731,8 +730,8 @@ impl Heap {
 
     /// Marks everything reachable from `roots` and frees the rest.
     pub fn collect(&mut self, roots: impl IntoIterator<Item = GcRoot>) {
-        // The mark vectors are kept between collections: allocating (and
-        // freeing) them each time costs more than clearing them.
+        // the mark vectors stick around between collections, allocating (and
+        // freeing) them every time costs more than clearing them
         let mut marks = std::mem::take(&mut self.marks);
         let reset = |v: &mut Vec<bool>, n: usize| {
             v.clear();
@@ -757,9 +756,9 @@ impl Heap {
                         for u in c.upvalues.iter() {
                             match u.get() {
                                 Upvalue::Closed(v) => marks.value(v),
-                                // An open upvalue's value lives on its
-                                // thread's stack, so the thread stays alive
-                                // with it (the running one is a root).
+                                // an open upvalue's value lives on its thread's
+                                // stack, so the thread stays alive with it (the
+                                // running one's a root)
                                 Upvalue::Open { thread, .. } => marks.value(Value::Thread(thread)),
                             }
                         }
@@ -811,7 +810,7 @@ impl Heap {
     }
 }
 
-/// Something the collector must keep alive (and everything it references).
+/// Something the collector has to keep alive (and everything it references).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum GcRoot {
     Value(Value),
@@ -855,15 +854,15 @@ impl Marks {
                     self.work.push(Work::Function(f));
                 }
             }
-            // Userdata holds no script values (a host value inside it that
-            // keeps something alive does so through a pin).
+            // userdata holds no script values (a host value inside it that
+            // keeps something alive does it through a pin)
             Value::UserData(u) => self.userdata[u.index as usize] = true,
             Value::Thread(t) => {
                 if !std::mem::replace(&mut self.threads[t.index as usize], true) {
                     self.work.push(Work::Thread(t));
                 }
             }
-            // Bytes only.
+            // bytes only
             Value::Buffer(b) => self.buffers[b.index as usize] = true,
             Value::Nil | Value::Bool(_) | Value::Number(_) | Value::Vector(_) => {}
         }
@@ -900,7 +899,7 @@ mod tests {
         let s = h.stats();
         assert_eq!((s.strings, s.tables), (1, 1));
         assert_eq!(h.get(kept), "kept");
-        // The freed string can be re-interned (new handle, same text).
+        // the freed string can be re-interned (new handle, same text)
         let again = h.intern("gone");
         assert_eq!(h.get(again), "gone");
     }

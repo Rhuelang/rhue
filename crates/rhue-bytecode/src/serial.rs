@@ -1,5 +1,5 @@
 //! A compact binary form of a compiled chunk, so a host can compile once
-//! and load many times without parsing, resolving or type-checking.
+//! and load it a bunch of times without parsing, resolving or type-checking.
 //!
 //! ```text
 //! chunk   := MAGIC version:u8 name:str text:str types proto
@@ -16,16 +16,16 @@
 //! str     := len:uv bytes          [x] := count:uv x*
 //! ```
 //!
-//! `uv` is an unsigned LEB128 integer. The source text is kept so runtime
+//! `uv` is an unsigned LEB128 integer. The source text stays in so runtime
 //! errors and debuggers can still point at lines. The optional types are
-//! Luau type syntax (what the chunk returns, and the globals it defines),
-//! so a loaded chunk or module keeps its types for the checker; this crate
-//! only carries them.
+//! Luau type syntax (what the chunk returns and the globals it defines) so
+//! a loaded chunk or module keeps its types for the checker. This crate
+//! just carries them around.
 //!
 //! Loading only checks the *shape* of the bytes (lengths fit, strings are
-//! UTF-8, nesting is bounded, spans lie in the text); whether the code is
-//! safe to run is the [verifier](crate::verify)'s job, and hosts must run
-//! it on every loaded chunk (`Engine::load` does).
+//! UTF-8, nesting is bounded, spans are inside the text). Whether the code
+//! is safe to run is the [verifier](crate::verify)'s job, and hosts have
+//! to run it on every loaded chunk (`Engine::load` does).
 
 use std::fmt;
 use std::rc::Rc;
@@ -37,16 +37,16 @@ use crate::{Constant, Instr, LocalVar, Proto, TableTemplate, UpvalDesc};
 /// The first bytes of every serialized chunk.
 pub const MAGIC: &[u8; 5] = b"\x1bRhue";
 
-/// Bumped whenever the encoding or the instruction set changes; chunks
-/// from another version are refused rather than misread (older versions
-/// are subsets of this one and still load).
+/// Bumped whenever the encoding or instruction set changes. Chunks from a newer
+/// version get refused instead of misread (older versions are subsets of this
+/// one and still load).
 pub const FORMAT_VERSION: u8 = 4;
 
 /// The types saved with a chunk, as Luau type syntax.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ChunkTypes {
-    /// `type Name = ...` definitions the types below can name (so
-    /// recursive types and classes are saved exactly).
+    /// `type Name = ...` definitions the types below can refer to (so recursive
+    /// types and classes save exactly).
     pub aliases: Vec<String>,
     /// What the chunk returns (its type as a module).
     pub returns: String,
@@ -54,10 +54,10 @@ pub struct ChunkTypes {
     pub globals: Vec<(String, String)>,
 }
 
-/// Function nesting allowed in a loaded chunk (the parser's own limit).
+/// How deep functions can nest in a loaded chunk (same as the parser's limit).
 const MAX_NESTING: u32 = 1000;
 
-/// Why bytes couldn't be loaded as a chunk.
+/// Why some bytes couldn't load as a chunk.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LoadError {
     pub offset: usize,
@@ -72,27 +72,27 @@ impl fmt::Display for LoadError {
 
 impl std::error::Error for LoadError {}
 
-/// Whether `bytes` start like a serialized chunk.
+/// Whether `bytes` start like a saved chunk.
 pub fn is_chunk(bytes: &[u8]) -> bool {
     bytes.starts_with(MAGIC)
 }
 
 impl Proto {
-    /// Serializes this main chunk (and everything nested in it), without
-    /// types (see [`write_chunk`]).
+    /// Saves this main chunk (and everything nested in it), without types (see
+    /// [`write_chunk`]).
     pub fn to_bytes(&self) -> Vec<u8> {
         write_chunk(self, None)
     }
 
     /// Reads a chunk written by [`to_bytes`](Self::to_bytes) or
-    /// [`write_chunk`], ignoring any types. The result is *not* verified:
-    /// run [`verify`](crate::verify) before executing it.
+    /// [`write_chunk`], ignoring any types. It's *not* verified, run
+    /// [`verify`](crate::verify) before executing it.
     pub fn from_bytes(bytes: &[u8]) -> Result<Rc<Proto>, LoadError> {
         read_chunk(bytes).map(|(p, _)| p)
     }
 }
 
-/// Serializes a main chunk, with the types it exports if given.
+/// Saves a main chunk, plus the types it exports if you give them.
 pub fn write_chunk(proto: &Proto, types: Option<&ChunkTypes>) -> Vec<u8> {
     let mut w = Writer(Vec::with_capacity(64 + proto.source.text.len()));
     w.0.extend_from_slice(MAGIC);
@@ -119,8 +119,8 @@ pub fn write_chunk(proto: &Proto, types: Option<&ChunkTypes>) -> Vec<u8> {
     w.0
 }
 
-/// Reads a chunk and the types saved with it (none for chunks saved
-/// without, or in format 1). Not verified.
+/// Reads a chunk and the types saved with it (none for chunks saved without, or
+/// in format 1). Not verified.
 pub fn read_chunk(bytes: &[u8]) -> Result<(Rc<Proto>, Option<ChunkTypes>), LoadError> {
     let mut r = Reader { bytes, pos: 0 };
     if !is_chunk(bytes) {
@@ -305,8 +305,8 @@ impl Reader<'_> {
         u32::try_from(n).map_err(|_| self.fail("number out of range"))
     }
 
-    /// A count of items each at least `min_size` bytes long, checked
-    /// against what's left so damaged lengths can't allocate wildly.
+    /// A count of items that are each at least `min_size` bytes, checked
+    /// against what's left so a damaged length can't allocate like crazy.
     fn count(&mut self, min_size: usize) -> Result<usize, LoadError> {
         let n = self.uv()?;
         let left = (self.bytes.len() - self.pos) as u64;

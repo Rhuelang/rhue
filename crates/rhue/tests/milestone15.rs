@@ -1,7 +1,7 @@
-//! Milestone 15: performance. The VM changes (shared upvalue cells, a
-//! constants tree per chunk, `CLOSURE` out of line) must not change
-//! behaviour; the checker's join merge must stay linear; and the checker
-//! fixes found while profiling it.
+//! Milestone 15: performance. The VM changes (shared upvalue cells, a constants
+//! tree per chunk, `CLOSURE` out of line) can't change behaviour, the checker's
+//! join merge has to stay linear, plus the checker fixes that turned up while
+//! profiling it.
 
 use rhue::Engine;
 
@@ -68,12 +68,12 @@ return table.concat(parts, ',')",
 #[test]
 fn a_branchs_condition_still_counts_at_the_join() {
     // `x` isn't changed in the first branch, but its condition says it's a
-    // number there; the second branch assigns one.
+    // number there, the second branch assigns one
     check("local x: number? = nil\nif x ~= nil then print(x) else x = 0 end\nlocal n: number = x")
         .unwrap();
     check("local x: number? = nil\nif x == nil then x = 0 end\nlocal n: number = x").unwrap();
     assert!(check("local x: number? = nil\nif math.random() > 0.5 then print(x) else x = 0 end\nlocal n: number = x").is_err());
-    // Nested ifs report what they changed to the outer one.
+    // nested ifs report what they changed to the outer one
     check("local x: number? = nil\nif math.random() > 0.5 then\n  if math.random() > 0.5 then x = 1 else x = 2 end\nelse\n  x = 3\nend\nlocal n: number = x").unwrap();
 }
 
@@ -121,8 +121,8 @@ end",
 
 #[test]
 fn long_functions_check_in_linear_time() {
-    // 300 narrowed locals and 3,000 `if`s in one function: merging every
-    // live narrowing at every join (as M14 did) took over 30 times longer.
+    // 300 narrowed locals and 3,000 `if`s in one function: merging every live
+    // narrowing at every join (as M14 did) took over 30 times longer
     let mut src = String::from("--!strict\nlocal function f(xs: {number?})\n");
     for i in 0..300 {
         src += &format!("  local v{i}: number? = xs[{}]\n", i + 1);
@@ -135,6 +135,6 @@ fn long_functions_check_in_linear_time() {
     let start = std::time::Instant::now();
     Engine::new().check("long.rhue", &src).unwrap();
     let took = start.elapsed();
-    // Release: ~40 ms (it was ~1.5 s); debug builds are ~10x slower.
+    // release: ~40 ms (it was ~1.5 s), debug builds are ~10x slower
     assert!(took.as_secs_f64() < 5.0, "took {took:?}");
 }

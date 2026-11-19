@@ -1,6 +1,6 @@
-//! Running untrusted plugins: each gets its own globals, and limits on
-//! instructions and memory. A plugin that loops forever or hoards memory
-//! fails on its own; the others, and the host, carry on.
+//! Running untrusted plugins. Each one gets its own globals plus limits on
+//! instructions and memory, so a plugin that loops forever or hoards memory
+//! fails by itself while the others (and the host) carry on.
 //!
 //! Run with `cargo run -p rhue --example sandbox`.
 
@@ -22,7 +22,7 @@ const PLUGINS: &[(&str, &str)] = &[
     ),
     (
         "snoop",
-        // `greeting` belongs to another plugin, so here it's nil.
+        // `greeting` belongs to another plugin, so it's nil here
         "function on_join(player) return 'greeting is ' .. tostring(greeting) end",
     ),
 ];
@@ -31,7 +31,7 @@ fn main() -> Result<(), rhue::Error> {
     let mut engine = Engine::new();
     engine.set_instruction_limit(Some(1_000_000));
     engine.set_memory_limit(Some(8 << 20));
-    // Something every plugin may use.
+    // something every plugin can use
     engine.register("log", |msg: String| println!("  [log] {msg}"));
 
     let mut loaded: Vec<(&str, Environment)> = Vec::new();
@@ -50,7 +50,7 @@ fn main() -> Result<(), rhue::Error> {
         }
     }
 
-    // The engine is still fine after the failures.
+    // the engine's still fine after all that
     let n: f64 = engine.eval_as("return 6 * 7")?;
     println!("host: {n}");
     Ok(())

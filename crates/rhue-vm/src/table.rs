@@ -5,17 +5,16 @@
 //! then pulls any following integer keys (`n + 2`, ...) over from the hash
 //! part, so a table filled in order stays entirely in the array. Setting the
 //! last element to nil pops it (and any nils before it), so `#t` is just
-//! `array.len()` unless the array has holes in the middle; then a binary
-//! search finds a border, as Lua's `#` allows.
+//! `array.len()` unless the array has holes in the middle, then a binary search
+//! finds a border like Lua's `#` allows.
 //!
-//! **Hash part.** A `HashPart`: insertion-ordered and indexable, so `next`
-//! can resume from any key in O(1) (small parts are a vector searched
-//! linearly, larger ones an index map).
-//! Assigning nil to an existing key leaves a tombstone instead of removing
-//! it. That keeps the traversal order stable, so clearing fields while
-//! iterating with `next`/`pairs` works, as Lua guarantees. Tombstones are
-//! compacted away when a *new* key is inserted (inserting during traversal
-//! is undefined in Lua anyway).
+//! **Hash part.** A `HashPart`, insertion-ordered and indexable, so `next` can
+//! resume from any key in O(1) (small parts are a vector searched linearly,
+//! bigger ones an index map). Assigning nil to an existing key leaves a
+//! tombstone instead of removing it. That keeps the traversal order stable, so
+//! clearing fields while iterating with `next`/`pairs` works like Lua promises.
+//! Tombstones get compacted away when a *new* key is inserted (inserting during
+//! traversal is undefined in Lua anyway).
 
 use std::cell::Cell;
 
@@ -24,10 +23,10 @@ use crate::hashpart::HashPart;
 use crate::Value;
 use crate::heap::{BufRef, FnRef, StrRef, TableRef, ThreadRef, UdRef};
 
-/// A table key: any value except nil and NaN, with numbers normalised so
-/// `-0` and `0` are the same key.
-// `PartialEq` is written out for speed but compares exactly what the
-// derived one would, so it agrees with the derived `Hash`.
+/// A table key. Any value except nil and NaN, with numbers normalised so `-0`
+/// and `0` are the same key.
+// `PartialEq` is written out for speed but compares exactly what the derived
+// one would, so it agrees with the derived `Hash`
 #[allow(clippy::derived_hash_with_manual_eq)]
 #[derive(Clone, Copy, Debug, Eq, Hash)]
 pub enum Key {
@@ -44,8 +43,8 @@ pub enum Key {
 }
 
 impl PartialEq for Key {
-    /// String keys (fields) inline, the rest out of line: the derived
-    /// comparison, once a variant held an array, slowed table lookups and
+    /// String keys (fields) inline, the rest out of line. The derived
+    /// comparison, once a variant held an array, slowed down table lookups and
     /// the interpreter around them.
     #[inline]
     fn eq(&self, other: &Key) -> bool {
@@ -77,7 +76,7 @@ impl Key {
 }
 
 impl Key {
-    /// `Ok(None)` for nil (a lookup that can only miss); `Err` for NaN.
+    /// `Ok(None)` for nil (a lookup that can only miss), `Err` for NaN.
     #[inline]
     pub fn from_value(v: Value) -> Result<Option<Key>, KeyError> {
         Ok(Some(match v {
@@ -115,7 +114,7 @@ impl Key {
     }
 }
 
-/// `next` was given a key that isn't in the table.
+/// `next` got a key that isn't in the table.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InvalidKey;
 
@@ -160,7 +159,7 @@ pub struct Table {
     tombstones: usize,
     /// The metatable set with `setmetatable`, if any.
     meta: Option<TableRef>,
-    /// Set by `table.freeze`: every write fails from then on.
+    /// Set by `table.freeze`, every write fails from then on.
     frozen: bool,
 }
 
@@ -181,8 +180,8 @@ impl Table {
     }
 
     /// A table shaped by a constructor's template (`DUPTABLE`): room for
-    /// `array` and `hash` entries, with `keys` already present as
-    /// tombstones (nil), in order. The keys must be distinct.
+    /// `array` and `hash` entries, with `keys` already there as tombstones
+    /// (nil), in order. The keys have to be distinct.
     #[inline(never)]
     pub fn from_template(
         array: usize,
@@ -273,17 +272,17 @@ impl Table {
         }
     }
 
-    /// `t[key] = value` for a string key that is already in the hash part
-    /// (a tombstone counts), using and updating `hint`. Returns `false`,
-    /// changing nothing, when the key isn't there: the caller then does a
-    /// full [`set`](Self::set), which may grow the table.
-    #[inline]
+    /// `t[key] = value` for a string key that's already in the hash part (a
+    /// tombstone counts), using and updating `hint`. Returns `false` and
+    /// changes nothing when the key isn't there, then the caller does a full
+    /// [`set`](Self::set), which might grow the table.
     ///
-    /// With a metatable, a key whose value is nil counts as absent too
-    /// (assigning it may have to go to `__newindex`).
+    /// With a metatable, a key whose value is nil counts as missing too
+    /// (assigning it might have to go to `__newindex`).
+    #[inline]
     pub fn set_existing_str(&mut self, key: StrRef, value: Value, hint: &Cell<u32>) -> bool {
         if self.frozen {
-            // `set` reports it.
+            // `set` reports it
             return false;
         }
         let k = Key::String(key);
@@ -319,8 +318,8 @@ impl Table {
         }
     }
 
-    /// `t[key] = value`. Nil and NaN keys are errors (assigning nil to them
-    /// is too, as in Lua).
+    /// `t[key] = value`. Nil and NaN keys are errors (assigning nil to them is
+    /// too, like Lua).
     #[inline]
     pub fn set(&mut self, key: Value, value: Value) -> Result<(), KeyError> {
         if self.frozen {
@@ -338,8 +337,8 @@ impl Table {
                 return Ok(());
             }
             if i == n + 1 && value != Value::Nil {
-                // It may also be in the hash part (set before the array
-                // reached it); drop that copy.
+                // it might also be in the hash part (set before the array
+                // reached it), drop that copy
                 if let Some(k) = Key::from_value(key)?
                     && let Some(old) = self.hash.get_mut(&k)
                 {
@@ -392,7 +391,7 @@ impl Table {
         }
     }
 
-    /// `t[at + i] = values[i]` for each value, raw and in order, as
+    /// `t[at + i] = values[i]` for each value, raw and in order, like
     /// `table.move` does. The part that lands in the array is one copy.
     pub fn set_run(&mut self, at: i64, values: &[Value]) -> Result<(), KeyError> {
         if self.frozen {
@@ -409,7 +408,7 @@ impl Table {
             self.array[start..start + inside].copy_from_slice(&values[..inside]);
         }
         if inside > 0 && at as usize - 1 + inside == n {
-            // The copy reached the end: drop trailing nils, as `set` would.
+            // the copy reached the end, drop trailing nils like `set` would
             while self.array.last() == Some(&Value::Nil) {
                 self.array.pop();
             }
@@ -452,14 +451,14 @@ impl Table {
     pub fn len(&self) -> usize {
         let n = self.array.len();
         if n == 0 {
-            // Keys can sit in the hash part only if `1` itself is missing.
+            // keys can only sit in the hash part if `1` itself is missing
             return 0;
         }
         if self.array[n - 1] != Value::Nil {
             return n;
         }
-        // Binary search for a border inside the array: array[lo-1] is
-        // non-nil (or lo = 0), array[hi-1] is nil.
+        // binary search for a border inside the array. array[lo-1] is non-nil
+        // (or lo = 0), array[hi-1] is nil
         let (mut lo, mut hi) = (0usize, n);
         while hi - lo > 1 {
             let mid = (lo + hi) / 2;
@@ -476,7 +475,7 @@ impl Table {
         self.array.iter().all(|v| *v == Value::Nil) && self.hash.values().all(|v| *v == Value::Nil)
     }
 
-    /// Lua's `next`: the entry after `key` (nil = the first), or `None` at
+    /// Lua's `next`: the entry after `key` (nil means the first), or `None` at
     /// the end. `Err` if `key` isn't in the table.
     pub fn next(&self, key: Value) -> Result<Option<(Value, Value)>, InvalidKey> {
         let mut start_hash = 0;
@@ -612,9 +611,9 @@ mod tests {
     }
 
     proptest! {
-        /// The table behaves like a plain map from keys to non-nil values:
-        /// get agrees, `next` visits exactly the live entries once, and `#`
-        /// is a valid border.
+        /// The table acts like a plain map from keys to non-nil values: get
+        /// agrees, `next` visits exactly the live entries once, and `#` is a
+        /// valid border.
         #[test]
         fn behaves_like_a_map(ops in prop::collection::vec(op(), 0..200)) {
             let mut t = Table::default();

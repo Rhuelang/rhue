@@ -1,7 +1,7 @@
-//! Definitions and references across modules. A module's fields are what
-//! it returns (see [`rhue::Exports`]); another file uses one as
-//! `m.name` where `m` is `require("...")`, directly or through a local.
-//! Only outlines are needed, so every file in the workspace can be read.
+//! Definitions and references across modules. A module's fields are whatever it
+//! returns (see [`rhue::Exports`]), and another file uses one as `m.name` where
+//! `m` is `require("...")`, directly or through a local. Only outlines are
+//! needed, so every file in the workspace can get read.
 
 use std::path::{Path, PathBuf};
 
@@ -10,13 +10,13 @@ use rhue::{Base, Outline, Span};
 
 use crate::{Docs, LineIndex, contains};
 
-/// A module's field: the module's file, and the field's name.
+/// A module's field: the module's file and the field's name.
 struct Target {
     path: PathBuf,
     name: String,
 }
 
-/// The module a field is read from, by name, if it's one.
+/// The module a field gets read from, by name, if it is one.
 fn module_of<'a>(o: &'a Outline, base: &'a Base) -> Option<&'a str> {
     match base {
         Base::Module(m) => Some(m),
@@ -36,7 +36,7 @@ fn same_file(a: &Path, b: &Path) -> bool {
         )
 }
 
-/// The module field at `offset`: a use of one (`m.name`), or where this
+/// The module field at `offset`, either a use of one (`m.name`) or where this
 /// file defines one it returns.
 fn target_at(docs: &Docs, uri: &Url, outline: &Outline, offset: usize) -> Option<Target> {
     let here = uri.to_file_path().ok()?;
@@ -66,7 +66,7 @@ fn target_at(docs: &Docs, uri: &Url, outline: &Outline, offset: usize) -> Option
         })
 }
 
-/// The text and outline of `path`: this document's if it's the one, else
+/// The text and outline of `path`: this document's if it's the one, otherwise
 /// the open or saved file's.
 fn file(
     docs: &Docs,
@@ -96,8 +96,8 @@ pub(crate) fn definition(docs: &Docs, uri: &Url, text: &str, offset: usize) -> O
     location(&t.path, &ptext, *span)
 }
 
-/// Every use of the module field at `offset` in the workspace, and its
-/// definition; `None` if there's no module field there.
+/// Every use of the module field at `offset` in the workspace, plus its
+/// definition. `None` if there's no module field there.
 pub(crate) fn references(
     docs: &Docs,
     uri: &Url,

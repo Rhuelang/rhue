@@ -1,5 +1,5 @@
-//! Milestone 20: vectors. Luau's `vector` value (three `f32`s, stored in
-//! the value itself), its arithmetic, its library, and its type.
+//! Milestone 20: vectors. Luau's `vector` value (three `f32`s stored right in
+//! the value), its arithmetic, its library, and its type.
 
 use rhue::{Engine, Value};
 
@@ -36,7 +36,7 @@ fn vectors_are_values() {
         run("local v = vector.create(1, 2, 3)\nreturn v, type(v), typeof(v), vector.create(4, 5)"),
         "1, 2, 3 | vector | vector | 4, 5, 0"
     );
-    // Equality by value; usable as table keys by value (-0 is 0).
+    // equality by value, usable as table keys by value (-0 is 0)
     assert_eq!(
         run("local a, b = vector.create(1, 2, 3), vector.create(1, 2, 3)
 local t = { [a] = 'found' }
@@ -44,7 +44,7 @@ return a == b, a ~= vector.zero, rawequal(a, b), t[b], t[vector.create(-0, 0, 0)
         "true | true | true | found | true"
     );
     assert!(error("local t = {}\nt[vector.create(0/0, 0, 0)] = 1").contains("NaN"));
-    // Components, including Roblox's capitals; vectors can't be changed.
+    // components, including Roblox's capitals, vectors can't be changed
     assert_eq!(
         run("local v = vector.create(1, 2, 3)\nreturn v.x, v.y, v.z, v.X, v.Y, v.Z"),
         "1 | 2 | 3 | 1 | 2 | 3"
@@ -58,7 +58,7 @@ return a == b, a ~= vector.zero, rawequal(a, b), t[b], t[vector.create(-0, 0, 0)
         "attempt to index vector with 'x'"
     );
     assert!(error("return #vector.one").contains("length"));
-    // 32-bit floats: components round, `tostring` shows them at that precision.
+    // 32-bit floats: components round, `tostring` shows them at that precision
     assert_eq!(
         run("local v = vector.create(0.1, 1e20, -0)\nreturn v, v.x"),
         "0.1, 1e+20, -0 | 0.10000000149011612"
@@ -89,7 +89,7 @@ return a + b, b - a, a * b, b / a, a * 2, 2 * a, b / 2, 12 / a, b // 4, -a";
         error("return vector.one < vector.zero"),
         "attempt to compare vector < vector"
     );
-    // In compound assignment and loops, as any value.
+    // in compound assignment and loops, as any value
     assert_eq!(
         run("local p = vector.zero\nfor i = 1, 10 do p += vector.create(i, 0, 1) end\nreturn p"),
         "55, 0, 10"
@@ -130,7 +130,7 @@ fn the_vector_library() {
     for (expr, want) in cases {
         assert_eq!(run(&format!("return {expr}")), want, "{expr}");
     }
-    // Angles: unsigned, or signed around an axis.
+    // angles: unsigned, or signed around an axis
     let pi = std::f64::consts::FRAC_PI_2;
     let mut e = Engine::new();
     let a: f64 = e
@@ -141,7 +141,7 @@ fn the_vector_library() {
         .eval_as("return vector.angle(vector.create(0, 1, 0), vector.create(1, 0, 0), vector.create(0, 0, 1))")
         .unwrap();
     assert!((a + pi).abs() < 1e-6);
-    // The zero vector normalizes to NaNs, as in Luau.
+    // the zero vector normalizes to NaNs, as in Luau
     assert_eq!(
         run("local n = vector.normalize(vector.zero)\nreturn n.x ~= n.x"),
         "true"

@@ -1,10 +1,10 @@
 use std::fmt;
 use std::ops::Range;
 
-/// A half-open byte range `start..end` into a source string.
+/// A half-open byte range `start..end` into some source.
 ///
-/// Spans are `u32` to keep tokens, AST nodes, and per-instruction debug info
-/// small; sources larger than 4 GiB are rejected up front by the lexer.
+/// Spans are `u32` to keep tokens, AST nodes and per-instruction debug info
+/// small. The lexer refuses anything over 4 GiB up front.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Span {
     pub start: u32,

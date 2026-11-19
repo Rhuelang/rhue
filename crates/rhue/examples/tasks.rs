@@ -1,6 +1,6 @@
-//! Scripts that wait: a game loop advances the clock, and NPC scripts use
-//! Luau's `task` library (`task.wait`, `task.delay`, `task.spawn`) to act
-//! over time. Nothing runs on its own; time only passes in `step`.
+//! Scripts that wait. A game loop moves the clock forward, and NPC scripts use
+//! Luau's `task` library (`task.wait`, `task.delay`, `task.spawn`) to do things
+//! over time. Nothing runs by itself, time only passes in `step`.
 //!
 //! Run with `cargo run -p rhue --example tasks`.
 
@@ -13,7 +13,7 @@ fn main() -> Result<(), rhue::Error> {
     let mut engine = Engine::new();
     engine.open_tasks();
 
-    // The host's clock, so scripts can print when things happen.
+    // the host's clock, so scripts can print when things happen
     let now = Rc::new(Cell::new(0.0f64));
     let clock = now.clone();
     engine.register("say", move |who: String, line: String| {
@@ -44,7 +44,7 @@ fn main() -> Result<(), rhue::Error> {
         "#,
     )?;
 
-    // The game loop: half-second frames.
+    // the game loop, half-second frames
     for _ in 0..10 {
         now.set(now.get() + 0.5);
         for e in engine.step(0.5) {

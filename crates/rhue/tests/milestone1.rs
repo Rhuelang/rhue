@@ -1,6 +1,5 @@
-//! End-to-end tests: source → lexer → parser → compiler → VM.
-//! Every case runs with constant folding both on and off, and the two must
-//! agree bit-for-bit.
+//! End-to-end tests: source → lexer → parser → compiler → VM. Every case runs
+//! with constant folding on and off, and the two have to agree bit-for-bit.
 
 use rhue::{CompileOptions, Engine, ErrorKind, Value};
 
@@ -193,10 +192,10 @@ fn errors_render_with_source_context() {
 
 #[test]
 fn deep_but_legal_nesting_runs() {
-    // 249 right-nested levels need 250 registers: exactly at the limit.
+    // 249 right-nested levels need 250 registers: exactly at the limit
     let src = format!("{}1{}", "1 + (".repeat(249), ")".repeat(249));
     assert_eq!(num(&src), 250.0);
-    // A long flat chain only needs two registers.
+    // a long flat chain only needs two registers
     let chain = format!("1{}", " + 1".repeat(900));
     assert_eq!(num(&chain), 901.0);
 }

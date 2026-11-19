@@ -1,7 +1,7 @@
 //! Property test: random arithmetic trees where some leaves are boxed in a
 //! table whose metatable defines every arithmetic event. Each metamethod
-//! unboxes its operands, does the plain operation and boxes the result, so
-//! the answer must match plain arithmetic bit for bit, whichever side (or
+//! unboxes its operands, does the plain operation and boxes the result, so the
+//! answer has to match plain arithmetic bit for bit no matter which side (or
 //! both) of each operator is a box.
 
 use proptest::prelude::*;

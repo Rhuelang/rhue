@@ -1,11 +1,12 @@
-//! The interactive prompt: `rhue` with no file.
+//! The interactive prompt, `rhue` with no file.
 //!
-//! Lines run as they're entered; a statement that isn't finished yet (an
-//! open `function`, `if` or `{`, a long string) continues on the next line,
-//! edited and recalled from history as one entry. A lone expression prints its value, tables spelled
-//! out. Globals persist between entries, and so does a `local` that starts
-//! an entry (it's kept as a global: `local x = 1`, `local function f()`);
-//! other locals last for one entry. History is kept in `~/.rhue_history`.
+//! Lines run as you enter them. A statement that isn't done yet (an open
+//! `function`, `if` or `{`, a long string) continues on the next line and gets
+//! edited and recalled from history as one entry. A lone expression prints its
+//! value, tables spelled out. Globals stick around between entries, and so does
+//! a `local` that starts an entry (it's kept as a global: `local x = 1`, `local
+//! function f()`). Other locals only last one entry. History goes in
+//! `~/.rhue_history`.
 
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::process::ExitCode;
@@ -26,8 +27,8 @@ A `local` that starts an entry is kept for later entries (as a global).
   :help         this
   :quit         leave (or Ctrl-D)";
 
-/// Whether `src` is a start that more lines could finish: it fails to
-/// parse only because it ends too soon.
+/// Whether `src` is a start more lines could finish, meaning it only fails to
+/// parse because it ends too soon.
 pub fn is_incomplete(engine: &mut Engine, src: &str) -> bool {
     if src.trim().is_empty() || src.trim_start().starts_with(':') {
         return false;
@@ -44,9 +45,9 @@ pub fn is_incomplete(engine: &mut Engine, src: &str) -> bool {
 }
 
 /// An entry starting with a plain `local` declaration, rewritten to declare
-/// globals so that later entries see them: `local x, y = 1, 2` and
-/// `local function f()` lose their `local`. Declarations with annotations
-/// or attributes are left alone.
+/// globals so later entries can see them: `local x, y = 1, 2` and `local
+/// function f()` lose their `local`. Declarations with annotations or
+/// attributes get left alone.
 pub fn promote_locals(entry: &str) -> Option<String> {
     let start = entry.len() - entry.trim_start().len();
     let rest = entry[start..].strip_prefix("local")?;
@@ -73,7 +74,7 @@ pub enum Outcome {
     Quit,
 }
 
-/// Runs one complete entry: a command, or code.
+/// Runs one complete entry, a command or code.
 pub fn eval(engine: &mut Engine, entry: &str, dump: bool) -> Outcome {
     let trimmed = entry.trim();
     if let Some(command) = trimmed.strip_prefix(':') {
@@ -129,11 +130,10 @@ fn print(engine: &mut Engine, outcome: Outcome, color: bool) -> bool {
     true
 }
 
-/// Line editing's view of the engine: whether input is complete.
+/// Line editing's view of the engine: whether the input's complete.
 #[derive(Completer, Helper, Highlighter, Hinter)]
 struct Input {
-    /// A separate engine, so checking a half-typed entry can't define
-    /// anything.
+    /// A separate engine, so checking a half-typed entry can't define anything.
     probe: std::cell::RefCell<Engine>,
 }
 
@@ -183,7 +183,7 @@ pub fn run(engine: &mut Engine, dump: bool, color: bool) -> ExitCode {
                     break;
                 }
             }
-            // Ctrl-C drops the entry being typed.
+            // Ctrl-C drops the entry you're typing
             Err(ReadlineError::Interrupted) => continue,
             Err(_) => break,
         }
@@ -194,7 +194,7 @@ pub fn run(engine: &mut Engine, dump: bool, color: bool) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Piped input: the same, line by line, without line editing or prompts.
+/// Piped input. Same thing line by line, minus line editing and prompts.
 fn run_piped(engine: &mut Engine, dump: bool, color: bool) -> ExitCode {
     let mut probe = Engine::new();
     let mut pending = String::new();
@@ -218,7 +218,7 @@ fn run_piped(engine: &mut Engine, dump: bool, color: bool) -> ExitCode {
         let _ = io::stdout().flush();
     }
     if !pending.trim().is_empty() {
-        // Input ended in the middle of something: report it.
+        // input ended in the middle of something, report it
         let outcome = eval(engine, &pending, dump);
         failed |= matches!(outcome, Outcome::Error(_));
         print(engine, outcome, color);

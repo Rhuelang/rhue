@@ -1,16 +1,16 @@
-//! Lua 5.4 patterns, ported from `lstrlib.c`: character classes (`%a %c
-//! %d %g %l %p %s %u %w %x`, upper case for the complement), sets
-//! (`[a-z%d]`, `[^...]`), `.`, the quantifiers `* + - ?`, anchors, captures
-//! (including position captures `()`), back-references `%1`-`%9`, `%bxy`
-//! and the frontier `%f[set]`.
+//! Lua 5.4 patterns, ported from `lstrlib.c`: character classes (`%a %c %d %g
+//! %l %p %s %u %w %x`, upper case for the complement), sets (`[a-z%d]`,
+//! `[^...]`), `.`, the quantifiers `* + - ?`, anchors, captures (position
+//! captures `()` too), back-references `%1`-`%9`, `%bxy` and the frontier
+//! `%f[set]`.
 //!
-//! Matching works on bytes, like Lua's: classes only know ASCII, and `.`
+//! Matching works on bytes like Lua's, so classes only know ASCII and `.`
 //! matches one byte of a multi-byte character. The matcher backtracks
-//! recursively with a depth limit ("pattern too complex"), as Lua's does.
+//! recursively with a depth limit ("pattern too complex"), same as Lua's.
 
-/// How many captures a pattern may have.
+/// How many captures a pattern can have.
 pub const MAX_CAPTURES: usize = 32;
-/// How deeply the matcher may recurse.
+/// How deep the matcher can recurse.
 const MAX_DEPTH: usize = 200;
 
 const ESC: u8 = b'%';
@@ -57,8 +57,8 @@ impl<'a> Matcher<'a> {
         }
     }
 
-    /// Tries to match the pattern from byte `p` of it against the subject
-    /// at byte `s`; the end of the match, if any.
+    /// Tries to match the pattern from its byte `p` against the subject at byte
+    /// `s`. Gives the end of the match, if there is one.
     pub fn try_at(&mut self, s: usize, p: usize) -> M {
         self.level = 0;
         self.depth = MAX_DEPTH;
@@ -71,7 +71,7 @@ impl<'a> Matcher<'a> {
         (0..self.level).map(|i| self.capture(i)).collect()
     }
 
-    /// The captures of the last match from `s` to `e`: the whole match if
+    /// The captures of the last match from `s` to `e`, or the whole match if
     /// the pattern has none.
     pub fn captures(&self, s: usize, e: usize) -> Result<Vec<Capture>, String> {
         if self.level == 0 {
@@ -80,7 +80,7 @@ impl<'a> Matcher<'a> {
         (0..self.level).map(|i| self.capture(i)).collect()
     }
 
-    /// The first capture (or the whole match): what `gsub` indexes a
+    /// The first capture (or the whole match), what `gsub` indexes a
     /// replacement table with.
     pub fn first_capture(&self, s: usize, e: usize) -> Result<Capture, String> {
         if self.level == 0 {
@@ -90,7 +90,7 @@ impl<'a> Matcher<'a> {
         }
     }
 
-    /// Capture `i` (0-based); `%0` in a replacement is the whole match.
+    /// Capture `i` (0-based). `%0` in a replacement is the whole match.
     pub fn capture_or_whole(&self, i: usize, s: usize, e: usize) -> Result<Capture, String> {
         if i == 0 && self.level == 0 {
             return Ok(Capture::Str(s, e));
@@ -221,7 +221,7 @@ impl<'a> Matcher<'a> {
             if self.pat_at(p) == b'^' {
                 p += 1;
             }
-            // Look for the `]`; the first character may be a `]` itself.
+            // look for the `]`, the first character might be a `]` itself
             loop {
                 if p >= self.pat.len() {
                     return Err("malformed pattern (missing ']')".into());
@@ -399,9 +399,9 @@ fn match_class(c: u8, class: u8) -> bool {
     }
 }
 
-/// `string.find`/`match` on `src` from byte `init`: the match's range and
-/// the pattern's own captures (empty if it has none). `^...` patterns
-/// only try `init`.
+/// `string.find`/`match` on `src` from byte `init`: the match's range and the
+/// pattern's own captures (empty if it has none). `^...` patterns only try
+/// `init`.
 pub fn find(
     src: &[u8],
     pat: &[u8],

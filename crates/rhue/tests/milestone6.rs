@@ -19,12 +19,12 @@ fn type_errors(e: &mut Engine, src: &str) -> Vec<String> {
     }
 }
 
-// --- modes -------------------------------------------------------------------------
+// ─ Modes ─────────────────────────────────────────────────────────────────────
 
 #[test]
 fn checking_is_opt_in_by_default() {
     let mut e = Engine::new();
-    // No directive: runs as before, types are just erased.
+    // no directive: runs as before, types are just erased
     assert_eq!(
         e.eval_as::<String>("local x: number = 'one' return x")
             .unwrap(),
@@ -47,9 +47,9 @@ fn the_default_mode_can_be_strict() {
     let mut e = Engine::new();
     e.set_default_type_mode(TypeMode::Strict);
     assert_eq!(e.eval("print(nope)").unwrap_err().kind, ErrorKind::Type);
-    // Expressions are checked too.
+    // expressions are checked too
     assert_eq!(e.eval_expr("1 + 'a'").unwrap_err().kind, ErrorKind::Type);
-    // A chunk can opt out.
+    // a chunk can opt out
     assert!(e.eval("--!nocheck\nlocal x: number = 'one'").is_ok());
 }
 
@@ -71,7 +71,7 @@ fn a_chunk_with_type_errors_does_not_run() {
             "Unknown global 'c'",
         ]
     );
-    // Each points at its own line.
+    // each points at its own line
     assert_eq!(err.diagnostics[2].span().text(src), "c");
     let rendered = err.render(false);
     assert!(rendered.contains("bad.rhue:5"), "{rendered}");
@@ -86,12 +86,12 @@ fn check_is_strict_unless_the_source_says_otherwise() {
     );
     assert!(type_errors(&mut e, "--!nonstrict\nlocal x = 1 x = 'a'").is_empty());
     assert!(type_errors(&mut e, "--!nocheck\nlocal x: number = {}").is_empty());
-    // Checking doesn't define anything.
+    // checking doesn't define anything
     e.check("t", "function onlyChecked() end").unwrap();
     assert_eq!(e.global("onlyChecked"), Value::Nil);
 }
 
-// --- declarations from the host ---------------------------------------------------------
+// ─ Declarations from the Host ────────────────────────────────────────────────
 
 #[test]
 fn registered_functions_have_signatures() {
@@ -248,8 +248,8 @@ fn userdata_types_are_classes() {
 
 #[test]
 fn types_registered_inside_natives_are_declared_too() {
-    // A userdata type first used inside a native (no register_type) still
-    // gets its fields declared when the native's signature mentions it.
+    // a userdata type first used inside a native (no register_type) still gets
+    // its fields declared when the native's signature mentions it
     #[derive(UserData, Clone)]
     struct Token {
         text: String,
@@ -293,7 +293,7 @@ fn set_global_and_declare() {
     assert_eq!(err.kind, ErrorKind::Syntax);
 }
 
-// --- chunks see each other's globals ------------------------------------------------------
+// ─ Chunks See Each Other's Globals ───────────────────────────────────────────
 
 #[test]
 fn later_chunks_see_earlier_globals() {
@@ -308,14 +308,15 @@ fn later_chunks_see_earlier_globals() {
             "Type '\"many\"' could not be converted into 'number'",
         ]
     );
-    // Unchecked chunks define globals too (as `any`), so strict code can use them.
+    // unchecked chunks define globals too (as `any`), so strict code can use
+    // them
     e.eval("helper = function(x) return x end").unwrap();
     assert!(type_errors(&mut e, "local y = helper(1)").is_empty());
-    // A script's global can be redefined (as in a REPL session).
+    // a script's global can be redefined (as in a REPL session)
     e.eval("--!strict\nfunction greet(n: number): number return n end")
         .unwrap();
     assert_eq!(e.global_type("greet").unwrap(), "(number) -> number");
-    // Host declarations can't be redefined by scripts.
+    // host declarations can't be redefined by scripts
     assert_eq!(
         type_errors(&mut e, "print = 5"),
         ["Type 'number' could not be converted into '(...any) -> ()'"]
@@ -332,7 +333,7 @@ fn a_chunk_that_fails_to_check_defines_nothing() {
     assert_eq!(e.global_type("f"), None);
 }
 
-// --- types don't change what code does ---------------------------------------------------------
+// ─ Types Don't Change What Code Does ─────────────────────────────────────────
 
 #[test]
 fn types_are_erased() {
@@ -362,7 +363,7 @@ fn types_are_erased() {
 
 #[test]
 fn a_typed_program() {
-    // Something realistic, start to finish.
+    // something realistic, start to finish
     let mut e = Engine::new();
     let src = r#"--!strict
         type Item = { name: string, price: number, tags: {string}? }

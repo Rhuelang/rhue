@@ -1,17 +1,17 @@
-//! Property test for milestone 6: the type checker is *sound* on the
-//! language it generates programs from. Random `--!strict` programs mix
-//! annotated and inferred locals, optionals, unions, a record table with an
-//! optional field, early returns, loops and narrowing conditions. Most are
-//! ill-typed and rejected; every one the checker accepts is then run, and
-//! must not fail with a type error at runtime (arithmetic on nil, indexing
-//! a number, comparing a string with a number, ...).
+//! Property test for milestone 6: the type checker is *sound* on the language
+//! it generates programs from. Random `--!strict` programs mix annotated and
+//! inferred locals, optionals, unions, a record table with an optional field,
+//! early returns, loops and narrowing conditions. Most are ill-typed and get
+//! rejected, and every one the checker accepts gets run and can't fail with a
+//! type error at runtime (arithmetic on nil, indexing a number, comparing a
+//! string with a number, ...).
 //!
-//! Left out on purpose, because they are `any` by design (the escape
-//! hatches of gradual typing): `::` casts (`x :: any` says "trust me") and
-//! unannotated locals initialised with `nil`.
+//! Left out on purpose, since they're `any` by design (the escape hatches of
+//! gradual typing): `::` casts (`x :: any` means "trust me") and unannotated
+//! locals initialised with `nil`.
 //!
-//! Every program, accepted or not, is also checked in non-strict mode, so
-//! the checker is exercised on plenty of ill-typed input without panicking.
+//! Every program, accepted or not, also gets checked in non-strict mode, so the
+//! checker sees plenty of ill-typed input without panicking.
 
 use std::cell::Cell;
 
@@ -52,7 +52,7 @@ enum S {
     If(C, Vec<S>, Option<Vec<S>>),
     ReturnIf(C, E),
     While(C, Vec<S>),
-    /// Runs its body twice, so narrowing must survive a second iteration.
+    /// Runs its body twice, so narrowing has to survive a second iteration.
     Twice(Vec<S>),
 }
 
@@ -262,7 +262,7 @@ fn program() -> impl Strategy<Value = Program> {
         })
 }
 
-/// Messages of runtime errors a well-typed program must never raise.
+/// Messages of runtime errors a well-typed program should never raise.
 const TYPE_ERRORS: &[&str] = &[
     "attempt to perform arithmetic",
     "attempt to concatenate",
@@ -286,7 +286,7 @@ fn accepted_strict_programs_never_raise_type_errors() {
         .run(&program(), |p| {
             let src = p.source();
             total.set(total.get() + 1);
-            // Never panics, in either mode.
+            // never panics, in either mode
             let mut lenient = Engine::new();
             let nonstrict = src.replacen("--!strict", "--!nonstrict", 1);
             let _ = lenient.compile("p", &nonstrict);
@@ -313,7 +313,7 @@ fn accepted_strict_programs_never_raise_type_errors() {
             Ok(())
         })
         .unwrap();
-    // The property means something only if the checker accepts a fair share.
+    // the property means something only if the checker accepts a fair share
     let (a, t) = (accepted.get(), total.get());
     assert!(a * 20 >= t, "only {a} of {t} programs were accepted");
     println!("accepted {a} of {t}");
@@ -321,7 +321,7 @@ fn accepted_strict_programs_never_raise_type_errors() {
 
 #[test]
 fn checking_never_changes_what_a_program_does() {
-    // The same accepted program gives the same result with checking on and off.
+    // the same accepted program gives the same result with checking on and off
     let mut runner = TestRunner::new(Config {
         cases: 800,
         failure_persistence: None,

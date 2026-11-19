@@ -1,18 +1,18 @@
-//! Debug hooks: the host can ask to be called when execution reaches a new
-//! line, enters a Lua function, or returns from one, and inspect the stack
-//! from inside the hook (each frame's function, line, locals and
-//! upvalues). Debuggers build breakpoints and stepping on top of this.
+//! Debug hooks. The host can ask to be called when execution hits a new line,
+//! enters a Lua function, or returns from one, and look at the stack from
+//! inside the hook (each frame's function, line, locals and upvalues).
+//! Debuggers build breakpoints and stepping on top of this.
 //!
-//! **Cost.** The dispatch loop reads the hook mask into locals once per
-//! frame switch; with no hook, each instruction pays one predictable
-//! branch on a local. With a line hook, each instruction also looks up its
-//! line (a binary search over the source's line table) and the hook runs
-//! only when the line changes or a jump goes backwards.
+//! **Cost.** The dispatch loop reads the hook mask into locals once per frame
+//! switch, so with no hook each instruction pays one predictable branch on a
+//! local. With a line hook each instruction also looks up its line (a binary
+//! search over the source's line table), and the hook only runs when the line
+//! changes or a jump goes backwards.
 //!
-//! **Re-entrancy.** While the hook runs it is taken out of the VM, so
-//! scripts the hook calls (to evaluate something, say) don't trigger it.
-//! A hook that returns `Err` stops the script with that message; scripts
-//! can't catch it.
+//! **Re-entrancy.** While the hook runs it's taken out of the VM, so scripts
+//! the hook calls (to evaluate something, say) don't trigger it. A hook that
+//! returns `Err` stops the script with that message, and scripts can't catch
+//! it.
 
 use std::rc::Rc;
 
@@ -24,10 +24,10 @@ use crate::{Frame, NativeError, Thrown, Value, Vm};
 /// What the hook is told about.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DebugEvent {
-    /// About to run the first instruction of a new line (or of the same
-    /// line again, after a backward jump), 1-based.
+    /// About to run the first instruction of a new line (or the same line again
+    /// after a backward jump), 1-based.
     Line(u32),
-    /// A Lua function was entered (natives aren't reported).
+    /// A Lua function got entered (natives aren't reported).
     Call,
     /// A Lua function is about to return.
     Return,
@@ -44,13 +44,14 @@ pub struct HookMask {
 /// The host's hook. `Err(message)` stops the script.
 pub type DebugHook = Box<dyn FnMut(&mut DebugCtx<'_>, DebugEvent) -> Result<(), String>>;
 
-/// One frame of the stack, as a debugger shows it.
+/// One frame of the stack, the way a debugger shows it.
 #[derive(Clone, Debug)]
 pub struct FrameInfo {
-    /// The function's name (`<main>` for a chunk, `<anonymous>` without one).
+    /// The function's name (`<main>` for a chunk, `<anonymous>` if it doesn't
+    /// have one).
     pub function: String,
     pub source: Rc<SourceFile>,
-    /// The line it's executing (or, for a caller, the line of the call).
+    /// The line it's on (or for a caller, the line of the call).
     pub line: u32,
 }
 
@@ -65,8 +66,8 @@ pub(crate) struct HookState {
     pub(crate) mask: HookMask,
     /// The last line event: (prototype, frame depth, line, pc).
     pub(crate) last_line: Option<(*const rhue_bytecode::Proto, usize, u32, usize)>,
-    /// A return event already reported at (depth, pc): the instruction
-    /// re-dispatches after the hook and mustn't report again.
+    /// A return event already reported at (depth, pc). The instruction
+    /// re-dispatches after the hook and shouldn't report again.
     pub(crate) reported: Option<(usize, usize, DebugEvent)>,
 }
 
@@ -87,8 +88,8 @@ impl Vm {
         self.hooks.mask
     }
 
-    /// Before the instruction at `pc` of `proto`, with a hook installed:
-    /// the event to report there, if any (a new line, or a return).
+    /// Before the instruction at `pc` of `proto`, with a hook installed: the
+    /// event to report there, if any (a new line, or a return).
     pub(crate) fn hook_due(
         &mut self,
         proto: &rhue_bytecode::Proto,
@@ -127,7 +128,7 @@ impl Vm {
         fire.then_some(line)
     }
 
-    /// Reports `event` (`f` parked at `pc`); re-dispatch from `pc`.
+    /// Reports `event` (`f` parked at `pc`), then re-dispatch from `pc`.
     pub(crate) fn hook_event(
         &mut self,
         f: &mut Frame,
@@ -137,13 +138,12 @@ impl Vm {
         self.run_hook(f, pc, event)
     }
 
-    /// Reports entering `f`; re-dispatch.
+    /// Reports entering `f`, then re-dispatch.
     pub(crate) fn call_event(&mut self, f: &mut Frame) -> Result<(), Thrown> {
         self.run_hook(f, 0, DebugEvent::Call)
     }
 
-    /// Parks `f` (so the hook sees it on the stack, at `pc`) and runs the
-    /// hook.
+    /// Parks `f` (so the hook sees it on the stack, at `pc`) and runs the hook.
     fn run_hook(&mut self, f: &mut Frame, pc: usize, event: DebugEvent) -> Result<(), Thrown> {
         let Some(mut hook) = self.hooks.hook.take() else {
             return Ok(());
@@ -154,7 +154,7 @@ impl Vm {
         let result = hook(&mut DebugCtx { vm: self }, event);
         *f = self.frames.pop().expect("the hooked frame");
         f.pc = pc;
-        // The hook may have replaced itself; keep the new one if so.
+        // the hook might've replaced itself, keep the new one if so
         if self.hooks.hook.is_none() {
             self.hooks.hook = Some(hook);
         }
@@ -203,7 +203,7 @@ impl DebugCtx<'_> {
     }
 
     /// The locals in scope in frame `level`, in declaration order (a local
-    /// shadowed by a later one of the same name is left out).
+    /// shadowed by a later one with the same name gets left out).
     pub fn locals(&self, level: usize) -> Vec<(Rc<str>, Value)> {
         let Some(f) = self.frames().nth(level) else {
             return Vec::new();

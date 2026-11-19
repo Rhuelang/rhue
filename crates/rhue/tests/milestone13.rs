@@ -33,7 +33,7 @@ fn every_example_round_trips_exactly() {
         let bytes = proto.to_bytes();
         let back = Proto::from_bytes(&bytes).unwrap();
         assert_eq!(*back, *proto, "{name}");
-        // Smaller than the source plus its code would be in memory.
+        // smaller than the source plus its code would be in memory
         assert!(bytes.len() < src.len() * 6, "{name}: {} bytes", bytes.len());
         assert_eq!(back.to_bytes(), bytes, "{name}");
     }
@@ -58,7 +58,7 @@ fn loaded_chunks_run_like_compiled_ones() {
     let bytes = compiler.compile_to_bytes("counter.rhue", src).unwrap();
     let expected = compiler.eval_named("counter.rhue", src).unwrap();
 
-    // A fresh engine runs the bytes, as often as asked.
+    // a fresh engine runs the bytes, as often as asked
     let mut e = Engine::new();
     let proto = e.load(&bytes).unwrap();
     for _ in 0..3 {
@@ -115,7 +115,7 @@ fn bad_bytes_are_refused() {
     let err = e.load(&other).unwrap_err();
     assert!(err.to_string().contains("format 99"), "{err}");
 
-    // Every truncation is an error, never a panic.
+    // every truncation is an error, never a panic
     for n in 0..bytes.len() {
         assert_eq!(
             e.load(&bytes[..n]).unwrap_err().kind,
@@ -146,12 +146,12 @@ fn the_verifier_guards_loading() {
         p.to_bytes()
     };
     let mut e = Engine::new();
-    // A register beyond the frame.
+    // a register beyond the frame
     let bad = edit(&|p| p.max_stack = 1);
     let err = e.load(&bad).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Load);
     assert!(err.to_string().contains("compiled chunk rejected"), "{err}");
-    // Debug info the debugger would trust.
+    // debug info the debugger would trust
     let bad = edit(&|p| p.locals[0].reg = 200);
     assert!(
         e.load(&bad)
@@ -161,7 +161,7 @@ fn the_verifier_guards_loading() {
     );
     let bad = edit(&|p| p.locals[1].end_pc = 999);
     assert!(e.load(&bad).is_err());
-    // Spans beyond the text are refused while reading.
+    // spans beyond the text are refused while reading
     let bad = edit(&|p| p.source = rhue::SourceFile::new("t.rhue", "x"));
     assert!(
         e.load(&bad)
@@ -169,7 +169,7 @@ fn the_verifier_guards_loading() {
             .to_string()
             .contains("span outside")
     );
-    // And `run` verifies hand-made prototypes the same way.
+    // and `run` verifies hand-made prototypes the same way
     let mut p = (*proto).clone();
     p.locals[0].reg = 200;
     assert_eq!(e.run(&Rc::new(p)).unwrap_err().kind, ErrorKind::Compile);
@@ -192,11 +192,10 @@ fn loaded_chunks_work_with_the_rest_of_the_engine() {
     assert_eq!(fresh.run(&proto).unwrap(), vec![Value::from("hello ada")]);
 }
 
-/// `examples/tables.rhue` (the README's first example) stopped passing its
-/// own `--!strict` once class methods got a typed `self` (M9): in a plain
-/// table's method, `self` is usually an object the methods were copied
-/// into, so it's open (unknown fields are `any`), but known fields keep
-/// their types.
+/// `examples/tables.rhue` (the README's first example) stopped passing its own
+/// `--!strict` once class methods got a typed `self` (M9). In a plain table's
+/// method `self` is usually an object the methods got copied into, so it's open
+/// (unknown fields are `any`), but known fields keep their types.
 #[test]
 fn self_in_a_plain_tables_methods_is_open() {
     let mut e = Engine::new();

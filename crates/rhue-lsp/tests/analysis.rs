@@ -74,7 +74,7 @@ fn diagnostics_follow_the_directive() {
         ]
     );
     assert_eq!(d[0].range.start, Position::new(1, 18));
-    // Without a directive files are checked non-strictly: annotations count.
+    // without a directive files are checked non-strictly: annotations count
     let loose = "local x: number = 'a'\nlocal y = nope";
     let d = rhue_lsp::diagnostics(&docs, &uri(), loose);
     assert_eq!(d.len(), 1);
@@ -95,7 +95,7 @@ fn hover_shows_types() {
         hover("local p = { x = 1, name = 'a' }\nprint(p.na|me)").as_deref(),
         Some("string")
     );
-    // Even unchecked files get (lenient) types.
+    // even unchecked files get (lenient) types
     assert_eq!(
         hover("--!nocheck\nlocal s = ('x'):up|per()").as_deref(),
         Some("string")
@@ -113,7 +113,7 @@ fn definitions_and_references() {
     let refs = rhue_lsp::references(&docs, &uri(), &text, pos);
     let lines: Vec<u32> = refs.iter().map(|l| l.range.start.line).collect();
     assert_eq!(lines, [0, 2, 3, 5]);
-    // Shadowing: the inner `x` is a different local.
+    // shadowing: the inner `x` is a different local
     let src = "local x = 1\ndo\n\tlocal x = 2\n\tprint(|x)\nend";
     let (text, pos) = at(src);
     let def = rhue_lsp::definition(&docs, &uri(), &text, pos).unwrap();
@@ -135,14 +135,14 @@ fn definition_of_a_required_module() {
     let docs = Docs::default();
     let def = rhue_lsp::definition(&docs, &main, &text, pos).unwrap();
     assert!(def.uri.path().ends_with("util/strings.rhue"), "{}", def.uri);
-    // The module's types reach the requiring file.
+    // the module's types reach the requiring file
     let d = rhue_lsp::diagnostics(&docs, &main, &text);
     assert_eq!(d.len(), 1);
     assert_eq!(
         d[0].message,
         "Type 'string' could not be converted into 'number'"
     );
-    // An open (unsaved) version of the module wins over the file on disk.
+    // an open (unsaved) version of the module wins over the file on disk
     let mut docs = Docs::default();
     let module = Url::from_file_path(dir.join("util/strings.rhue")).unwrap();
     docs.open.insert(
@@ -169,7 +169,7 @@ fn member_completion() {
         got.iter()
             .any(|c| c.0 == "greet" && c.1 == Some(CompletionItemKind::FUNCTION))
     );
-    // Methods through a class's metatable, after `:` (only functions).
+    // methods through a class's metatable, after `:` (only functions)
     let class = "--!strict
 local Account = {}
 Account.__index = Account
@@ -185,13 +185,13 @@ a:de|";
         got.contains(&"balance".to_string()) && got.contains(&"deposit".to_string()),
         "{got:?}"
     );
-    // Strings complete to the string library.
+    // strings complete to the string library
     let got = labels("local s = 'x'\ns:|");
     assert!(
         got.contains(&"upper".to_string()) && got.contains(&"gsub".to_string()),
         "{got:?}"
     );
-    // Library tables.
+    // library tables
     let got = labels("string.|");
     assert!(got.contains(&"format".to_string()), "{got:?}");
 }
@@ -253,13 +253,13 @@ fn rename_changes_a_local_everywhere() {
         rename(src, "total").unwrap(),
         "local total = 0\nlocal function bump()\n  total += 1\n  return `n={total}`\nend\nprint(total)\n"
     );
-    // From the declaration too, and only that variable (not a shadowing one).
+    // from the declaration too, and only that variable (not a shadowing one)
     let src = "local |x = 1\ndo\n  local x = 2\n  print(x)\nend\nprint(x)\n";
     assert_eq!(
         rename(src, "y").unwrap(),
         "local y = 1\ndo\n  local x = 2\n  print(x)\nend\nprint(y)\n"
     );
-    // Parameters and functions.
+    // parameters and functions
     let src = "local function add(a, b) return a + b end\nprint(ad|d(1, 2))\n";
     assert_eq!(
         rename(src, "plus").unwrap(),
@@ -276,11 +276,11 @@ fn rename_refuses_what_it_cant_do_safely() {
     assert!(err("local t = {}\nt.fi|eld = 1\n", "f").contains("only locals"));
     assert!(err("local |a = 1\n", "end").contains("isn't a valid name"));
     assert!(err("local |a = 1\n", "2x").contains("isn't a valid name"));
-    // `b` inside the block would start meaning the renamed `a`.
+    // `b` inside the block would start meaning the renamed `a`
     assert!(
         err("local b = 1\nlocal |a = 2\nprint(a, b)\n", "b").contains("change what another name")
     );
-    // A global used in the scope would be captured.
+    // a global used in the scope would be captured
     assert!(
         err("local |a = 2\nprint(a, tostring)\n", "tostring").contains("change what another name")
     );
@@ -315,7 +315,7 @@ fn signature_help_for_the_call_at_the_cursor() {
     assert_eq!(s.0, "add(a: number, b: string) -> number");
     assert_eq!(s.1, ["a: number", "b: string"]);
     assert_eq!(s.2, 1);
-    // While typing, before the call parses.
+    // while typing, before the call parses
     assert_eq!(signature(&format!("{defs}add(|")).unwrap().2, 0);
     assert_eq!(
         signature(&format!("{defs}local x = add(1, |\nprint(x)"))
@@ -323,13 +323,13 @@ fn signature_help_for_the_call_at_the_cursor() {
             .2,
         1
     );
-    // Commas in nested calls, tables and strings don't count.
+    // commas in nested calls, tables and strings don't count
     let s = signature(&format!(
         "{defs}add(math.max(1, 2), {{ 1, 2 }}, \"a, b\", |"
     ))
     .unwrap();
     assert_eq!(s.2, 3);
-    // Library functions (no names to show) and methods (no `self`).
+    // library functions (no names to show) and methods (no `self`)
     let s = signature("string.rep(\"a\", |)").unwrap();
     assert_eq!(s.0, "string.rep(string, number) -> string");
     assert_eq!(s.2, 1);
@@ -339,11 +339,11 @@ fn signature_help_for_the_call_at_the_cursor() {
     let s = signature(&format!("{obj}obj:get(\"k\", |)")).unwrap();
     assert_eq!(s.0, "obj:get(key: string, default: number?) -> number");
     assert_eq!(s.2, 1);
-    // Variadics keep highlighting the last parameter.
+    // variadics keep highlighting the last parameter
     let s = signature("print(1, 2, 3|)").unwrap();
     assert_eq!(s.0, "print(...any)");
     assert_eq!(s.2, 0);
-    // Not in a call, or inside a string in one.
+    // not in a call, or inside a string in one
     assert!(signature("local x = 1|").is_none());
     assert!(signature(&format!("{defs}add(\"(|\")")).is_none_or(|s| s.0.starts_with("add")));
     assert!(signature("-- print(|\n").is_none());
@@ -354,8 +354,8 @@ fn incremental_edits_apply_by_utf16_range() {
     let mut docs = Docs::default();
     let u = uri();
     docs.set_text(&u, "local s = \"héllo 😀\"\nprint(s)\n".into());
-    // Replace `print` (line 1, columns 0..5) with `warn`, then insert
-    // after the emoji (a surrogate pair: two UTF-16 units).
+    // replace `print` (line 1, columns 0..5) with `warn`, then insert after the
+    // emoji (a surrogate pair: two UTF-16 units)
     docs.apply_change(
         &u,
         Some(Range::new(Position::new(1, 0), Position::new(1, 5))),
@@ -367,7 +367,7 @@ fn incremental_edits_apply_by_utf16_range() {
         "!",
     );
     assert_eq!(docs.open[&u], "local s = \"héllo 😀!\"\nwarn(s)\n");
-    // No range: the whole text.
+    // no range: the whole text
     docs.apply_change(&u, None, "return 1");
     assert_eq!(docs.open[&u], "return 1");
 }
@@ -396,14 +396,14 @@ fn requests_share_an_analysis_and_imports_are_checked_once() {
     assert!(rhue_lsp::diagnostics(&docs, &main, &text).is_empty());
     let (a0, m0) = stats(&docs);
     assert_eq!((a0, m0), (1, 1));
-    // Hover, definition and references after the same keystroke reuse it.
+    // hover, definition and references after the same keystroke reuse it
     let pos = Position::new(2, 7);
     rhue_lsp::hover(&docs, &main, &text, pos).unwrap();
     rhue_lsp::definition(&docs, &main, &text, pos);
     rhue_lsp::references(&docs, &main, &text, pos);
     assert_eq!(stats(&docs), (1, 1));
 
-    // Typing in main re-analyzes main, but not `util`.
+    // typing in main re-analyzes main, but not `util`
     let others = docs.apply_change(
         &main,
         Some(Range::new(Position::new(2, 6), Position::new(2, 7))),
@@ -414,7 +414,7 @@ fn requests_share_an_analysis_and_imports_are_checked_once() {
     assert!(rhue_lsp::diagnostics(&docs, &main, &text).is_empty());
     assert_eq!(stats(&docs), (2, 1));
 
-    // Opening util with a different type: main depends on it, other doesn't.
+    // opening util with a different type: main depends on it, other doesn't
     rhue_lsp::diagnostics(&docs, &other, "print(1)\n");
     let affected = docs.set_text(
         &util,
@@ -424,15 +424,15 @@ fn requests_share_an_analysis_and_imports_are_checked_once() {
     let d = rhue_lsp::diagnostics(&docs, &main, &text);
     assert_eq!(d.len(), 1, "{d:?}");
     assert_eq!(stats(&docs).1, 2);
-    // `other` kept its analysis.
+    // `other` kept its analysis
     let before = stats(&docs).0;
     rhue_lsp::diagnostics(&docs, &other, "print(1)\n");
     assert_eq!(stats(&docs).0, before);
 
-    // Closing util goes back to the file on disk.
+    // closing util goes back to the file on disk
     assert_eq!(docs.close(&util), std::slice::from_ref(&main));
     assert!(rhue_lsp::diagnostics(&docs, &main, &text).is_empty());
-    // A file changing on disk affects documents that read modules.
+    // a file changing on disk affects documents that read modules
     std::fs::write(dir.join("util.rhue"), "return 5").unwrap();
     assert_eq!(docs.files_changed(), std::slice::from_ref(&main));
     assert_eq!(rhue_lsp::diagnostics(&docs, &main, &text).len(), 1);

@@ -2,18 +2,17 @@
 //! instructions they affect (indexing, assignment, arithmetic, comparison,
 //! concatenation, length, calls).
 //!
-//! The dispatch loop handles the common cases inline and comes here only
-//! when a value isn't what the instruction handles directly, or when a
-//! table lookup misses on a table that has a metatable.
+//! The dispatch loop handles the common cases inline and only comes here when a
+//! value isn't something the instruction handles directly, or when a table
+//! lookup misses on a table with a metatable.
 //!
 //! A Lua metamethod runs in the same dispatch loop as the instruction that
-//! needs it, as an ordinary call frame placed just above the caller's
-//! registers ([`Vm::meta_call`]). Its result goes straight to the
-//! instruction's destination register when it returns, or, for `__eq`,
-//! `__lt` and `__le`, decides the jump that follows the comparison. So
-//! metamethods cost about as much as a call, nest as deeply as calls, and
-//! can yield. Only `__iter`, `__tostring` (and metamethods reached from
-//! natives) still run nested.
+//! needs it, as a normal call frame right above the caller's registers
+//! ([`Vm::meta_call`]). When it returns its result goes straight to the
+//! instruction's destination register, or for `__eq`, `__lt` and `__le`,
+//! decides the jump after the comparison. So metamethods cost about as much as
+//! a call, nest as deep as calls, and can yield. Only `__iter`, `__tostring`
+//! (and metamethods reached from natives) still run nested.
 
 use smallvec::SmallVec;
 
@@ -25,7 +24,7 @@ use crate::{Frame, MAX_NATIVE_DEPTH, Rets, Thrown, Value, Vm, arith_values, comp
 pub(crate) enum MetaDest {
     /// This absolute stack slot (the instruction's `R(A)`).
     Reg(usize),
-    /// Its truth decides the comparison's jump; `true` is the instruction's
+    /// Its truth decides the comparison's jump. `true` is the instruction's
     /// expected result (`A`).
     Cond(bool),
     /// Nowhere (`__newindex`).
@@ -33,8 +32,8 @@ pub(crate) enum MetaDest {
 }
 use rhue_bytecode::{ArithOp, Op};
 
-/// How many `__index` / `__newindex` tables a lookup follows before giving
-/// up (a cycle would otherwise loop forever).
+/// How many `__index` / `__newindex` tables a lookup follows before giving up
+/// (a cycle would loop forever otherwise).
 const MAX_CHAIN: usize = 100;
 
 /// The metamethods Rhue knows, in the order of [`EVENT_NAMES`].
@@ -114,10 +113,10 @@ impl Events {
     }
 }
 
-/// `t[key]` for a string key when `t`'s metatable has an `__index` *table*
-/// without a metatable of its own (the usual class): the one lookup the
-/// dispatch loop does inline. `None` means "take the slow path". A free
-/// function so it borrows only the heap and the event names.
+/// `t[key]` for a string key when `t`'s metatable has an `__index` *table* with
+/// no metatable of its own (the usual class). The one lookup the dispatch loop
+/// does inline. `None` means take the slow path. It's a free function so it
+/// only borrows the heap and the event names.
 #[inline]
 pub(crate) fn class_lookup(
     heap: &crate::Heap,
@@ -139,7 +138,7 @@ pub(crate) fn class_lookup(
 }
 
 impl Vm {
-    /// The metatable of `v`: a table's own, or the shared one for strings.
+    /// The metatable of `v`, a table's own or the shared one for strings.
     pub(crate) fn metatable_of(&self, v: Value) -> Option<TableRef> {
         match v {
             Value::Table(t) => self.heap.table(t).meta(),
@@ -156,9 +155,9 @@ impl Vm {
         }
     }
 
-    /// Calls a metamethod nested, to completion (for `__iter` and
-    /// `__tostring`): the frame is parked so the collector and tracebacks
-    /// see it, and the call nests like a native's (so it can't yield).
+    /// Calls a metamethod nested, to the end (for `__iter` and `__tostring`).
+    /// The frame gets parked so the collector and tracebacks see it, and the
+    /// call nests like a native's (so it can't yield).
     pub(crate) fn call_meta(
         &mut self,
         f: &mut Frame,
@@ -192,11 +191,11 @@ impl Vm {
             .unwrap_or(Value::Nil))
     }
 
-    /// Calls metamethod `h` for the instruction at `pc` in this dispatch
-    /// loop. A Lua function gets a frame just above `f`'s registers (and
-    /// becomes `f`; the caller waits in `frames`), which delivers its first
-    /// result to `dest` when it returns. Anything else (a native, a callable
-    /// table) runs now and its result is delivered at once.
+    /// Calls metamethod `h` for the instruction at `pc` in this dispatch loop.
+    /// A Lua function gets a frame right above `f`'s registers (and becomes
+    /// `f`, the caller waits in `frames`), which delivers its first result to
+    /// `dest` when it returns. Anything else (a native, a callable table) runs
+    /// now and its result gets delivered right away.
     pub(crate) fn meta_call(
         &mut self,
         f: &mut Frame,
@@ -222,7 +221,7 @@ impl Vm {
         let mut top = 0;
         self.call(f, pc, slot, n, Some(want), &mut top, false)?;
         if self.frames.len() > frames {
-            // `f` is now the metamethod's frame.
+            // `f` is the metamethod's frame now
             match dest {
                 MetaDest::Reg(r) => f.ret_to = r as u32,
                 MetaDest::Cond(expect) => f.cond = Some(expect),
@@ -239,9 +238,8 @@ impl Vm {
         Ok(())
     }
 
-    /// `obj[key]` with `__index`, for `GETTABLE`, `GETFIELD` and `SELF`:
-    /// the value goes to `dest` (now, or when an `__index` function
-    /// returns).
+    /// `obj[key]` with `__index`, for `GETTABLE`, `GETFIELD` and `SELF`. The
+    /// value goes to `dest` (now, or when an `__index` function returns).
     #[inline(never)]
     pub(crate) fn index_meta(
         &mut self,
@@ -352,8 +350,7 @@ impl Vm {
         }
     }
 
-    /// Arithmetic that isn't on two numbers: `__add` and friends, or the
-    /// error.
+    /// Arithmetic that isn't on two numbers: `__add` and friends, or the error.
     #[inline(never)]
     pub(crate) fn arith_meta(
         &mut self,
@@ -439,7 +436,7 @@ impl Vm {
     }
 
     /// `l == r` for two values that aren't raw-equal (`expect` is the
-    /// instruction's `A`): `__eq` applies only when both are tables.
+    /// instruction's `A`). `__eq` only applies when both are tables.
     #[inline(never)]
     pub(crate) fn eq_meta(
         &mut self,
@@ -479,9 +476,9 @@ impl Vm {
         }
     }
 
-    /// Makes the value at `slot` callable: while it isn't a function, its
-    /// `__call` takes its place and it becomes the first argument.
-    /// Returns the new argument count.
+    /// Makes the value at `slot` callable. While it isn't a function its
+    /// `__call` takes its place and it becomes the first argument. Returns the
+    /// new argument count.
     pub(crate) fn resolve_call(&mut self, slot: usize, nargs: usize) -> Result<usize, String> {
         for nargs in (nargs..).take(MAX_CHAIN) {
             let callee = self.stack[slot];
@@ -523,7 +520,7 @@ impl Vm {
         Ok(true)
     }
 
-    /// `INTERP` when a piece may have `__tostring`.
+    /// `INTERP` when a piece might have `__tostring`.
     pub(crate) fn interp_meta(
         &mut self,
         f: &mut Frame,

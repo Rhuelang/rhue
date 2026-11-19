@@ -1,19 +1,18 @@
-//! Coroutines: each one is a [`Thread`] with its own value stack, call
-//! frames and open upvalues. The running thread's state lives in the `Vm`
-//! itself; `resume` parks the resumer's state in its thread object, loads
-//! the coroutine's, and runs it in a nested interpreter loop until it
-//! yields, returns or fails, then swaps back.
+//! Coroutines. Each one is a [`Thread`] with its own value stack, call frames
+//! and open upvalues. The running thread's state lives in the `Vm` itself.
+//! `resume` parks the resumer's state in its thread object, loads the
+//! coroutine's, and runs it in a nested interpreter loop until it yields,
+//! returns or fails, then swaps back.
 //!
 //! **Yielding.** `coroutine.yield` doesn't unwind the Rust stack through
-//! anything clever: it is only allowed at the depth the coroutine was
-//! resumed at (`Vm::depth`), so the only Rust frames between the yield and
-//! the resume are the coroutine's own dispatch loop. That loop puts its
-//! current frame back on the coroutine's frame list and returns a yield
-//! signal; the next resume pops that frame, drops the resume arguments
-//! where the `yield` call's results go, and carries on. Yielding from
-//! inside a native's callback (a `table.sort` comparator, say) raises
-//! "attempt to yield across a C-call boundary". Metamethods run in the
-//! same dispatch loop, so they can yield.
+//! anything clever. It's only allowed at the depth the coroutine was resumed at
+//! (`Vm::depth`), so the only Rust frames between the yield and the resume are
+//! the coroutine's own dispatch loop. That loop puts its current frame back on
+//! the coroutine's frame list and returns a yield signal, then the next resume
+//! pops that frame, drops the resume arguments where the `yield` call's results
+//! go, and keeps going. Yielding from inside a native's callback (like a
+//! `table.sort` comparator) raises "attempt to yield across a C-call boundary".
+//! Metamethods run in the same dispatch loop, so they can yield.
 
 use std::rc::Rc;
 
@@ -38,8 +37,8 @@ impl Vm {
         Value::Thread(self.heap.alloc_thread(state, CoStatus::Suspended))
     }
 
-    /// Resumes coroutine `co` from the host (or a native): its yielded or
-    /// returned values, or the error that killed it.
+    /// Resumes coroutine `co` from the host (or a native). Gives back its
+    /// yielded or returned values, or the error that killed it.
     pub fn resume(&mut self, co: ThreadRef, args: &[Value]) -> Result<Vec<Value>, Rethrown> {
         if !self.is_running() {
             self.reset_budget();
@@ -52,24 +51,24 @@ impl Vm {
         }
     }
 
-    /// Whether the running coroutine was last resumed by the host (or a
-    /// native, through [`resume`](Self::resume)), rather than by a script's
-    /// `coroutine.resume` or `wrap`: a yield goes back to the host.
+    /// Whether the running coroutine was last resumed by the host (or a native,
+    /// through [`resume`](Self::resume)) instead of a script's
+    /// `coroutine.resume` or `wrap`. If so, a yield goes back to the host.
     pub fn resumed_by_host(&self) -> bool {
         self.current != self.main_thread && self.heap.thread(self.current).by_host
     }
 
-    /// `coroutine.status`, as seen from the running thread.
+    /// `coroutine.status`, from the running thread's point of view.
     pub fn thread_status(&self, t: ThreadRef) -> CoStatus {
         self.heap.thread(t).status()
     }
 
-    /// The thread running now.
     /// The running coroutine, or `None` on the main thread.
     pub fn running_coroutine(&self) -> Option<ThreadRef> {
         (self.current != self.main_thread).then_some(self.current)
     }
 
+    /// The thread running right now.
     pub fn current_thread(&self) -> ThreadRef {
         self.current
     }
@@ -89,9 +88,9 @@ impl Vm {
         }
     }
 
-    /// Swaps the running state with thread `r`'s parked one, field by
-    /// field: the cheap way to park the running thread into an empty slot,
-    /// or to take a parked thread's state out (leaving the slot empty).
+    /// Swaps the running state with thread `r`'s parked one, field by field.
+    /// That's the cheap way to park the running thread into an empty slot, or
+    /// take a parked thread's state out (leaving the slot empty).
     fn swap_state(&mut self, r: ThreadRef) {
         let t = self.heap.thread_state_mut(r);
         std::mem::swap(&mut self.stack, &mut t.stack);
@@ -101,9 +100,9 @@ impl Vm {
         std::mem::swap(&mut self.boundary, &mut t.boundary);
     }
 
-    /// Runs coroutine `co` until it yields, returns or fails. The outer
-    /// `Err` is a refusal (it isn't suspended); the inner one an error
-    /// raised inside it, which also kills it.
+    /// Runs coroutine `co` until it yields, returns or fails. The outer `Err`
+    /// is a refusal (it isn't suspended), the inner one is an error raised
+    /// inside it, which also kills it.
     pub(crate) fn resume_thread(
         &mut self,
         co: ThreadRef,
@@ -120,9 +119,9 @@ impl Vm {
         if self.depth >= MAX_NATIVE_DEPTH {
             return Err("stack overflow (coroutines nested too deeply)".into());
         }
-        // Put the running thread aside; it waits as `normal`.
-        // The running thread's slot is empty while it runs, and so is the
-        // VM's state between the two swaps.
+        // put the running thread aside, it waits as `normal`. the running
+        // thread's slot is empty while it runs, and so is the VM's state
+        // between the two swaps
         let prev = self.current;
         self.swap_state(prev);
         self.heap.account_thread(prev);
@@ -193,7 +192,7 @@ impl Vm {
                             .map_err(|m| self.throw_here(m))?;
                         self.run(frame, 0)
                     }
-                    // A native body runs nested, so it can't yield.
+                    // a native body runs nested, so it can't yield
                     Function::Native(_) => self.invoke_at(0, n, false),
                 }
             }
@@ -205,8 +204,8 @@ impl Vm {
         }
     }
 
-    /// `coroutine.yield(...)` called from `f`: hands the arguments to the
-    /// resumer and signals the dispatch loop to suspend.
+    /// `coroutine.yield(...)` called from `f`. Hands the arguments to the
+    /// resumer and tells the dispatch loop to suspend.
     pub(crate) fn yield_from(
         &mut self,
         f: &Frame,
@@ -233,8 +232,8 @@ impl Vm {
         }
     }
 
-    /// Why a `yield` reached through a nested call can't happen, if the
-    /// usual reason applies (outside any coroutine).
+    /// Why a `yield` reached through a nested call can't happen, if it's the
+    /// usual reason (outside any coroutine).
     pub(crate) fn check_yield_nested(&self) -> Option<String> {
         (self.current == self.main_thread)
             .then(|| "attempt to yield from outside a coroutine".to_string())
@@ -244,8 +243,8 @@ impl Vm {
         self.check_yield().is_ok()
     }
 
-    /// `coroutine.resume(co, ...)` or a `coroutine.wrap` function, called
-    /// from `f`. Returns the results to place at the call's slot.
+    /// `coroutine.resume(co, ...)` or a `coroutine.wrap` function, called from
+    /// `f`. Returns the results to put at the call's slot.
     pub(crate) fn resume_from(
         &mut self,
         f: &mut Frame,
@@ -268,8 +267,8 @@ impl Vm {
             return Err(self.throw(f, pc, m));
         };
         self.heap.thread_mut(co).by_host = false;
-        // The caller waits in `frames` (now part of its thread's state),
-        // where the collector and tracebacks see it.
+        // the caller waits in `frames` (now part of its thread's state), where
+        // the collector and tracebacks can see it
         let placeholder = self.placeholder_frame(f.closure);
         self.frames.push(std::mem::replace(f, placeholder));
         let outcome = self.resume_thread(co, &args);
@@ -278,8 +277,8 @@ impl Vm {
             .map_err(|e| e.unwrap_or_else(|m| self.throw(f, pc, m)))
     }
 
-    /// The same for a resume that runs nested (from a native, the host,
-    /// or `pcall(coroutine.resume, ...)`).
+    /// Same thing for a resume that runs nested (from a native, the host, or
+    /// `pcall(coroutine.resume, ...)`).
     pub(crate) fn resume_here(
         &mut self,
         special: Special,
@@ -304,10 +303,10 @@ impl Vm {
             .map_err(|e| e.unwrap_or_else(|m| self.throw_here(m)))
     }
 
-    /// `resume` reports the outcome as `true, ...` / `false, error`; a
-    /// `wrap` function returns the values or raises the error. Errors
-    /// scripts can't catch always propagate. `Err(Err(m))` is a message to
-    /// raise at the call site.
+    /// `resume` reports the outcome as `true, ...` / `false, error`, a `wrap`
+    /// function returns the values or raises the error. Errors scripts can't
+    /// catch always propagate. `Err(Err(m))` is a message to raise at the call
+    /// site.
     fn finish_resume(
         &mut self,
         special: Special,
@@ -327,8 +326,8 @@ impl Vm {
         }
     }
 
-    /// `coroutine.close`: kills a suspended (or dead) coroutine, closing
-    /// the upvalues still open on its stack.
+    /// `coroutine.close`, kills a suspended (or dead) coroutine and closes the
+    /// upvalues still open on its stack.
     pub fn close_thread(&mut self, co: ThreadRef) -> Result<(), String> {
         match self.heap.thread(co).status {
             CoStatus::Suspended | CoStatus::Dead => {}
@@ -355,7 +354,7 @@ fn resume_arg_error(got: Value, nargs: usize) -> String {
     format!("invalid argument #1 to 'resume' (thread expected, got {got})")
 }
 
-// --- the library ------------------------------------------------------------
+// ─ The Library ───────────────────────────────────────────────────────────────
 
 pub(crate) fn install(vm: &mut Vm) {
     let mut table = Table::default();

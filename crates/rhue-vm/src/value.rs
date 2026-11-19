@@ -3,7 +3,7 @@ use rhue_bytecode::format_number;
 
 /// A Rhue value, as the VM sees it.
 ///
-/// `Copy` and 16 bytes. Heap objects are referenced by handle (see
+/// `Copy` and 16 bytes. Heap objects get referenced by handle (see
 /// [`crate::heap`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Value {
@@ -21,7 +21,7 @@ pub enum Value {
 }
 
 impl Value {
-    /// The name `type()` will return, also used in error messages.
+    /// The name `type()` returns, also used in error messages.
     pub fn type_name(self) -> &'static str {
         match self {
             Value::Nil => "nil",
@@ -37,7 +37,7 @@ impl Value {
         }
     }
 
-    /// Lua truthiness: only `nil` and `false` are falsy.
+    /// Lua truthiness, only `nil` and `false` are falsy.
     #[inline]
     pub fn is_truthy(self) -> bool {
         !matches!(self, Value::Nil | Value::Bool(false))
@@ -51,7 +51,7 @@ impl Value {
     }
 
     /// Raw equality (`==` without metamethods). Strings are interned, so
-    /// comparing handles compares contents. NaN is not equal to itself.
+    /// comparing handles compares contents. NaN isn't equal to itself.
     #[inline]
     pub fn raw_eq(self, other: Value) -> bool {
         self == other
@@ -74,16 +74,16 @@ impl Value {
     }
 }
 
-/// `tostring` of a vector, as Luau writes it: `1, 2, 3`.
+/// `tostring` of a vector, the way Luau writes it: `1, 2, 3`.
 pub fn vector_text(v: [f32; 3]) -> String {
-    // Each component at `f32` precision (`0.1`, not the `f64` it widens to).
+    // each component at `f32` precision (`0.1`, not the `f64` it widens to)
     v.map(|c| {
         if !c.is_finite() {
             format_number(f64::from(c))
         } else if c.abs() < 1e16 {
             c.to_string()
         } else {
-            // `1e20` as Lua writes it: `1e+20`.
+            // `1e20` the way Lua writes it, `1e+20`
             format!("{c:e}").replacen('e', "e+", 1)
         }
     })

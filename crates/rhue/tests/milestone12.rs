@@ -1,7 +1,7 @@
-//! Milestone 12: debug hooks (line, call and return events), inspecting the
-//! stack, locals and upvalues from a hook, and the language server's
-//! rename and signature help (in `rhue-lsp`'s tests). The debugger itself
-//! (`rhue-dap`) has its own tests.
+//! Milestone 12: debug hooks (line, call and return events), looking at the
+//! stack, locals and upvalues from a hook, and the language server's rename and
+//! signature help (in `rhue-lsp`'s tests). The debugger itself (`rhue-dap`) has
+//! its own tests.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -52,7 +52,7 @@ fn line_events_follow_execution() {
         DebugEvent::Line(l) => Some(l.to_string()),
         _ => None,
     });
-    // The loop body runs three times; the `else` branch never does.
+    // the loop body runs three times, the `else` branch never does
     assert_eq!(lines.join(" "), "1 2 3 2 3 2 3 2 5 6 9");
 }
 
@@ -140,7 +140,7 @@ f(1)";
             )
         })
     });
-    // The inner `x` shadows the outer one; the caller is the main chunk.
+    // the inner `x` shadows the outer one, the caller is the main chunk
     assert_eq!(
         seen,
         [
@@ -183,7 +183,7 @@ fn hooks_see_coroutines_and_metamethods() {
         ),
         _ => None,
     });
-    // A coroutine's stack is its own; the metamethod runs as a frame on it.
+    // a coroutine's stack is its own, the metamethod runs as a frame on it
     assert_eq!(seen, ["<anonymous><<anonymous>", "<anonymous>"]);
 }
 
@@ -196,7 +196,7 @@ fn a_hook_can_stop_the_script() {
         }
         Ok(())
     });
-    // `pcall` can't catch it.
+    // `pcall` can't catch it
     let err = e
         .eval("local ok = pcall(function()\n  local x = 1\n  return x\nend)\nreturn ok")
         .unwrap_err();
@@ -230,7 +230,7 @@ fn scripts_run_from_a_hook_dont_re_enter_it() {
 #[test]
 fn natives_calling_back_and_breakpoint_style_use() {
     let mut e = Engine::new();
-    // A "breakpoint" on line 3 of a comparator called by `table.sort`.
+    // a "breakpoint" on line 3 of a comparator called by `table.sort`
     let src =
         "local t = {3, 1, 2}\ntable.sort(t, function(a, b)\n  return a < b\nend)\nreturn t[1]";
     let hits = trace(&mut e, LINES, src, |dbg, ev| {

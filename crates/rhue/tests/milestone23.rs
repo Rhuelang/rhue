@@ -1,8 +1,8 @@
-//! Milestone 23: performance IV, calls. Cheaper Lua calls and returns,
-//! fast paths for common builtins (run when the callee *is* the builtin, so
-//! shadowing needs no special handling), allocation-free yields and
-//! in-place coroutine switches. All of it must be invisible; these tests
-//! compare against the slow paths and pin down the edges.
+//! Milestone 23: performance IV, calls. Cheaper Lua calls and returns, fast
+//! paths for common builtins (only when the callee *is* the builtin, so
+//! shadowing doesn't need special handling), allocation-free yields and
+//! in-place coroutine switches. None of it should be visible, so these tests
+//! compare against the slow paths and poke at the edges.
 
 use rhue::{Engine, Value};
 
@@ -18,10 +18,10 @@ fn run(src: &str) -> String {
         .join(" | ")
 }
 
-/// Every builtin with a fast path, called both ways on many arguments:
-/// `f(...)` (the fast path when it applies, the full native when it
-/// doesn't) and `pcall(f, ...)` (always the full native). Results and
-/// error messages must match.
+/// Every builtin with a fast path, called both ways on lots of arguments:
+/// `f(...)` (the fast path when it applies, the full native when it doesn't)
+/// and `pcall(f, ...)` (always the full native). Results and error messages
+/// have to match.
 #[test]
 fn fast_paths_match_the_full_natives() {
     let functions = [
@@ -102,7 +102,7 @@ fn fast_paths_match_the_full_natives() {
     src.push_str("return table.concat(out, '\\n')");
     let diffs = run(&src);
     // NaN prints as `nan` both ways, but a table's identity differs between
-    // calls that build one; neither is a real difference.
+    // calls that build one, neither is a real difference
     let real: Vec<&str> = diffs
         .lines()
         .filter(|l| !l.is_empty() && !l.contains("table: "))
@@ -126,11 +126,11 @@ fn shadowed_builtins_are_called_as_written() {
         run("local type = function() return 'shadowed' end\nreturn type(1)"),
         "shadowed"
     );
-    // A host can replace a builtin too.
+    // a host can replace a builtin too
     let mut e = Engine::new();
     e.register("type", |_: Value| "host".to_string());
     assert_eq!(e.eval_as::<String>("return type(1)").unwrap(), "host");
-    // Methods on strings reach the same functions.
+    // methods on strings reach the same functions
     assert_eq!(
         run("local s = 'hello' return s:len(), s:byte(2), s:sub(2, 3), s:sub(1), s:sub(-3)"),
         "5 | 101 | el | hello | llo"
@@ -167,14 +167,14 @@ fn iteration_through_next_and_ipairs() {
         ),
         "140 | 4"
     );
-    // ipairs stops at the first hole; clearing fields during pairs works.
+    // ipairs stops at the first hole, clearing fields during pairs works
     assert_eq!(
         run(
             "local t = { 1, 2, nil, 4 }\nlocal c = 0\nfor _ in ipairs(t) do c += 1 end\nlocal h = { a = 1, b = 2, c = 3 }\nfor k in pairs(h) do h[k] = nil end\nreturn c, next(h)"
         ),
         "2 | nil"
     );
-    // Errors still come from the full natives.
+    // errors still come from the full natives
     assert!(
         Engine::new()
             .eval("next({}, 'missing')")
@@ -189,7 +189,7 @@ fn iteration_through_next_and_ipairs() {
             .render(false)
             .contains("table expected")
     );
-    // A metatable-driven iteration (`__iter`) is unaffected.
+    // a metatable-driven iteration (`__iter`) is unaffected
     assert_eq!(
         run(
             "local t = setmetatable({}, { __iter = function() local i = 0 return function() i += 1 if i <= 3 then return i end end end })\nlocal s = 0 for v in t do s += v end return s"
@@ -200,28 +200,28 @@ fn iteration_through_next_and_ipairs() {
 
 #[test]
 fn calls_and_returns() {
-    // Results counted every way a caller can want them.
+    // results counted every way a caller can want them
     assert_eq!(
         run(
             "local function none() end\nlocal function three() return 1, 2, 3 end\nlocal function five() return 1, 2, 3, 4, 5 end\nlocal a, b, c, d = three()\nlocal t = { five() }\nlocal u = { none() }\nreturn a, b, c, d, #t, #u, select('#', five()), (five())"
         ),
         "1 | 2 | 3 | nil | 5 | 0 | 5 | 1"
     );
-    // Varargs, missing and extra arguments.
+    // varargs, missing and extra arguments
     assert_eq!(
         run(
             "local function f(a, b, ...) return a, b, select('#', ...) end\nlocal x, y, n = f(1)\nlocal p, q, m = f(1, 2, 3, 4, 5)\nreturn x, y, n, p, q, m"
         ),
         "1 | nil | 0 | 1 | 2 | 3"
     );
-    // Closures over locals still see them after the frame returns.
+    // closures over locals still see them after the frame returns
     assert_eq!(
         run(
             "local function counter() local n = 0 return function() n += 1 return n end end\nlocal c = counter() c() c()\nreturn c()"
         ),
         "3"
     );
-    // Deep recursion still reports a stack overflow.
+    // deep recursion still reports a stack overflow
     assert!(
         Engine::new()
             .eval("local function f(n) return 1 + f(n + 1) end return f(1)")
@@ -233,36 +233,36 @@ fn calls_and_returns() {
 
 #[test]
 fn coroutines_switch_cleanly() {
-    // Many yields from a wrapped generator, and a ping-pong.
+    // many yields from a wrapped generator, and a ping-pong
     assert_eq!(
         run(
             "local gen = coroutine.wrap(function() for i = 1, 1000 do coroutine.yield(i) end end)\nlocal s = 0 for _ = 1, 1000 do s += gen() end\nlocal co = coroutine.create(function(v) while true do v = coroutine.yield(v * 2) end end)\nlocal v = 1 for _ = 1, 10 do local _, nv = coroutine.resume(co, v) v = nv end\nreturn s, v"
         ),
         "500500 | 1024"
     );
-    // Nested coroutines (the outer one is `normal` while the inner runs),
-    // errors after yields.
+    // nested coroutines (the outer one is `normal` while the inner runs),
+    // errors after yields
     assert_eq!(
         run(
             "local outer\nlocal inner = coroutine.create(function() coroutine.yield(coroutine.status(outer)) error('boom') end)\nouter = coroutine.create(function() local _, s = coroutine.resume(inner) coroutine.yield(s) local ok, err = coroutine.resume(inner) return ok, err:match('boom') end)\nlocal _, a = coroutine.resume(outer)\nlocal _, ok, msg = coroutine.resume(outer)\nreturn a, ok, msg, coroutine.status(inner), coroutine.status(outer)"
         ),
         "normal | false | boom | dead | dead"
     );
-    // Upvalues opened inside a coroutine are closed when it finishes.
+    // upvalues opened inside a coroutine are closed when it finishes
     assert_eq!(
         run(
             "local get\nlocal co = coroutine.create(function() local x = 1 get = function() return x end coroutine.yield() x = 2 end)\ncoroutine.resume(co) local a = get() coroutine.resume(co)\nreturn a, get(), coroutine.close(coroutine.create(function() end))"
         ),
         "1 | 2 | true"
     );
-    // Yielding across a pcall boundary inside the coroutine.
+    // yielding across a pcall boundary inside the coroutine
     assert_eq!(
         run(
             "local co = coroutine.wrap(function() local ok, v = pcall(function() return coroutine.yield(1) + 1 end) coroutine.yield(v) end)\nreturn co(), co(41)"
         ),
         "1 | 42"
     );
-    // The memory limit still sees coroutine stacks.
+    // the memory limit still sees coroutine stacks
     let mut e = Engine::new();
     e.set_memory_limit(Some(200_000));
     assert!(

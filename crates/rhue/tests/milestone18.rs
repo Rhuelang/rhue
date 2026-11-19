@@ -1,5 +1,5 @@
-//! Milestone 18: the standard library catches up with Luau's. `bit32`,
-//! buffers, frozen and cloned tables, and `debug.traceback`/`debug.info`.
+//! Milestone 18: the standard library catches up with Luau's. `bit32`, buffers,
+//! frozen and cloned tables, and `debug.traceback`/`debug.info`.
 
 use rhue::{Engine, Value};
 
@@ -31,7 +31,7 @@ fn check(src: &str) -> Result<(), String> {
         .map_err(|e| e.render(false))
 }
 
-// --- bit32 ----------------------------------------------------------------------------
+// ─ bit32 ─────────────────────────────────────────────────────────────────────
 
 #[test]
 fn bit32_matches_luau() {
@@ -43,7 +43,7 @@ fn bit32_matches_luau() {
         ("bit32.btest(1, 2)", "false"),
         ("bit32.btest(3, 2)", "true"),
         ("bit32.bnot(0)", "4294967295"),
-        // Wrapping: negative numbers are their two's complement.
+        // wrapping: negative numbers are their two's complement
         ("bit32.band(-1)", "4294967295"),
         ("bit32.band(2^32 + 5)", "5"),
         ("bit32.band(3.9)", "3"),
@@ -78,7 +78,7 @@ fn bit32_matches_luau() {
     assert!(check("local s: string = bit32.bor(1)").is_err());
 }
 
-// --- buffers --------------------------------------------------------------------------
+// ─ Buffers ───────────────────────────────────────────────────────────────────
 
 #[test]
 fn buffers_are_values() {
@@ -88,14 +88,14 @@ fn buffers_are_values() {
         ),
         "buffer, buffer, 4, buffer:"
     );
-    // Identity, as table keys, through tables and closures.
+    // identity, as table keys, through tables and closures
     assert_eq!(
         run(
             "local a, b = buffer.create(1), buffer.create(1)\nlocal t = { [a] = 'a' }\nreturn a == a, a == b, t[a], t[b]"
         ),
         "true, false, a, nil"
     );
-    // Zero-filled.
+    // zero-filled
     assert_eq!(
         run("local b = buffer.create(3)\nreturn buffer.readu8(b, 0), buffer.readu8(b, 2)"),
         "0, 0"
@@ -118,7 +118,7 @@ return buffer.readu8(b, 0), buffer.readi8(b, 1), buffer.readu8(b, 1), buffer.rea
         "44, -1, 255, -2, 65534, 3735928559, -559038737, true, 239",
         "little-endian, wrapped"
     );
-    // f32 rounds to single precision.
+    // f32 rounds to single precision
     assert_eq!(
         run(
             "local b = buffer.create(4)\nbuffer.writef32(b, 0, 0.1)\nlocal x = buffer.readf32(b, 0)\nreturn x == 0.1, math.abs(x - 0.1) < 1e-7"
@@ -152,7 +152,7 @@ buffer.copy(c, 0, c, 2, 3)             -- overlapping, within one buffer
 buffer.fill(c, 5, 33)                  -- '!!!' to the end
 return n, buffer.tostring(s), buffer.readstring(c, 0, 3), buffer.tostring(c)";
     assert_eq!(run(src), "6, Jéllo, llo, llolo!!!");
-    // Strings are UTF-8, so bytes that aren't don't become one.
+    // strings are UTF-8, so bytes that aren't don't become one
     let e = error("local b = buffer.fromstring('é')\nreturn buffer.readstring(b, 0, 1)");
     assert!(e.contains("valid UTF-8"), "{e}");
     let e =
@@ -227,7 +227,7 @@ fn hosts_make_and_read_buffers() {
     cx.write_buffer(&b, 2, &[9, 9]).unwrap();
     assert!(cx.write_buffer(&b, 3, &[1, 1]).is_err());
     assert_eq!(cx.buffer_bytes(&b), [0x0B, 0x0A, 9, 9]);
-    // Natives take and return them.
+    // natives take and return them
     e.register("sum", |cx: &mut rhue::Context<'_>, b: rhue::Buffer| {
         cx.buffer_bytes(&b)
             .iter()
@@ -264,7 +264,7 @@ end",
     }
 }
 
-// --- tables ---------------------------------------------------------------------------
+// ─ Tables ────────────────────────────────────────────────────────────────────
 
 #[test]
 fn frozen_tables_refuse_every_write() {
@@ -289,14 +289,14 @@ fn frozen_tables_refuse_every_write() {
             "{write}"
         );
     }
-    // Reads still work, and the table is unchanged.
+    // reads still work, and the table is unchanged
     assert_eq!(
         run(&format!(
             "{setup}pcall(function() t.a = 9 end)\nreturn t.a, #t, t[2], table.isfrozen(t), table.isfrozen({{}})"
         )),
         "1, 2, 20, true, false"
     );
-    // A field written through `__newindex` isn't a write to the table.
+    // a field written through `__newindex` isn't a write to the table
     assert_eq!(
         run(
             "local log = {}\nlocal t = table.freeze(setmetatable({}, { __newindex = function(_, k) table.insert(log, k) end }))\nt.x = 1\nreturn log[1], rawget(t, 'x')"
@@ -324,7 +324,7 @@ return t.x, c.x, #t, #c, c.inner == inner, getmetatable(c) == mt, c.missing, tab
         error("table.clone(setmetatable({}, { __metatable = 'no' }))")
             .contains("protected metatable")
     );
-    // `table.clear` keeps the metatable.
+    // `table.clear` keeps the metatable
     assert_eq!(
         run(
             "local mt = {}\nlocal t = setmetatable({ 1, 2, a = 3 }, mt)\ntable.clear(t)\nreturn #t, t.a, getmetatable(t) == mt"
@@ -334,7 +334,7 @@ return t.x, c.x, #t, #c, c.inner == inner, getmetatable(c) == mt, c.missing, tab
     check("local t = table.freeze({ x = 1 })\nlocal n: number = t.x\nlocal c = table.clone(t)\nlocal m: number = c.x\nlocal b: boolean = table.isfrozen(c)").unwrap();
 }
 
-// --- debug ----------------------------------------------------------------------------
+// ─ Debug ─────────────────────────────────────────────────────────────────────
 
 #[test]
 fn debug_info_describes_levels_and_functions() {
@@ -358,7 +358,7 @@ return table.unpack(outer())";
         let got = run(&format!("{defs}return debug.info({query})"));
         assert!(got.starts_with(want), "{query}: {got}");
     }
-    // The main chunk has no name.
+    // the main chunk has no name
     assert_eq!(run("return debug.info(1, 'n')"), "nil");
     assert!(error("return debug.info(1, 'x')").contains("invalid option 'x'"));
     assert!(error("return debug.info(1, 'll')").contains("duplicate option"));
@@ -380,12 +380,12 @@ return t";
     assert!(lines[3].contains("called from `b` (<eval>:2:"), "{t}");
     assert!(lines[4].contains("called from `a` (<eval>:3:"), "{t}");
     assert!(lines[5].contains("called from <main> (<eval>:4:"), "{t}");
-    // A level skips frames; no message gives just the trace.
+    // a level skips frames, no message gives just the trace
     let t = run("local function f() return debug.traceback(nil, 2) end\nreturn (f())");
     assert!(t.starts_with("stack traceback:\n  in <main>"), "{t}");
-    // Non-string messages come back as they are.
+    // non-string messages come back as they are
     assert_eq!(run("local t = {}\nreturn debug.traceback(t) == t"), "true");
-    // A suspended coroutine's stack.
+    // a suspended coroutine's stack
     let src = "local co = coroutine.create(function()
   local function deep() coroutine.yield() end
   deep()

@@ -1,18 +1,18 @@
-//! The checker: one pass over the AST, statement by statement.
+//! The checker. One pass over the AST, statement by statement.
 //!
 //! **Modes.** In `--!strict`, locals and function results get the types of
-//! what initialises them, reading an unknown global is an error, and using a
-//! value that may be `nil` (indexing, calling, arithmetic) is an error until
-//! it's refined. In `--!nonstrict`, anything unannotated is `any`, so only
-//! annotated code and literals are checked.
+//! whatever initialises them, reading an unknown global is an error, and using
+//! something that might be `nil` (indexing, calling, arithmetic) is an error
+//! until it's refined. In `--!nonstrict` anything unannotated is `any`, so only
+//! annotated code and literals get checked.
 //!
 //! **Refinements.** Conditions narrow locals inside the branches they guard
-//! (`if x then`, `x ~= nil`, `type(x) == "string"`, `not`, `and`, `or`), and
-//! an `if` whose body always exits narrows the rest of the block
-//! (`if not x then return end`). Narrowings are kept in layers; assigning to
-//! a local drops them, loops drop those for locals the loop body assigns, and
-//! a nested function never trusts its enclosing function's narrowings
-//! (something else may change the variable before it runs).
+//! (`if x then`, `x ~= nil`, `type(x) == "string"`, `not`, `and`, `or`), and an
+//! `if` whose body always exits narrows the rest of the block (`if not x then
+//! return end`). Narrowings are kept in layers. Assigning to a local drops
+//! them, loops drop the ones for locals the body assigns, and a nested function
+//! never trusts its enclosing function's narrowings (something else could
+//! change the variable before it runs).
 
 use crate::{HashMap, HashSet};
 use std::rc::Rc;
@@ -28,14 +28,14 @@ use crate::types::*;
 pub const MAX_TYPE_ERRORS: usize = 50;
 
 pub(crate) struct FuncCtx {
-    /// The annotated result types, if any.
+    /// The annotated result types, if there are any.
     pub declared: Option<Pack>,
-    /// Inferred from `return` statements when nothing is declared.
+    /// Inferred from `return` statements when nothing's declared.
     pub returns: Vec<Pack>,
     pub vararg: Type,
 }
 
-/// What a narrowing applies to: a local, or a field path from one
+/// What a narrowing applies to, a local or a field path from one
 /// (`p.next.value` is `(p, ["next", "value"])`).
 pub(crate) type RefKey = (LocalId, Rc<[Rc<str>]>);
 
@@ -43,10 +43,10 @@ pub(crate) fn root(id: LocalId) -> RefKey {
     (id, Rc::from(Vec::new()))
 }
 
-/// Narrowed types, valid in the region of code that pushed them.
+/// Narrowed types, good for the region of code that pushed them.
 #[derive(Clone)]
 pub(crate) struct Layer {
-    /// `funcs.len()` when pushed: layers from an enclosing function are
+    /// `funcs.len()` when it was pushed. Layers from an enclosing function get
     /// ignored inside nested ones.
     pub depth: usize,
     pub map: HashMap<RefKey, Type>,
@@ -67,50 +67,50 @@ pub(crate) struct Checker<'a> {
     pub layers: Vec<Layer>,
     pub alias_scopes: Vec<HashMap<Rc<str>, Rc<AliasDef>>>,
     pub generic_scopes: Vec<HashMap<Rc<str>, Type>>,
-    /// While expanding an alias: how much of each scope stack it can see.
+    /// While expanding an alias, how much of each scope stack it can see.
     pub alias_view: Option<usize>,
     pub generic_view: Option<usize>,
     pub funcs: Vec<FuncCtx>,
-    /// Globals this chunk assigns, with their types once known.
+    /// Globals this chunk assigns, with their types once they're known.
     pub chunk_globals: HashMap<Rc<str>, Type>,
-    /// Modules `require`d by name whose types the environment doesn't
-    /// have yet.
+    /// Modules `require`d by name whose types the environment doesn't have yet.
     pub requires: Vec<Rc<str>>,
-    /// Globals assigned anywhere in the chunk (they exist, even if the
+    /// Globals assigned anywhere in the chunk (they exist even if the
     /// assignment comes later in the source).
     pub assigned_globals: HashSet<Rc<str>>,
-    /// Function declarations seen in the pre-pass, replaced when checked.
+    /// Function declarations seen in the pre-pass, replaced once they're
+    /// checked.
     pub provisional: HashSet<Rc<str>>,
     pub expanding: Vec<*const NamedType>,
-    /// What instances of each class (by the local holding it) look like,
-    /// from the functions on it that return one: `self` in its methods.
+    /// What instances of each class (by the local holding it) look like, from
+    /// the functions on it that return one. That's `self` in its methods.
     pub instances: HashMap<LocalId, Rc<TableType>>,
-    /// Instance fields added by assignment rather than by a constructor:
-    /// assigning one something new widens it instead of being an error.
+    /// Instance fields added by assignment instead of by a constructor.
+    /// Assigning one something new widens it instead of erroring.
     pub added_fields: HashSet<(LocalId, Rc<str>)>,
-    /// When set, every expression's and declared name's type, by span
-    /// (for editor tooling).
+    /// When set, every expression's and declared name's type, by span (for
+    /// editor tooling).
     pub types: Option<Vec<(Span, Type)>>,
-    /// When set, every name that refers to a local (for editor tooling:
+    /// When set, every name that refers to a local (for editor tooling,
     /// definitions and references).
     pub refs: Option<std::cell::RefCell<Vec<(Span, LocalId)>>>,
-    /// Locals declared without a value or annotation (strict mode): their
-    /// type follows what's assigned (see [`FlowLocal`]).
+    /// Locals declared without a value or annotation (strict mode). Their type
+    /// follows what's assigned (see [`FlowLocal`]).
     pub flow: HashMap<LocalId, FlowLocal>,
-    /// Flow locals assigned in a loop being checked: inside it they read as
-    /// `any` (a later iteration may have assigned anything).
+    /// Flow locals assigned in a loop being checked. Inside it they read as
+    /// `any` (a later iteration might've assigned anything).
     pub loop_any: Vec<LocalId>,
-    /// One log per `if` statement and block being checked: each key the
-    /// code inside narrowed or forgot, with what it was before. Joins merge
-    /// only these keys (merging every live narrowing at every `if` made
-    /// long functions quadratic).
+    /// One log per `if` statement and block being checked: each key the code
+    /// inside narrowed or forgot, with what it was before. Joins only merge
+    /// these keys (merging every live narrowing at every `if` made long
+    /// functions quadratic).
     touched: Vec<HashMap<RefKey, Option<Type>>>,
-    /// Checking a loop body silently, to learn what it assigns to flow
-    /// locals (see `check_loop`).
+    /// Checking a loop body quietly, to find out what it assigns to flow locals
+    /// (see `check_loop`).
     prepass: bool,
 }
 
-/// Whether a `break` in `body` (not in a loop nested in it) leaves it.
+/// Whether a `break` in `body` (not in a loop nested in it) gets out of it.
 fn breaks_out(body: &Block) -> bool {
     body.stmts.iter().any(|s| match &s.kind {
         StmtKind::Break => true,
@@ -126,18 +126,18 @@ fn breaks_out(body: &Block) -> bool {
     })
 }
 
-/// What a branch of an `if` changed (each key's type at its end), and what
-/// its condition, with the earlier ones false, said going in.
+/// What a branch of an `if` changed (each key's type at its end), and what its
+/// condition, with the earlier ones false, said going in.
 type BranchEnd = (HashMap<RefKey, Option<Type>>, Vec<(RefKey, Type)>);
 
-/// A local declared without a value or annotation, in strict mode. It
-/// starts as `nil`; each assignment adds the value's type to its declared
-/// type (the union of everything assigned, and `nil`) and narrows it to the
-/// value, so code that follows the assignments sees what they put there.
+/// A local declared without a value or annotation, in strict mode. It starts as
+/// `nil`, and each assignment adds the value's type to its declared type (the
+/// union of everything assigned, and `nil`) and narrows it to the value, so
+/// code after the assignments sees what they put there.
 #[derive(Clone, Debug)]
 pub(crate) struct FlowLocal {
-    /// `funcs.len()` where it's declared: a closure reading it reads `any`
-    /// (it may run after assignments it can't see).
+    /// `funcs.len()` where it's declared. A closure reading it reads `any` (it
+    /// could run after assignments it can't see).
     pub depth: usize,
     /// The declaration, whose recorded type (for hovers) is the union.
     pub span: Span,
@@ -146,27 +146,27 @@ pub(crate) struct FlowLocal {
 /// What checking a chunk found.
 pub struct CheckOutput {
     pub errors: Vec<Diagnostic>,
-    /// The globals the chunk assigns and their types (`any` when unknown),
-    /// for checking later chunks run in the same engine.
+    /// The globals the chunk assigns and their types (`any` when unknown), for
+    /// checking later chunks run in the same engine.
     pub globals: Vec<(Rc<str>, Type)>,
-    /// What the chunk returns (its first value; `true` if it returns
-    /// nothing, as `require` sees it): a module's type.
+    /// What the chunk returns (its first value, or `true` if it returns
+    /// nothing, the way `require` sees it). A module's type.
     pub returns: Type,
     /// Modules it `require`s whose types aren't known yet.
     pub requires: Vec<Rc<str>>,
     /// `globals` and `returns` as type syntax with the aliases they need,
-    /// nothing unrolled (what a module exports; see [`Env::import`]).
+    /// nothing unrolled (what a module exports, see [`Env::import`]).
     pub export: crate::Exported,
 }
 
-/// What editor tooling wants from a check (see [`analyze_chunk`]).
+/// What editor tooling wants out of a check (see [`analyze_chunk`]).
 #[derive(Clone, Debug, Default)]
 pub struct Analysis {
-    /// The type of every expression and declared name the checker saw, by
-    /// span (innermost spans are the most specific).
+    /// The type of every expression and declared name the checker saw, by span
+    /// (innermost spans are the most specific).
     pub types: Vec<(Span, Type)>,
-    /// For the expression ending at the requested offset: its members, by
-    /// name (what `obj.` / `obj:` can complete to).
+    /// For the expression ending at the requested offset, its members by name
+    /// (what `obj.` / `obj:` can complete to).
     pub members: Option<Vec<(Rc<str>, Type)>>,
     /// Every name that refers to a local, with the local's id (see
     /// `Resolution::locals` for where it's declared).
@@ -179,10 +179,10 @@ pub fn check_chunk(chunk: &Chunk, res: &Resolution, mode: TypeMode, env: &Env) -
     check_inner(&mut c, chunk, res, mode, env)
 }
 
-/// Like [`check_chunk`], and also records every expression's type, and
-/// (with `members_at`) the members of the expression that ends at that
-/// byte offset. Types are always inferred as `--!strict` would (so tooling
-/// has them even in unchecked chunks); errors are reported as `mode` asks.
+/// Same as [`check_chunk`], but also records every expression's type, and (with
+/// `members_at`) the members of the expression ending at that byte offset.
+/// Types are always inferred like `--!strict` would (so tooling has them even
+/// in unchecked chunks), errors get reported however `mode` says.
 pub fn analyze_chunk(
     chunk: &Chunk,
     res: &Resolution,
@@ -253,8 +253,8 @@ fn check_inner(
         returns: Vec::new(),
         vararg: Type::Any,
     });
-    // The chunk's own scope stays open until its types are exported (they
-    // may name its aliases).
+    // the chunk's own scope stays open until its types are exported (they might
+    // name its aliases)
     c.alias_scopes.push(HashMap::default());
     c.generic_scopes.push(HashMap::default());
     c.layers.push(Layer {
@@ -284,7 +284,7 @@ fn check_inner(
         if t.is_any() || matches!(t, Type::Nil) {
             t
         } else if t.can_be_nil() {
-            // A module that may return nil gives `true` instead.
+            // a module that might return nil gives `true` instead
             union([t.strip_nil(), Type::BoolLit(true)])
         } else {
             t
@@ -320,7 +320,7 @@ fn check_inner(
     } else {
         c.detach(&raw_returns, 4)
     };
-    // Exporting only reads what checking found.
+    // exporting only reads what checking found
     c.errors.truncate(errors);
     c.layers.pop();
     c.generic_scopes.pop();
@@ -393,7 +393,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    // --- errors ------------------------------------------------------------
+    // ─ Errors ────────────────────────────────────────────────────────────────
 
     pub fn error(&mut self, span: Span, message: impl Into<String>) {
         self.error_labeled(span, message, "type error here");
@@ -420,9 +420,9 @@ impl<'a> Checker<'a> {
         );
     }
 
-    /// For tables, which field is the problem. Fields of simple types are
-    /// blamed before nested tables (in a recursive type, the nested field
-    /// fails only because of a simple one).
+    /// For tables, which field is the problem. Fields with simple types get
+    /// blamed before nested tables (in a recursive type the nested field only
+    /// fails because of a simple one).
     fn explain(&mut self, got: &Type, want: &Type) -> String {
         let (Type::Table(g), Type::Table(w)) = (self.expand(got), self.expand(want)) else {
             return String::new();
@@ -468,7 +468,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    // --- locals and narrowing ----------------------------------------------------
+    // ─ Locals and Narrowing ──────────────────────────────────────────────────
 
     pub fn local_id(&self, name: &Name) -> Option<LocalId> {
         match self.res?.binding(name) {
@@ -482,12 +482,12 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// A local's current (possibly narrowed) type.
     /// The name local `id` was declared with.
     pub fn local_name(&self, id: LocalId) -> Option<Rc<str>> {
         Some(self.res?.locals.get(id as usize)?.name.clone())
     }
 
+    /// A local's current (maybe narrowed) type.
     pub fn local_type(&self, id: LocalId) -> Type {
         if let Some(f) = self.flow.get(&id) {
             if self.funcs.len() > f.depth {
@@ -514,8 +514,8 @@ impl<'a> Checker<'a> {
             || value.is_any()
             || matches!(self.expand(&value), Type::Table(_));
         let declared = if escapes {
-            // A closure assigning it (other code can't tell when), or a
-            // table (whose type grows with its fields): back to `any`.
+            // a closure assigning it (other code can't tell when), or a table
+            // (whose type grows with its fields), back to `any`
             self.flow.remove(&id);
             Type::Any
         } else {
@@ -534,7 +534,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// The narrowed type of a local or field path, if any.
+    /// The narrowed type of a local or field path, if there is one.
     pub fn narrowed(&self, key: &RefKey) -> Option<Type> {
         let depth = self.funcs.len();
         for layer in self.layers.iter().rev() {
@@ -585,13 +585,12 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Forgets every narrowing of `id` and its fields (it was assigned).
+    /// Forgets every narrowing of `id` and its fields (it got assigned).
     pub fn invalidate(&mut self, id: LocalId) {
         self.forget(|k| k.0 == id);
     }
 
-    /// Forgets narrowings of `key` and of paths through it (it was
-    /// assigned).
+    /// Forgets narrowings of `key` and of paths through it (it got assigned).
     fn invalidate_path(&mut self, key: &RefKey) {
         self.forget(|k| {
             k.0 == key.0 && k.1.len() >= key.1.len() && k.1[..key.1.len()] == key.1[..]
@@ -617,8 +616,8 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Whether narrowing to a value of type `t` is safe: tables are
-    /// mutable, so knowing what one held when assigned says little later.
+    /// Whether narrowing to a value of type `t` is safe. Tables are mutable, so
+    /// knowing what one held when it was assigned doesn't say much later.
     fn narrowable(&mut self, t: &Type) -> bool {
         !t.is_any() && !matches!(self.expand(t), Type::Table(_))
     }
@@ -651,9 +650,7 @@ impl<'a> Checker<'a> {
         r
     }
 
-    /// Drops narrowings of locals that `body` assigns: a loop runs it again
-    /// after those assignments.
-    /// The locals a loop body assigns: what a later iteration may have
+    /// The locals a loop body assigns, what a later iteration might have
     /// changed by the time an earlier statement runs again.
     fn assigned_in(&self, body: &Block) -> Vec<LocalId> {
         let Some(res) = self.res else {
@@ -679,16 +676,15 @@ impl<'a> Checker<'a> {
         ids
     }
 
-    /// Checks a loop whose body is `body`, with `run` checking one
-    /// iteration (condition, variables, body).
+    /// Checks a loop whose body is `body`, with `run` checking one iteration
+    /// (condition, variables, body).
     ///
-    /// Narrowings of what the body assigns don't hold at the top of the
-    /// loop. A flow local it assigns is first typed by checking the body
-    /// silently (diagnostics, recorded types and narrowings rolled back),
-    /// as often as that keeps adding types to it (at most three times), so
-    /// the real pass sees everything an iteration can leave in it. If it
-    /// doesn't settle, or this is already a silent pass, it's `any` inside
-    /// the loop instead.
+    /// Narrowings of what the body assigns don't hold at the top of the loop. A
+    /// flow local it assigns gets typed first by checking the body quietly
+    /// (diagnostics, recorded types and narrowings rolled back), as many times
+    /// as that keeps adding types to it (three at most), so the real pass sees
+    /// everything an iteration can leave in it. If it doesn't settle, or this
+    /// is already a quiet pass, it's `any` inside the loop instead.
     fn check_loop(&mut self, body: &Block, run: &dyn Fn(&mut Self)) {
         let ids = self.assigned_in(body);
         for &id in &ids {
@@ -746,9 +742,9 @@ impl<'a> Checker<'a> {
         self.loop_any.truncate(keep);
     }
 
-    /// Like [`block`](Self::block), returning what it changed: for each key
-    /// it narrowed or forgot, its type at the end (`None`: nothing known
-    /// beyond the declared type).
+    /// Like [`block`](Self::block), but returns what it changed: for each key
+    /// it narrowed or forgot, its type at the end (`None` means nothing's known
+    /// past the declared type).
     pub fn block_flow(&mut self, block: &Block) -> HashMap<RefKey, Option<Type>> {
         self.alias_scopes.push(HashMap::default());
         self.generic_scopes.push(HashMap::default());
@@ -770,11 +766,11 @@ impl<'a> Checker<'a> {
         end
     }
 
-    // --- globals -------------------------------------------------------------------
+    // ─ Globals ───────────────────────────────────────────────────────────────
 
     /// Gives global functions declared anywhere in the chunk their annotated
-    /// signature up front, so they can be called before their declaration
-    /// is reached (mutual recursion).
+    /// signature up front, so they can be called before their declaration gets
+    /// reached (mutual recursion).
     fn prototype_global_functions(&mut self, body: &Block) {
         let Some(res) = self.res else { return };
         let mut found = Vec::new();
@@ -786,8 +782,8 @@ impl<'a> Checker<'a> {
                 found.push((n.text.clone(), func.clone()));
             }
         });
-        // (Host globals keep their declared types: these are checked
-        // against them instead.)
+        // (host globals keep their declared types, these get checked against
+        // them instead)
         for (name, func) in found {
             if self.env.is_host_global(&name) {
                 continue;
@@ -838,8 +834,8 @@ impl<'a> Checker<'a> {
             self.chunk_globals.insert(name.text.clone(), value.clone());
             return;
         }
-        // This chunk's own type for it, else what an earlier chunk gave it
-        // (a new `function` declaration may change that; see `provisional`).
+        // this chunk's own type for it, else what an earlier chunk gave it (a
+        // new `function` declaration might change that, see `provisional`)
         let known = self
             .chunk_globals
             .get(&name.text)
@@ -860,7 +856,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    // --- blocks and statements -------------------------------------------------------
+    // ─ Blocks and Statements ─────────────────────────────────────────────────
 
     pub fn block(&mut self, block: &Block) {
         self.alias_scopes.push(HashMap::default());
@@ -876,7 +872,7 @@ impl<'a> Checker<'a> {
     }
 
     /// A block's statements, in the current scope. Type aliases are visible
-    /// throughout their block (so they can refer to each other).
+    /// through their whole block (so they can refer to each other).
     fn block_body(&mut self, block: &Block) {
         for stmt in &block.stmts {
             if let StmtKind::TypeAlias(alias) = &stmt.kind {
@@ -950,14 +946,14 @@ impl<'a> Checker<'a> {
             }
             StmtKind::Function { target, func } => self.function_stmt(target, func),
             StmtKind::LocalFunction { name, func } => {
-                // Its signature is visible inside its own body (recursion).
+                // its signature is visible inside its own body (recursion)
                 let sig = self.signature(func);
                 self.declare(name, Type::function(sig));
                 let f = self.function(func, None, None);
                 self.declare(name, Type::function(f));
             }
             StmtKind::Do(body) => {
-                // What the block assigned is still true after it.
+                // what the block assigned is still true after it
                 for (k, t) in self.block_flow(body) {
                     match t {
                         Some(t) => self.narrow(k, t),
@@ -972,12 +968,12 @@ impl<'a> Checker<'a> {
                 });
             }
             StmtKind::Repeat { body, cond } => {
-                // The body runs at least once and the loop ends when the
-                // condition holds: unless something breaks out early, what
-                // the last iteration left (and the condition) is known after.
+                // the body runs at least once and the loop ends when the
+                // condition holds, so unless something breaks out early, what
+                // the last iteration left (and the condition) is known after
                 let after: std::cell::RefCell<Vec<(RefKey, Option<Type>)>> = Default::default();
                 self.check_loop(body, &|c| {
-                    // The condition sees the body's locals: one scope for both.
+                    // the condition sees the body's locals, one scope for both
                     c.alias_scopes.push(HashMap::default());
                     c.generic_scopes.push(HashMap::default());
                     c.with_layer(&[], |c| {
@@ -996,8 +992,8 @@ impl<'a> Checker<'a> {
                     c.alias_scopes.pop();
                 });
                 if !breaks_out(body) {
-                    // (Narrowing a local declared in the body is harmless:
-                    // nothing can name it any more.)
+                    // (narrowing a local declared in the body is harmless,
+                    // nothing can name it anymore)
                     for (k, t) in after.into_inner() {
                         if let Some(t) = t {
                             self.narrow(k, t);
@@ -1088,7 +1084,7 @@ impl<'a> Checker<'a> {
                 Some(d) => {
                     let ok = !has_value || self.expect(span, &value, d);
                     self.declare(name, d.clone());
-                    // `local x: number? = 5` is known to be a number for now.
+                    // `local x: number? = 5` is known to be a number for now
                     if ok
                         && has_value
                         && !d.is_any()
@@ -1099,7 +1095,7 @@ impl<'a> Checker<'a> {
                     }
                     continue;
                 }
-                // `local x` (strict): typed by what's assigned to it.
+                // `local x` (strict), typed by what gets assigned to it
                 None if self.strict && values.is_empty() => {
                     self.declare(name, Type::Nil);
                     if let Some(id) = self.local_id(name) {
@@ -1114,7 +1110,7 @@ impl<'a> Checker<'a> {
                     continue;
                 }
                 None if !self.strict || !has_value => Type::Any,
-                // `local x = nil` is the gradual "fill it in later": `any`.
+                // `local x = nil` is the gradual "fill it in later", so `any`
                 None if matches!(values.get(i).map(|v| &v.kind), Some(ExprKind::Nil)) => Type::Any,
                 None => value.widen(),
             };
@@ -1122,7 +1118,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// The type a value assigned to `target` must have, as a hint for
+    /// The type a value assigned to `target` has to have, as a hint for
     /// literals.
     fn target_hint(&mut self, target: &Expr) -> Option<Type> {
         match &target.kind {
@@ -1193,7 +1189,7 @@ impl<'a> Checker<'a> {
                 let ExprKind::String(name) = &key.kind else {
                     return;
                 };
-                // A field declared with a function type types the definition.
+                // a field declared with a function type types the definition
                 let hint = match self.expand(&ot) {
                     Type::Table(t) => match t.prop(name) {
                         Some(Type::Function(f)) => Some(f.clone()),
@@ -1207,10 +1203,10 @@ impl<'a> Checker<'a> {
                     }
                     _ => None,
                 };
-                // In a class's methods `self` is an instance. In a plain
-                // table's, it's often an object built elsewhere with the
-                // method copied in (`{ items = {}, add = T.add }`), so it's
-                // the table's type but open: other fields read as `any`.
+                // in a class's methods `self` is an instance. in a plain
+                // table's it's often an object built somewhere else with the
+                // method copied in (`{ items = {}, add = T.add }`), so it's the
+                // table's type but open, other fields read as `any`
                 let self_ty = func.is_method.then(|| match &class {
                     Some((id, name)) => self.instance_type(*id, name),
                     None => match self.expand(&ot) {
@@ -1232,13 +1228,13 @@ impl<'a> Checker<'a> {
     }
 
     fn if_stmt(&mut self, branches: &[(Expr, Block)], else_block: Option<&Block>) {
-        // Every key a branch changes, with what it was before the `if`.
+        // every key a branch changes, with what it was before the `if`
         self.touched.push(HashMap::default());
-        // Each condition is checked knowing the earlier ones were false.
+        // each condition gets checked knowing the earlier ones were false
         let mut falsy_layers = 0;
         let mut first_falsy = Vec::new();
-        // For each branch that carries on past the `if`: what it changed,
-        // and what its condition (and the earlier ones' being false) said.
+        // for each branch that carries on past the `if`: what it changed, and
+        // what its condition (and the earlier ones being false) said
         let mut ends: Vec<BranchEnd> = Vec::new();
         let mut falsy_so_far: Vec<(RefKey, Type)> = Vec::new();
         for (i, (cond, body)) in branches.iter().enumerate() {
@@ -1259,14 +1255,14 @@ impl<'a> Checker<'a> {
             });
             falsy_layers += 1;
         }
-        // The `else` (written or not) runs with every condition false.
+        // the `else` (written or not) runs with every condition false
         let (else_end, else_exits) = match else_block {
             Some(b) => (self.block_flow(b), always_exits(b, true)),
             None => (HashMap::default(), false),
         };
         let log = self.touched.pop().expect("pushed above");
-        // What an untouched key is in the `else`: the layers say (the
-        // falsy ones are still in place).
+        // what an untouched key is in the `else`, the layers say (the falsy
+        // ones are still in place)
         let else_view: HashMap<RefKey, Option<Type>> = log
             .keys()
             .map(|k| {
@@ -1279,8 +1275,8 @@ impl<'a> Checker<'a> {
         for _ in 0..falsy_layers {
             self.layers.pop();
         }
-        // Where the branches join, a key some branch changed is the union of
-        // what each left it as.
+        // where the branches join, a key some branch changed is the union of
+        // what each one left it as
         let reaching = ends.len() + usize::from(!else_exits);
         if reaching > 0 {
             let mut keys: Vec<&RefKey> = log.keys().collect();
@@ -1321,7 +1317,7 @@ impl<'a> Checker<'a> {
                 }
             }
         }
-        // `if not x then return end`: past this point, `x` is known.
+        // `if not x then return end`, past here `x` is known
         if branches.len() == 1 && else_block.is_none() && always_exits(&branches[0].1, true) {
             for (key, t) in first_falsy {
                 self.narrow(key, t);
@@ -1345,7 +1341,7 @@ impl<'a> Checker<'a> {
                     );
                 }
             }
-            // (The main chunk's returns are its type as a module.)
+            // (the main chunk's returns are its type as a module)
             None => {
                 if let Some(f) = self.funcs.last_mut() {
                     f.returns.push(pack);
@@ -1363,7 +1359,7 @@ impl<'a> Checker<'a> {
         else {
             return;
         };
-        // Expanding it once reports unknown names and direct recursion.
+        // expanding it once reports unknown names and direct recursion
         let mut args = Vec::new();
         let mut packs = Vec::new();
         for g in &def.generics {
@@ -1377,7 +1373,7 @@ impl<'a> Checker<'a> {
                 args.push(var);
             }
         }
-        // And each default once, as a use of the alias would.
+        // and each default once, like a use of the alias would
         self.check_alias_defaults(&def);
         let named = Type::Named(Rc::new(NamedType {
             alias: def,
@@ -1404,8 +1400,8 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Exports a type for later chunks: aliases from this chunk are expanded
-    /// (a few levels deep; deeper is `any`), since their scope is gone.
+    /// Exports a type for later chunks. Aliases from this chunk get expanded (a
+    /// few levels deep, deeper is `any`) since their scope's gone.
     pub fn detach(&mut self, t: &Type, depth: u32) -> Type {
         match t {
             Type::Named(_) if depth == 0 => Type::Any,
@@ -1423,8 +1419,8 @@ impl<'a> Checker<'a> {
                 },
             }),
             Type::Table(tt) => {
-                // A metatable held by a local becomes a snapshot of that
-                // local's type, so methods keep working in other chunks.
+                // a metatable held by a local becomes a snapshot of that
+                // local's type, so methods keep working in other chunks
                 let meta = tt.meta.as_ref().map(|m| {
                     if depth == 0 {
                         return Meta::Type(Type::Any);
@@ -1461,8 +1457,8 @@ impl<'a> Checker<'a> {
     }
 }
 
-/// Whether running `block` never reaches its end: it returns, raises an
-/// error, or (when `loops` is set) breaks or continues.
+/// Whether running `block` never reaches its end: it returns, raises an error,
+/// or (when `loops` is set) breaks or continues.
 pub(crate) fn always_exits(block: &Block, loops: bool) -> bool {
     if block.ret.is_some() {
         return true;
@@ -1480,7 +1476,7 @@ pub(crate) fn always_exits(block: &Block, loops: bool) -> bool {
     }
 }
 
-// --- a statement walker (into nested blocks and function bodies) ------------------
+// ─ A Statement Walker (into Nested Blocks and Function Bodies) ───────────────
 
 pub(crate) fn walk_block(b: &Block, f: &mut dyn FnMut(&Stmt)) {
     for s in &b.stmts {

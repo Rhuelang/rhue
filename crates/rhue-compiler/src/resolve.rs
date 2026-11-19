@@ -1,15 +1,15 @@
-//! The resolver: binds every name to a local or a global before codegen.
+//! The resolver binds every name to a local or a global before codegen.
 //!
-//! It walks the AST once with a scope stack and produces a [`Resolution`],
-//! a side table indexed by [`NameId`]. Keeping this separate from the
-//! compiler means codegen never does scope lookups, and the compiler knows
-//! up front which locals are *captured* by an inner function (only those need
-//! upvalue closing).
+//! It walks the AST once with a scope stack and builds a [`Resolution`], a side
+//! table indexed by [`NameId`]. Keeping it separate from the compiler means
+//! codegen never does scope lookups, and the compiler knows up front which
+//! locals get *captured* by an inner function (only those need upvalue
+//! closing).
 //!
-//! It also enforces the static rules that need scope context: `break` and
-//! `continue` outside a loop (loops don't cross function boundaries), `...`
-//! outside a vararg function, and Luau's rule that an `until` condition can't
-//! read a local declared after a `continue`.
+//! It also checks the rules that need scope info: `break` and `continue`
+//! outside a loop (loops don't cross function boundaries), `...` outside a
+//! vararg function, and Luau's rule that an `until` condition can't read a
+//! local declared after a `continue`.
 
 use std::rc::Rc;
 
@@ -18,14 +18,13 @@ use rhue_parser::ast::*;
 
 pub type LocalId = u32;
 
-/// What a single name occurrence refers to.
+/// What one name occurrence points at.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Binding {
-    /// Declares or uses the local with this id. The local may belong to an
-    /// enclosing function, in which case the compiler reaches it through an
-    /// upvalue.
+    /// Declares or uses the local with this id. It might belong to an enclosing
+    /// function, then the compiler reaches it through an upvalue.
     Local(LocalId),
-    /// A global variable, looked up by name at runtime.
+    /// A global, looked up by name at runtime.
     Global,
 }
 
@@ -86,8 +85,8 @@ pub fn resolve(chunk: &Chunk) -> Result<Resolution, Vec<Diagnostic>> {
 
 struct LoopCtx {
     is_repeat: bool,
-    /// First `continue` in this loop: its span and how many locals existed
-    /// at that point. Locals with a higher id may be skipped by it.
+    /// First `continue` in this loop: its span and how many locals existed at
+    /// that point. Locals with a higher id might get skipped by it.
     first_continue: Option<(Span, LocalId)>,
 }
 
@@ -103,8 +102,8 @@ struct Resolver {
     functions: Vec<FunctionCtx>,
     next_function: u32,
     errors: Vec<Diagnostic>,
-    /// Inside `typeof(...)` in a type: names are bound but never evaluated,
-    /// so they don't make a local captured.
+    /// Inside `typeof(...)` in a type. Names get bound but never evaluated, so
+    /// they don't make a local captured.
     in_type: u32,
 }
 
@@ -186,7 +185,7 @@ impl Resolver {
             for p in &func.params {
                 r.declare(p);
             }
-            // Annotations see the parameters (`typeof(a)` in a later one).
+            // annotations can see the parameters (`typeof(a)` in a later one)
             for t in func.param_types.iter().flatten().chain(&func.vararg_type) {
                 r.type_expr(t);
             }
@@ -198,8 +197,8 @@ impl Resolver {
         self.functions.pop();
     }
 
-    /// Binds the names inside `typeof(...)`; everything else in a type is
-    /// a type name, which the type checker resolves.
+    /// Binds the names inside `typeof(...)`. Everything else in a type is a
+    /// type name, the type checker handles those.
     fn type_expr(&mut self, t: &TypeExpr) {
         match &t.kind {
             TypeKind::Name { args, .. } => args.iter().for_each(|a| self.type_expr(a)),
@@ -260,7 +259,7 @@ impl Resolver {
                 types,
                 values,
             } => {
-                // `local x = x` reads the outer `x`: resolve values first.
+                // `local x = x` reads the outer `x`, so resolve values first
                 for v in values {
                     self.expr(v);
                 }
@@ -289,7 +288,7 @@ impl Resolver {
                 self.function(func);
             }
             StmtKind::LocalFunction { name, func } => {
-                // Declared first, so the body can call itself recursively.
+                // declared first so the body can call itself
                 self.declare(name);
                 self.function(func);
             }
@@ -302,7 +301,7 @@ impl Resolver {
                 self.scoped(|r| {
                     let first_local = r.out.locals.len() as LocalId;
                     let ctx = r.in_loop(true, |r| r.block_body(body));
-                    // The condition sees the body's locals.
+                    // the condition can see the body's locals
                     r.expr(cond);
                     if let Some((continue_span, locals_at_continue)) = ctx.first_continue {
                         r.check_until(cond, first_local.max(locals_at_continue), continue_span);
@@ -403,7 +402,7 @@ impl Resolver {
         self.func().loops.pop().expect("pushed above")
     }
 
-    /// Luau rejects `repeat ... continue ... local x ... until x`: jumping to
+    /// Luau rejects `repeat ... continue ... local x ... until x`, jumping to
     /// the condition would skip `x`'s initialisation.
     fn check_until(&mut self, cond: &Expr, first_unsafe: LocalId, continue_span: Span) {
         let mut bad = None;
@@ -430,8 +429,8 @@ impl Resolver {
     }
 
     fn expr(&mut self, expr: &Expr) {
-        // The AST depth is bounded by the parser, but deep trees still need
-        // a big stack in debug builds.
+        // the parser bounds AST depth, but deep trees still need a big stack in
+        // debug builds
         stacker::maybe_grow(64 * 1024, 1024 * 1024, || match &expr.kind {
             ExprKind::Nil | ExprKind::Bool(_) | ExprKind::Number(_) | ExprKind::String(_) => {}
             ExprKind::Name(n) => self.use_name(n),
@@ -503,8 +502,8 @@ impl Resolver {
     }
 }
 
-/// Visits the names an expression reads directly (not inside nested
-/// function bodies, which run later).
+/// Visits the names an expression reads directly (not inside nested function
+/// bodies, those run later).
 fn visit_names(expr: &Expr, f: &mut impl FnMut(&Name)) {
     match &expr.kind {
         ExprKind::Name(n) => f(n),
@@ -727,12 +726,12 @@ mod tests {
             errors("repeat if a then continue end local x = 1 until x"),
             ["local `x` is used in the `until` condition but may be skipped by `continue`"]
         );
-        // Declared before the `continue`: fine.
+        // declared before the `continue`, fine
         assert!(
             resolve(&parse_chunk("repeat local x = 1 if a then continue end until x").unwrap())
                 .is_ok()
         );
-        // `continue` belongs to an inner loop: fine.
+        // the `continue` belongs to an inner loop, fine
         assert!(
             resolve(&parse_chunk("repeat while a do continue end local x = 1 until x").unwrap())
                 .is_ok()

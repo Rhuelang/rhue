@@ -1,10 +1,10 @@
-//! Property test: the arithmetic trees of `proptest_meta.rs`, evaluated
-//! inside a coroutine where every leaf and every metamethod *yields* its
-//! value to the main thread, which sends it straight back. Each yield
-//! suspends in a different place (a plain call, an `__add` frame, a
-//! comparison's continuation...), so this checks that resuming always lands
-//! the values where the interrupted instruction wanted them. The answer
-//! must still match plain arithmetic bit for bit, also under GC stress.
+//! Property test: the arithmetic trees from `proptest_meta.rs`, evaluated
+//! inside a coroutine where every leaf and every metamethod *yields* its value
+//! to the main thread, which sends it straight back. Each yield suspends
+//! somewhere different (a plain call, an `__add` frame, a comparison's
+//! continuation...), so this checks that resuming always puts the values where
+//! the interrupted instruction wanted them. The answer still has to match plain
+//! arithmetic bit for bit, under GC stress too.
 
 use proptest::prelude::*;
 use rhue::{Engine, Value};
@@ -96,7 +96,7 @@ proptest! {
 
     #[test]
     fn yields_everywhere_match_plain_arithmetic(t in tree(), stress in any::<bool>()) {
-        // The driver echoes every yielded value back, counting the yields.
+        // the driver echoes every yielded value back, counting the yields
         let src = format!(
             "{PRELUDE}
             local co = coroutine.create(function()

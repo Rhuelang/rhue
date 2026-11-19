@@ -1,5 +1,5 @@
-//! Milestone 21's engine side: the type of an expression, as a REPL's
-//! `:type` shows it. (The REPL and `rhue test` are tested in `rhue-cli`.)
+//! Milestone 21's engine side: the type of an expression, the way a REPL's
+//! `:type` shows it. (The REPL and `rhue test` get tested in `rhue-cli`.)
 
 use rhue::Engine;
 
@@ -14,12 +14,12 @@ fn expression_types() {
     );
     assert_eq!(ty(&mut e, "string.upper").unwrap(), "(string) -> string");
     assert_eq!(ty(&mut e, "vector.create(1, 2) * 2").unwrap(), "vector");
-    // Globals the engine knows about are in scope, typed as declared.
+    // globals the engine knows about are in scope, typed as declared
     e.declare("score", "number").unwrap();
     e.eval("--!strict\nfunction double(n: number): number return n * 2 end")
         .unwrap();
     assert_eq!(ty(&mut e, "double(score)").unwrap(), "number");
-    // Errors are errors; multi-line expressions work.
+    // errors are errors, multi-line expressions work
     assert!(
         ty(&mut e, "double('x')")
             .unwrap_err()
@@ -27,7 +27,7 @@ fn expression_types() {
     );
     assert!(ty(&mut e, "1 +").is_err());
     assert_eq!(ty(&mut e, "{\n  1,\n  2,\n}").unwrap(), "{number}");
-    // Nothing runs.
+    // nothing runs
     e.eval("count = 0").unwrap();
     ty(&mut e, "(function() count = 1 return count end)()").unwrap();
     assert_eq!(e.eval_as::<f64>("return count").unwrap(), 0.0);

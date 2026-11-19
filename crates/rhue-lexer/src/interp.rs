@@ -1,9 +1,9 @@
 //! Interpolated strings: `` `hp: {player.hp}/{max}` ``.
 //!
-//! The lexer treats a whole interpolated string as one [`Token::InterpString`]
-//! (its `{...}` holes may contain any expression, nested strings and
-//! interpolations included). The parser splits it with [`pieces`] and lexes
-//! each hole on its own.
+//! The lexer keeps a whole interpolated string as one [`Token::InterpString`],
+//! holes and all (a `{...}` hole can hold any expression, including more
+//! strings and interpolations). The parser splits it up with [`pieces`] and
+//! lexes each hole by itself.
 //!
 //! [`Token::InterpString`]: crate::Token::InterpString
 
@@ -19,16 +19,16 @@ pub enum Piece {
     Hole(Range<usize>),
 }
 
-/// Why an interpolated string couldn't be scanned, and how far the bad
-/// part goes (from just after the opening backtick).
+/// Why an interpolated string couldn't be scanned, and how far the bad bit goes
+/// (counting from just after the opening backtick).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScanError {
-    /// The string or a hole ran into the end of the line or file.
+    /// The string or a hole hit the end of the line or file.
     Unterminated(usize),
 }
 
-/// Scans the rest of an interpolated string after its opening backtick and
-/// returns how many bytes it covers, closing backtick included.
+/// Scans the rest of an interpolated string after the opening backtick. Returns
+/// how many bytes it covers, closing backtick included.
 pub fn scan(rest: &[u8]) -> Result<usize, ScanError> {
     let mut i = 0;
     loop {
@@ -42,8 +42,8 @@ pub fn scan(rest: &[u8]) -> Result<usize, ScanError> {
     }
 }
 
-/// Scans a hole's expression from `start` (just after `{`) and returns the
-/// index just past its closing `}`.
+/// Scans a hole's expression from `start` (just after the `{`), returns the
+/// index just past its `}`.
 fn scan_hole(rest: &[u8], start: usize) -> Result<usize, ScanError> {
     let mut depth = 0usize;
     let mut i = start;
@@ -125,8 +125,8 @@ fn long_close(rest: &[u8], level: usize) -> Option<usize> {
     None
 }
 
-/// Splits a well-formed interpolated string token (as the lexer produced
-/// it) into text and holes. Empty text pieces are left out.
+/// Splits an interpolated string token (as the lexer made it) into text and
+/// holes. Empty text pieces get dropped.
 pub fn pieces(raw: &str) -> Vec<Piece> {
     let bytes = raw.as_bytes();
     let end = bytes.len() - 1; // the closing backtick

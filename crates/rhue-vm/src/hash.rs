@@ -1,12 +1,12 @@
 //! A fast hasher for keys that are VM handles and number bits.
 //!
-//! Table keys and global names are small fixed-size values (a handle's
-//! index and generation, or an f64's bits), so SipHash's resistance to
-//! chosen byte strings buys little and costs a lot on every `t.x` and
-//! global lookup. This is the multiply-rotate "Fx" hash used by rustc.
-//! Like Lua's own number hashing it is deterministic, so a script that
-//! crafts colliding number keys can slow its own tables down; string
-//! *contents* (the intern map) still use SipHash.
+//! Table keys and global names are small fixed-size values (a handle's index
+//! and generation, or an f64's bits), so SipHash's resistance to chosen byte
+//! strings doesn't buy much and costs a lot on every `t.x` and global lookup.
+//! This is the multiply-rotate "Fx" hash rustc uses. Like Lua's own number
+//! hashing it's deterministic, so a script that crafts colliding number keys
+//! can slow down its own tables. String *contents* (the intern map) still use
+//! SipHash.
 
 use std::hash::{BuildHasher, Hasher};
 
@@ -72,8 +72,8 @@ impl Hasher for FxHasher {
 
     #[inline]
     fn finish(&self) -> u64 {
-        // Fold the high bits down: hash tables index with the low bits,
-        // and the multiply pushes most of the mixing upwards.
+        // fold the high bits down. hash tables index with the low bits, and the
+        // multiply pushes most of the mixing upwards
         self.hash ^ (self.hash >> 29)
     }
 }
@@ -93,7 +93,7 @@ mod tests {
     #[test]
     fn deterministic_and_spread() {
         assert_eq!(hash(42u64), hash(42u64));
-        // Consecutive handles land in different low-bit buckets.
+        // consecutive handles land in different low-bit buckets
         let buckets: std::collections::HashSet<u64> = (0u32..64).map(|i| hash(i) & 63).collect();
         assert!(buckets.len() > 40, "{}", buckets.len());
     }

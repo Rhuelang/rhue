@@ -1,5 +1,5 @@
-//! Loading is the door bytes from outside come through: damaged chunks
-//! must be refused or, if they still verify, run without panicking.
+//! Loading is the door bytes from outside come through, so damaged chunks have
+//! to get refused, or if they still verify, run without panicking.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -43,8 +43,8 @@ proptest! {
     }
 }
 
-/// Not vacuous: plenty of single-byte damage still loads and verifies, so
-/// the property above really runs damaged code.
+/// Not vacuous. Plenty of single-byte damage still loads and verifies, so the
+/// property above really does run damaged code.
 #[test]
 fn damage_often_still_loads() {
     let mut e = Engine::new();

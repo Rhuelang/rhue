@@ -6,18 +6,19 @@ use rhue_lexer::{Spanned, Token, lex};
 use crate::ast::*;
 use crate::strings;
 
-/// Maximum nesting (recursion plus left-associative operator chains) before
-/// the parser gives up, so hostile input can't build an unboundedly deep tree.
+/// Max nesting (recursion plus left-associative operator chains) before the
+/// parser gives up, so hostile input can't build an endlessly deep tree.
 pub const MAX_DEPTH: u32 = 1000;
 
-/// Stop collecting after this many errors; later ones are usually cascades.
+/// Stop collecting after this many errors, the later ones are usually cascades
+/// anyway.
 pub const MAX_ERRORS: usize = 20;
 
 /// Boxed so `Result`s stay small on the hot (successful) path.
 type PResult<T> = Result<T, Box<Diagnostic>>;
 
-/// Parses a whole chunk (a file or `Engine::eval` source). On failure, returns
-/// every error found (up to [`MAX_ERRORS`]), in source order.
+/// Parses a whole chunk (a file or `Engine::eval` source). On failure you get
+/// every error it found (up to [`MAX_ERRORS`]), in source order.
 pub fn parse_chunk(source: &str) -> Result<Chunk, Vec<Diagnostic>> {
     let mut p = Parser::new(source)?;
     let body = p.block_until_eof();
@@ -33,8 +34,8 @@ pub fn parse_chunk(source: &str) -> Result<Chunk, Vec<Diagnostic>> {
     }
 }
 
-/// Parses a single expression and wraps it as `return <expr>`, so it goes
-/// through the same pipeline as a chunk (REPL / `eval_expr`).
+/// Parses one expression and wraps it as `return <expr>` so it goes through the
+/// same pipeline as a chunk (REPL / `eval_expr`).
 pub fn parse_expr(source: &str) -> Result<Chunk, Vec<Diagnostic>> {
     let mut p = Parser::new(source)?;
     let result = p.expr().and_then(|e| {
@@ -63,7 +64,7 @@ pub fn parse_expr(source: &str) -> Result<Chunk, Vec<Diagnostic>> {
     }
 }
 
-/// Parses a type on its own (`(number, string) -> boolean`), as host
+/// Parses a type by itself (`(number, string) -> boolean`), the way host
 /// declarations and definition strings are written.
 pub fn parse_type(source: &str) -> Result<TypeExpr, Vec<Diagnostic>> {
     let mut p = Parser::new(source)?;
@@ -83,15 +84,15 @@ struct Parser<'s> {
     errors: Vec<Diagnostic>,
 }
 
-/// Runs `f` on a fresh stack segment if less than 64 KiB remain, so deep (but
-/// within-limit) nesting is safe even on small embedder threads.
+/// Runs `f` on a fresh stack segment if there's less than 64 KiB left, so deep
+/// (but within the limit) nesting is fine even on an embedder's small threads.
 fn grow<R>(f: impl FnOnce() -> R) -> R {
     stacker::maybe_grow(64 * 1024, 1024 * 1024, f)
 }
 
-/// Finds a `--!strict`, `--!nonstrict` or `--!nocheck` comment among the
-/// lines before the first code. Other `--!` directives (`--!native`, ...)
-/// are ignored.
+/// Finds a `--!strict`, `--!nonstrict` or `--!nocheck` comment in the lines
+/// before the first code. Other `--!` directives (`--!native`, ...) get
+/// ignored.
 fn directive(source: &str) -> Option<(TypeMode, Span)> {
     let mut offset = 0usize;
     for line in source.split_inclusive('\n') {
@@ -104,7 +105,7 @@ fn directive(source: &str) -> Option<(TypeMode, Span)> {
         let rest = trimmed.strip_prefix("--")?;
         let Some(word) = rest.strip_prefix('!') else {
             if rest.starts_with('[') {
-                // A block comment may hide code after it; stop looking.
+                // a block comment might hide code after it, stop looking
                 return None;
             }
             continue;
@@ -143,7 +144,7 @@ impl<'s> Parser<'s> {
         })
     }
 
-    // --- token helpers -----------------------------------------------------
+    // ─ Token Helpers ─────────────────────────────────────────────────────────
 
     fn peek(&self) -> Spanned {
         self.tokens[self.pos]
@@ -153,7 +154,8 @@ impl<'s> Parser<'s> {
         self.tokens[(self.pos + n).min(self.tokens.len() - 1)]
     }
 
-    /// Whether a line break separates the current token from the previous one.
+    /// Whether there's a line break between the current token and the one
+    /// before.
     fn newline_before(&self) -> bool {
         let prev_end = if self.pos == 0 {
             0
@@ -199,8 +201,8 @@ impl<'s> Parser<'s> {
         }
     }
 
-    /// Expects the `end` (or `until`) closing a construct, pointing back at
-    /// the opener when it's missing.
+    /// Expects the `end` (or `until`) closing a construct, pointing back at the
+    /// opener when it's missing.
     fn expect_closer(&mut self, closer: Token, opener: Spanned, what: &str) -> PResult<Spanned> {
         self.expect(closer, &format!("to close `{what}`"))
             .map_err(|mut d| {
@@ -233,12 +235,12 @@ impl<'s> Parser<'s> {
         Ok(self.new_name(t.span))
     }
 
-    // --- blocks & error recovery -------------------------------------------
+    // ─ Blocks & Error Recovery ───────────────────────────────────────────────
 
     fn block_until_eof(&mut self) -> Block {
         let mut block = self.block();
-        // A stray closer at top level (`end` with no opener, usually after an
-        // earlier error) is reported, skipped, and parsing continues.
+        // a stray closer at the top level (an `end` with no opener, usually
+        // after an earlier error) gets reported, skipped, and we keep going
         while !self.at(Token::Eof) && self.errors.len() < MAX_ERRORS {
             let t = self.bump();
             self.report(
@@ -270,8 +272,8 @@ impl<'s> Parser<'s> {
     }
 
     fn block(&mut self) -> Block {
-        // Blocks nest through statements (`do do do ... end end end`), which
-        // the expression depth counter doesn't see; count them too.
+        // blocks nest through statements (`do do do ... end end end`) which the
+        // expression depth counter can't see, so count them too
         self.depth += 1;
         if self.depth > MAX_DEPTH {
             let span = self.peek().span;
@@ -279,7 +281,7 @@ impl<'s> Parser<'s> {
                 error("blocks nest too deeply", span)
                     .with_label_boxed(format!("nesting limit of {MAX_DEPTH} reached here")),
             );
-            // Nothing sensible can follow; stop parsing.
+            // nothing sensible can come after this, stop
             self.pos = self.tokens.len() - 1;
             self.depth -= 1;
             return Block {
@@ -350,7 +352,7 @@ impl<'s> Parser<'s> {
         }
     }
 
-    /// Skips to a token that can plausibly start or end a statement.
+    /// Skips ahead to a token that could plausibly start or end a statement.
     fn synchronize(&mut self) {
         loop {
             match self.peek().token {
@@ -372,8 +374,8 @@ impl<'s> Parser<'s> {
                     self.bump();
                     return;
                 }
-                // Statements usually start on a new line; an identifier
-                // there is most likely the next assignment.
+                // statements usually start on a new line, an identifier there
+                // is most likely the next assignment
                 Token::Ident if self.newline_before() => return,
                 _ => {
                     self.bump();
@@ -390,7 +392,7 @@ impl<'s> Parser<'s> {
         )
     }
 
-    // --- statements --------------------------------------------------------
+    // ─ Statements ────────────────────────────────────────────────────────────
 
     fn return_stmt(&mut self) -> PResult<Return> {
         let kw = self.bump();
@@ -486,7 +488,7 @@ impl<'s> Parser<'s> {
                     span: name.span,
                     kind: ExprKind::Name(name),
                 };
-                // `function a.b.c()` and `function a.b:m()`.
+                // `function a.b.c()` and `function a.b:m()`
                 let mut method = None;
                 while matches!(self.peek().token, Token::Dot | Token::Colon) {
                     let sep = self.bump();
@@ -514,7 +516,7 @@ impl<'s> Parser<'s> {
                 let mut func =
                     self.function_body(Some(Rc::from(full_name)), t, method.is_some())?;
                 if let Some(colon) = method {
-                    // Methods get an implicit first parameter, `self`.
+                    // methods get an implicit first parameter, `self`
                     let id = self.next_name;
                     self.next_name += 1;
                     func.params.insert(
@@ -545,8 +547,8 @@ impl<'s> Parser<'s> {
         }
     }
 
-    /// `continue` is contextual in Luau: it's a statement unless what follows
-    /// makes it an ordinary name (`continue = 1`, `continue(...)`).
+    /// `continue` is only a keyword in context in Luau. It's a statement unless
+    /// what follows makes it a normal name (`continue = 1`, `continue(...)`).
     fn continue_is_statement(&self) -> bool {
         !matches!(
             self.peek_nth(1).token,
@@ -644,8 +646,8 @@ impl<'s> Parser<'s> {
         })
     }
 
-    /// Assignment or compound assignment; a bare expression is an error
-    /// (only calls may stand alone, and calls arrive in milestone 3).
+    /// Assignment or compound assignment. A bare expression is an error, only
+    /// calls can stand alone.
     fn expr_statement(&mut self) -> PResult<Stmt> {
         let first = self.peek();
         if !matches!(first.token, Token::Ident | Token::LParen) {
@@ -725,16 +727,17 @@ impl<'s> Parser<'s> {
         }
     }
 
-    /// Parses `<T>(params): R body end`, after the `function` keyword (and
-    /// name). `is_method`: declared with `:` (the caller adds `self`).
+    /// Parses `<T>(params): R body end` after the `function` keyword (and
+    /// name). `is_method` means it was declared with `:` (the caller adds
+    /// `self`).
     fn function_body(
         &mut self,
         name: Option<Rc<str>>,
         kw: Spanned,
         is_method: bool,
     ) -> PResult<FunctionBody> {
-        // An error in the header would leave the body's `end` behind as a
-        // stray closer; skip the whole function instead.
+        // an error in the header would leave the body's `end` behind as a stray
+        // closer, so skip the whole function
         let header = self.function_header();
         let (generics, params, param_types, is_vararg, vararg_type, return_type) = match header {
             Ok(h) => h,
@@ -759,8 +762,8 @@ impl<'s> Parser<'s> {
         })
     }
 
-    /// Skips to the `end` (or `until`) matching `open` already-consumed
-    /// block openers.
+    /// Skips to the `end` (or `until`) matching `open` block openers that were
+    /// already eaten.
     fn skip_to_end(&mut self, open: u32) {
         let mut depth = open;
         loop {
@@ -833,9 +836,9 @@ impl<'s> Parser<'s> {
         ))
     }
 
-    // --- types -------------------------------------------------------------
+    // ─ Types ─────────────────────────────────────────────────────────────────
 
-    /// `expr :: T`. Binds tighter than any binary operator, as in Luau.
+    /// `expr :: T`. Binds tighter than any binary operator, like Luau.
     fn cast_expr(&mut self) -> PResult<Expr> {
         let mut e = self.simple_expr()?;
         while self.eat(Token::ColonColon).is_some() {
@@ -852,7 +855,7 @@ impl<'s> Parser<'s> {
         Ok(e)
     }
 
-    /// `type` and `export` are only keywords when a type alias follows.
+    /// `type` and `export` are only keywords when a type alias comes next.
     fn type_alias_starts(&self) -> bool {
         match self.text(self.peek().span) {
             "type" => self.peek_nth(1).token == Token::Ident,
@@ -889,8 +892,8 @@ impl<'s> Parser<'s> {
         })
     }
 
-    /// `<T, U...>`, or nothing. Defaults (`<T = string>`) only where
-    /// `defaults` (type aliases).
+    /// `<T, U...>`, or nothing. Defaults (`<T = string>`) only when `defaults`
+    /// is set (type aliases).
     fn generic_params(&mut self, defaults: bool) -> PResult<Vec<GenericParam>> {
         let mut out: Vec<GenericParam> = Vec::new();
         if self.eat(Token::Lt).is_none() {
@@ -957,7 +960,7 @@ impl<'s> Parser<'s> {
         })
     }
 
-    /// What can follow `...:` or `...`: a type, or a generic pack `T...`.
+    /// What can come after `...:` or `...`: a type, or a generic pack `T...`.
     fn variadic_type(&mut self) -> PResult<TypeExpr> {
         if self.at_generic_pack() {
             self.generic_pack()
@@ -966,7 +969,7 @@ impl<'s> Parser<'s> {
         }
     }
 
-    /// One type alias argument: a type, or a pack (`(A, B)`, `()`, `...T`,
+    /// One type alias argument, a type or a pack (`(A, B)`, `()`, `...T`,
     /// `T...`).
     fn type_arg(&mut self) -> PResult<TypeExpr> {
         let start = self.peek().span;
@@ -1022,8 +1025,8 @@ impl<'s> Parser<'s> {
         result
     }
 
-    /// Unions and intersections (a leading `|` or `&` is allowed). Mixing
-    /// them needs parentheses.
+    /// Unions and intersections (a leading `|` or `&` is fine). Mixing the two
+    /// needs parentheses.
     fn type_expr_inner(&mut self) -> PResult<TypeExpr> {
         let lead = self.peek().token;
         if matches!(lead, Token::Pipe | Token::Amp) {
@@ -1114,7 +1117,7 @@ impl<'s> Parser<'s> {
                 self.bump();
                 let mut name = self.text(tok.span).to_string();
                 let mut span = tok.span;
-                // `module.Type`: kept as one dotted name.
+                // `module.Type`, kept as one dotted name
                 if self.at(Token::Dot) && self.peek_nth(1).token == Token::Ident {
                     self.bump();
                     let field = self.bump();
@@ -1155,7 +1158,7 @@ impl<'s> Parser<'s> {
         let open = self.bump();
         let mut props = Vec::new();
         let mut indexer: Option<Box<(TypeExpr, TypeExpr)>> = None;
-        // `read name: T` / `write name: T` (contextual words).
+        // `read name: T` / `write name: T` (contextual words)
         let modifier = |p: &Self| {
             p.at(Token::Ident)
                 && matches!(p.text(p.peek().span), "read" | "write")
@@ -1167,7 +1170,7 @@ impl<'s> Parser<'s> {
                 || modifier(p)
         };
         if !self.at(Token::RBrace) && !is_entry(self) {
-            // `{T}`: an array.
+            // `{T}`, an array
             let elem = self.type_expr()?;
             let close = self.expect(Token::RBrace, "to close the array type `{T}`")?;
             let key = TypeExpr {
@@ -1203,7 +1206,7 @@ impl<'s> Parser<'s> {
                 self.expect(Token::Colon, "after `[key]` in a table type")?;
                 let value = self.type_expr()?;
                 match key.kind {
-                    // `["name"]: T` is a property, not an indexer.
+                    // `["name"]: T` is a property, not an indexer
                     TypeKind::Singleton(Singleton::String(name)) => props.push(TableProp {
                         name,
                         span: lb.span.to(value.span),
@@ -1327,8 +1330,8 @@ impl<'s> Parser<'s> {
         Ok((params, variadic))
     }
 
-    /// A function's results: `T`, `(A, B)`, `()`, `...T`, or a function
-    /// type `(A) -> B` (which `(` alone doesn't distinguish from a pack).
+    /// A function's results: `T`, `(A, B)`, `()`, `...T`, or a function type
+    /// `(A) -> B` (which `(` alone can't tell apart from a pack).
     fn return_pack(&mut self) -> PResult<TypePack> {
         let start = self.peek().span;
         if self.at_generic_pack() {
@@ -1358,7 +1361,7 @@ impl<'s> Parser<'s> {
                     Token::Pipe | Token::Amp | Token::Question
                 )
             {
-                // It was a function type or a parenthesised type after all.
+                // it was a function type or a parenthesised type after all
                 self.pos = pos;
                 self.next_name = names;
             } else {
@@ -1389,7 +1392,7 @@ impl<'s> Parser<'s> {
         }
     }
 
-    // --- expressions (Pratt) -----------------------------------------------
+    // ─ Expressions (Pratt) ───────────────────────────────────────────────────
 
     fn expr_list(&mut self) -> PResult<Vec<Expr>> {
         let mut values = vec![self.expr()?];
@@ -1436,9 +1439,9 @@ impl<'s> Parser<'s> {
             None => self.cast_expr()?,
         };
 
-        // Left-associative chains (`1 + 1 + 1 ...`) grow the tree without
-        // recursing, so count them toward the depth limit too; this keeps the
-        // AST depth bounded for later passes (and for `Drop`).
+        // left-associative chains (`1 + 1 + 1 ...`) grow the tree without
+        // recursing, so they count toward the depth limit too. keeps the AST
+        // depth bounded for later passes (and for `Drop`)
         let mut chain = 0;
         while let Some(op) = binary_op(self.peek().token) {
             let (left_bp, right_bp) = op.binding_power();
@@ -1464,9 +1467,8 @@ impl<'s> Parser<'s> {
         Ok(lhs)
     }
 
-    /// Splits an interpolated string token into text and holes; each hole
-    /// is lexed and parsed as an expression on its own. (The caller bumps
-    /// the token.)
+    /// Splits an interpolated string token into text and holes, lexing and
+    /// parsing each hole as its own expression. (The caller bumps the token.)
     fn interp_string(&mut self, span: Span) -> PResult<ExprKind> {
         let raw = self.text(span);
         let mut parts = Vec::new();
@@ -1507,8 +1509,8 @@ impl<'s> Parser<'s> {
         Ok(ExprKind::Interp(parts))
     }
 
-    /// Parses the expression inside one `{...}` hole, which starts at byte
-    /// `start` of the source.
+    /// Parses the expression inside one `{...}` hole, starting at byte `start`
+    /// of the source.
     fn hole(&mut self, text: &str, start: u32, hole: Span) -> PResult<Expr> {
         let lexed = rhue_lexer::lex(text);
         let shift = |s: Span| Span::new(s.start + start, s.end + start);
@@ -1622,8 +1624,8 @@ impl<'s> Parser<'s> {
         Ok(expr)
     }
 
-    /// Call suffixes after a name or parenthesised expression: `f(a)`,
-    /// `f "s"`, `f(a)(b)`. Indexing arrives with tables in milestone 4.
+    /// Call and index suffixes after a name or parenthesised expression:
+    /// `f(a)`, `f "s"`, `f(a)(b)`, `t.x[k]`.
     fn suffixes(&mut self, mut expr: Expr) -> PResult<Expr> {
         loop {
             match self.peek().token {
@@ -1763,7 +1765,7 @@ impl<'s> Parser<'s> {
         }
     }
 
-    /// `{ a, b; name = c, [k] = d, }` (separators `,` or `;`, trailing allowed).
+    /// `{ a, b; name = c, [k] = d, }` (`,` or `;` between, trailing is fine).
     fn table_constructor(&mut self) -> PResult<Expr> {
         let open = self.bump();
         let mut items = Vec::new();
@@ -1835,7 +1837,7 @@ impl<'s> Parser<'s> {
         }
     }
 
-    /// `if c then a elseif c2 then b else d` (the `else` is mandatory).
+    /// `if c then a elseif c2 then b else d` (the `else` isn't optional).
     fn if_expr(&mut self) -> PResult<Expr> {
         let kw = self.bump();
         let mut branches = Vec::new();

@@ -22,7 +22,7 @@ fn listing(src: &str, fold: bool) -> String {
     proto(src, fold).disassemble()
 }
 
-/// Just the main function's instruction lines, without the header, trimmed.
+/// Just the main function's instruction lines, no header, trimmed.
 fn code(src: &str) -> Vec<String> {
     listing(src, true)
         .lines()
@@ -67,7 +67,7 @@ fn unfolded_uses_k_forms_and_reuses_the_target() {
 
 #[test]
 fn locals_are_read_in_place() {
-    // `a` and `b` live in R0/R1; `a + b` reads them without copies.
+    // `a` and `b` live in R0/R1, `a + b` reads them without copying
     assert_eq!(
         code("local a, b = 1, 2 return a + b"),
         [
@@ -90,7 +90,7 @@ fn assignment_targets_the_local_directly() {
 
 #[test]
 fn and_or_assignment_goes_through_a_temporary() {
-    // Writing `a` into `x` first would clobber the `x` read on the right.
+    // writing `a` into `x` first would clobber the `x` read on the right
     assert_eq!(
         code("local x, a x = a and x"),
         [
@@ -134,15 +134,15 @@ fn comparisons_compile_to_compare_and_jump() {
             "RETURN R0 0",
         ]
     );
-    // `a > b` swaps operands: `b < a`.
+    // `a > b` swaps operands: `b < a`
     assert!(code("local a, b return a > b").contains(&"LT true R1 R0".to_string()));
-    // `~=` is `==` with the expected result flipped.
+    // `~=` is `==` with the expected result flipped
     assert!(code("local a, b return a ~= b").contains(&"EQ false R0 R1".to_string()));
 }
 
 #[test]
 fn conditions_short_circuit_without_booleans() {
-    // No LOADB: `a and b` in an `if` is two conditional jumps to the else.
+    // no LOADB, `a and b` in an `if` is two conditional jumps to the else
     let c = code("local a, b, x if a and b then x = 1 end");
     assert_eq!(
         c,
@@ -193,7 +193,7 @@ fn break_and_continue_targets() {
     let c = code(
         "local i = 0 while i < 10 do i += 1 if i == 5 then continue end if i == 8 then break end end",
     );
-    // continue → loop start (pc 1); break → after the loop.
+    // continue → loop start (pc 1), break → after the loop
     let last = c.len() - 1;
     assert!(c.contains(&"JMP -> 1".to_string()), "{c:#?}");
     assert!(c.contains(&format!("JMP -> {last}")), "{c:#?}");
@@ -268,8 +268,8 @@ fn calls_put_arguments_above_the_callee() {
             "RETURN R0 0"
         ]
     );
-    // A trailing call passes all its results through (`B = 0`, `C = 0`);
-    // `return f(...)` is a tail call.
+    // a trailing call passes all its results through (`B = 0`, `C = 0`), and
+    // `return f(...)` is a tail call
     assert_eq!(
         code("local f, g return f(g())"),
         [
@@ -283,7 +283,7 @@ fn calls_put_arguments_above_the_callee() {
             "RETURN R0 0"
         ]
     );
-    // Parentheses keep one result, so that's an ordinary call.
+    // parentheses keep one result, so that's a normal call
     assert_eq!(
         code("local f return (f())"),
         [
@@ -304,7 +304,7 @@ fn closures_capture_registers_and_upvalues() {
     );
     let f = &p.protos[0];
     let inner = &f.protos[0];
-    // f captures main's register 0; the inner function reuses f's upvalue 0.
+    // f captures main's register 0, the inner function reuses f's upvalue 0
     assert_eq!(
         (
             f.upvalues[0].in_stack,

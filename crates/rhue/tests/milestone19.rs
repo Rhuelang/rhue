@@ -23,13 +23,13 @@ fn take(out: &Rc<RefCell<Vec<String>>>) -> Vec<String> {
     std::mem::take(&mut *out.borrow_mut())
 }
 
-// --- natives that yield ----------------------------------------------------------------
+// ─ Natives That Yield ────────────────────────────────────────────────────────
 
 #[test]
 fn natives_suspend_scripts() {
     let (mut e, out) = engine();
-    // A native that asks the host something: the script stops there, and
-    // the host's answer becomes the native's result.
+    // a native that asks the host something: the script stops there, and the
+    // host's answer becomes the native's result
     e.register("ask", |question: String| -> Result<String, ScriptError> {
         Err(ScriptError::yield_with(vec![Value::String(
             question.into(),
@@ -51,7 +51,7 @@ fn natives_suspend_scripts() {
         TaskState::Finished(vec![s("Aalto"), Value::Number(4.0)])
     );
     assert!(t.is_finished());
-    // Resuming a finished task is an error.
+    // resuming a finished task is an error
     let err = e.resume(&mut t, vec![]).unwrap_err();
     assert!(
         err.render(false).contains("dead coroutine"),
@@ -66,7 +66,7 @@ fn yields_reach_through_script_code_but_not_natives() {
     e.register("pause", || -> Result<(), ScriptError> {
         Err(ScriptError::yield_with(vec![]))
     });
-    // Through Lua functions, loops, metamethods and pcall: fine.
+    // through Lua functions, loops, metamethods and pcall: fine
     let src = "local log = {}
 local mt = { __index = function(_, k) pause() return k .. '!' end }
 local t = setmetatable({}, mt)
@@ -83,7 +83,7 @@ return table.concat(log, ', ')";
     }
     assert_eq!(n, 4, "two pauses per iteration");
     assert_eq!(t.state(), TaskState::Finished(vec![s("true x!, true x!")]));
-    // From the main thread, or through a native, it's the usual error.
+    // from the main thread, or through a native, it's the usual error
     let err = e.eval("pause()").unwrap_err();
     assert_eq!(
         err.diagnostic().message,
@@ -116,7 +116,7 @@ fn tasks_report_errors() {
     assert_eq!(t.state(), TaskState::Finished(vec![Value::Number(12.0)]));
 }
 
-// --- the task library --------------------------------------------------------------
+// ─ The Task Library ──────────────────────────────────────────────────────────
 
 #[test]
 fn task_wait_and_delay_follow_the_clock() {
@@ -138,10 +138,10 @@ return 'done'",
     assert_eq!(e.pending_tasks(), 1);
     assert!(e.step(0.5).is_empty());
     assert!(take(&out).is_empty(), "not yet");
-    // Steps overshoot: wait reports the time that really passed.
+    // steps overshoot: wait reports the time that really passed
     e.step(0.75);
     assert_eq!(take(&out), ["woke after 1.25"]);
-    // `task.wait()` waits for the next step; the delay for its time.
+    // `task.wait()` waits for the next step, the delay for its time
     e.step(0.25);
     assert_eq!(take(&out), ["next step"]);
     assert!(t.is_finished());
@@ -224,7 +224,7 @@ fn task_library_edges() {
             .message
             .contains("function or thread expected, got number")
     );
-    // A task that keeps deferring itself can't hang a step.
+    // a task that keeps deferring itself can't hang a step
     e.spawn(
         "loop.rhue",
         "local function again() task.defer(again) end\nagain()",
@@ -232,7 +232,7 @@ fn task_library_edges() {
     .unwrap();
     e.step(0.0);
     assert!(e.pending_tasks() > 0);
-    // Typed.
+    // typed
     e.check("t.rhue", "--!strict\nlocal dt: number = task.wait(0.5)\nlocal th = task.spawn(function(n: number) end, 1)\ntask.cancel(th)").unwrap();
     assert!(
         e.check(
@@ -247,7 +247,7 @@ fn task_library_edges() {
     );
 }
 
-// --- environments --------------------------------------------------------------------
+// ─ Environments ──────────────────────────────────────────────────────────────
 
 #[test]
 fn environments_keep_globals_apart() {
@@ -262,15 +262,15 @@ fn environments_keep_globals_apart() {
     e.eval_in(&b, "name = 'B'").unwrap();
     e.eval_in(&a, "hello()").unwrap();
     assert_eq!(take(&out), ["hi from A"]);
-    // Neither sees the other's, and the engine's own globals are untouched.
+    // neither sees the other's, and the engine's own globals are untouched
     assert!(e.eval_in(&b, "return hello").unwrap()[0].is_nil());
     assert!(e.global("name").is_nil());
-    // Functions keep their environment wherever they're called from.
+    // functions keep their environment wherever they're called from
     let hello = e.eval_in(&a, "return hello").unwrap().remove(0);
     e.context().set(b.globals(), "borrowed", hello).unwrap();
     e.eval_in(&b, "borrowed()").unwrap();
     assert_eq!(take(&out), ["hi from A"]);
-    // The shared library and host globals are visible; shadowing stays local.
+    // the shared library and host globals are visible, shadowing stays local
     e.set_global("version", 7.0);
     let v = e
         .eval_in(
@@ -281,7 +281,7 @@ fn environments_keep_globals_apart() {
     assert_eq!(v, [Value::Number(7.0), Value::Number(2.0)]);
     e.eval("print('the real print')").unwrap();
     assert_eq!(take(&out), ["the real print"]);
-    // The host can read and seed an environment's globals.
+    // the host can read and seed an environment's globals
     let mut cx = e.context();
     assert_eq!(cx.get::<String>(a.globals(), "name").unwrap(), "A");
     cx.set(b.globals(), "seed", 41.0).unwrap();
@@ -301,7 +301,7 @@ fn environments_are_type_checked_separately() {
         "--!strict\nlimit = 10\nfunction double(n: number): number return n * 2 end",
     )
     .unwrap();
-    // Its own environment knows them...
+    // its own environment knows them...
     e.eval_in(&a, "--!strict\nlocal x: number = double(limit)")
         .unwrap();
     let err = e
@@ -311,12 +311,12 @@ fn environments_are_type_checked_separately() {
         err.render(false)
             .contains("could not be converted into 'string'")
     );
-    // ...others don't.
+    // ...others don't
     let err = e.eval_in(&b, "--!strict\nprint(double(1))").unwrap_err();
     assert_eq!(err.diagnostic().message, "Unknown global 'double'");
     let err = e.eval("--!strict\nprint(limit)").unwrap_err();
     assert_eq!(err.diagnostic().message, "Unknown global 'limit'");
-    // And engine globals defined later are still seen everywhere.
+    // and engine globals defined later are still seen everywhere
     e.eval("--!strict\nshared = 'x'").unwrap();
     e.eval_in(&b, "--!strict\nlocal s: string = shared")
         .unwrap();
@@ -341,7 +341,7 @@ fn environments_with_tasks_and_frozen_tables() {
         4.0
     );
     assert!(e.global("count").is_nil());
-    // A frozen environment table makes its globals read-only.
+    // a frozen environment table makes its globals read-only
     let locked = e.create_environment();
     e.context().set(locked.globals(), "x", 1.0).unwrap();
     e.set_global("lock", locked.globals().clone());
@@ -371,7 +371,7 @@ fn environment_globals_survive_collection() {
         .try_into_function();
     drop(env);
     e.gc();
-    // The function still reaches its environment.
+    // the function still reaches its environment
     assert_eq!(e.call::<f64>(&f, ()).unwrap(), 6.0);
 }
 
@@ -388,7 +388,7 @@ impl IntoFunction for Value {
     }
 }
 
-// --- serde ---------------------------------------------------------------------------
+// ─ serde ─────────────────────────────────────────────────────────────────────
 
 #[cfg(feature = "serde")]
 mod serde_tests {
@@ -483,7 +483,7 @@ return `{s.name} {s.layers} {s.offset[1]},{s.offset[2]} {table.concat(kinds, '/'
             )
             .unwrap();
         assert_eq!(out, "intro 3 -4,9 Dot/Circle/Rect/Pair 3 -2 nil 255");
-        // And script-made tables read back.
+        // and script-made tables read back
         e.eval(
             "scene.layers += 1\nscene.note = 'edited'\ntable.insert(scene.shapes, { Circle = 9 })",
         )
@@ -514,12 +514,12 @@ return `{s.name} {s.layers} {s.offset[1]},{s.offset[2]} {table.concat(kinds, '/'
         let v = e.eval("return print").unwrap().remove(0);
         let err = rhue::serde::from_value::<String>(&mut e.context(), v).unwrap_err();
         assert!(err.to_string().contains("function"), "{err}");
-        // Maps with keys that aren't 1..n read as maps, not sequences.
+        // maps with keys that aren't 1..n read as maps, not sequences
         let v = e.eval("return { [1] = 'a', [3] = 'c' }").unwrap().remove(0);
         let m: std::collections::BTreeMap<u32, String> =
             rhue::serde::from_value(&mut e.context(), v).unwrap();
         assert_eq!(m.len(), 2);
-        // A natives' conversion error becomes a script error.
+        // a natives' conversion error becomes a script error
         e.register(
             "parse",
             |cx: &mut rhue::Context<'_>, v: Value| -> Result<u32, ScriptError> {

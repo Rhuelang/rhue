@@ -3,25 +3,25 @@
 //! [`verify`] checks that a prototype (and every prototype nested in it) is
 //! well formed before the VM runs it:
 //!
-//! - every opcode is valid, and the code can't run off its end;
+//! - every opcode is valid, and the code can't run off its end
 //! - every register an instruction reads or writes is below `max_stack`
-//!   (including the hidden ones `FORLOOP`, `TFORCALL` and `SELF` use);
-//! - constant, upvalue and prototype indices exist, and the constants have
-//!   the type the instruction needs (global and field names are strings);
-//! - every jump lands on an instruction (never on a `DATA` word);
-//! - a comparison is followed by its `JMP` and `SETLIST` by its `DATA`;
-//! - an instruction that consumes "values up to `top`" directly follows
-//!   one that produces them, and isn't a jump target (so `top` is always
-//!   the one just set);
-//! - closures capture registers and upvalues that exist;
-//! - debug info is in range: spans lie in the source text, and each
-//!   local's register and pc range exist.
+//!   (including the hidden ones `FORLOOP`, `TFORCALL` and `SELF` use)
+//! - constant, upvalue and prototype indices exist, and the constants are
+//!   the type the instruction needs (global and field names are strings)
+//! - every jump lands on an instruction (never on a `DATA` word)
+//! - a comparison is followed by its `JMP`, and `SETLIST` by its `DATA`
+//! - an instruction that eats "values up to `top`" comes right after one
+//!   that makes them, and isn't a jump target (so `top` is always the one
+//!   that was just set)
+//! - closures capture registers and upvalues that exist
+//! - debug info is in range: spans are inside the source text, and each
+//!   local's register and pc range exist
 //!
-//! The VM is memory-safe whatever it runs (it has no `unsafe` and checks
-//! every access), but malformed bytecode would make it panic instead of
-//! raising a script error. The compiler's output always verifies; the
-//! engine checks it after every compile, and the test suites check every
-//! prototype they compile.
+//! The VM is memory-safe no matter what it runs (no `unsafe`, every access
+//! is checked), but bad bytecode would make it panic instead of raising a
+//! script error. The compiler's output always verifies, the engine checks
+//! it after every compile, and the test suites check every prototype they
+//! compile.
 
 use std::fmt;
 
@@ -52,9 +52,9 @@ impl fmt::Display for VerifyError {
 
 impl std::error::Error for VerifyError {}
 
-/// The most registers a function may use. The VM keeps a window of a little
-/// more than 256 slots above every frame, so this leaves room for the
-/// registers above `R(A)` that some instructions touch.
+/// The most registers a function can use. The VM keeps a window of a bit more
+/// than 256 slots above every frame, so this leaves room for the registers
+/// above `R(A)` that some instructions touch.
 pub const MAX_STACK: usize = 250;
 
 /// Checks `proto` (a main chunk) and everything nested in it.
@@ -62,8 +62,8 @@ pub fn verify(proto: &Proto) -> Result<(), VerifyError> {
     verify_one(proto, true)
 }
 
-/// [`verify`], skipped when this prototype already passed (it stays marked
-/// for as long as it lives; the code can't change inside an `Rc`).
+/// [`verify`], skipped when this prototype already passed (it stays marked for
+/// as long as it lives, the code can't change inside an `Rc`).
 pub fn verify_once(proto: &Proto) -> Result<(), VerifyError> {
     if proto.verified.get() {
         return Ok(());
@@ -97,7 +97,7 @@ fn verify_one(proto: &Proto, is_main: bool) -> Result<(), VerifyError> {
         return Err(fail(None, "has more parameters than registers".into()));
     }
     if is_main && !proto.upvalues.is_empty() {
-        // A chunk runs as a closure with no upvalues.
+        // a chunk runs as a closure with no upvalues
         return Err(fail(None, "a main chunk can't have upvalues".into()));
     }
     if proto.spans.len() != code.len() {
@@ -146,8 +146,8 @@ fn verify_one(proto: &Proto, is_main: bool) -> Result<(), VerifyError> {
         _ => return Err(fail(None, "doesn't end with RETURN or JMP".into())),
     }
 
-    // Instructions that consume `top` must directly follow one that sets
-    // it, so neither may be jumped to.
+    // instructions that consume `top` have to come right after one that sets
+    // it, so neither can be a jump target
     let mut targets = vec![false; code.len()];
 
     for (pc, &ins) in code.iter().enumerate() {
@@ -214,7 +214,7 @@ fn verify_one(proto: &Proto, is_main: bool) -> Result<(), VerifyError> {
             Op::LoadB => {
                 reg(a, "target")?;
                 if c != 0 {
-                    // Skips the next instruction.
+                    // skips the next instruction
                     jump(1)?;
                 }
             }
@@ -250,7 +250,7 @@ fn verify_one(proto: &Proto, is_main: bool) -> Result<(), VerifyError> {
                 if next != Some(Op::Jmp) {
                     return Err(err("a comparison must be followed by a JMP".into()));
                 }
-                // Skips the jump.
+                // skips the jump
                 jump(1)?;
             }
             Op::Jmp => jump(ins.sax())?,
@@ -372,8 +372,8 @@ fn verify_one(proto: &Proto, is_main: bool) -> Result<(), VerifyError> {
                 }
             }
             Op::TForCall => {
-                // The iterator, state and control, then the call's copies of
-                // them, which double as the variables (at least three).
+                // the iterator, state and control, then the call's copies of
+                // them, which double as the variables (at least three)
                 if c == 0 {
                     return Err(err("a generic for needs at least one variable".into()));
                 }
@@ -395,7 +395,7 @@ fn verify_one(proto: &Proto, is_main: bool) -> Result<(), VerifyError> {
         }
     }
 
-    // `top` only carries over from the instruction right before.
+    // `top` only carries over from the instruction right before
     for (pc, &ins) in code.iter().enumerate() {
         let uses_top = match ins.op() {
             Some(Op::Call | Op::TailCall) => ins.b() == 0,
@@ -419,8 +419,8 @@ fn verify_one(proto: &Proto, is_main: bool) -> Result<(), VerifyError> {
 }
 
 /// Checks that the instruction before `pc` leaves its values (`top`) at or
-/// above register `from`: a `CALL` keeping all results, a `TAILCALL` (when
-/// its callee is a native), or `VARARG` copying them all.
+/// above register `from`: a `CALL` keeping all its results, a `TAILCALL` (when
+/// the callee's a native), or a `VARARG` copying everything.
 fn consumes_top(code: &[Instr], pc: usize, from: usize) -> Result<(), String> {
     let prev = pc.checked_sub(1).map(|p| code[p]);
     match prev.and_then(|i| i.op().map(|op| (op, i))) {
@@ -435,7 +435,7 @@ fn consumes_top(code: &[Instr], pc: usize, from: usize) -> Result<(), String> {
     }
 }
 
-/// The most array or hash slots a table template may reserve.
+/// The most array or hash slots a table template can reserve.
 pub const MAX_TEMPLATE_SIZE: u32 = 1 << 16;
 
 #[cfg(test)]

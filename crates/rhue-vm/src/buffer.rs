@@ -1,8 +1,8 @@
-//! `buffer`, as in Luau: fixed-size mutable byte arrays. Offsets count
-//! from 0, numbers are little-endian, and every access is bounds-checked.
-//! Integers written are wrapped to their width (`writeu8(b, 0, 256)`
-//! stores 0). Strings in Rhue are UTF-8, so `tostring` and `readstring`
-//! refuse bytes that aren't.
+//! `buffer`, same as Luau: fixed-size mutable byte arrays. Offsets count from
+//! 0, numbers are little-endian, and every access is bounds-checked. Integers
+//! get wrapped to their width when written (`writeu8(b, 0, 256)` stores 0).
+//! Rhue strings are UTF-8, so `tostring` and `readstring` refuse bytes that
+//! aren't.
 
 use std::rc::Rc;
 
@@ -14,7 +14,7 @@ use crate::{NativeCtx, NativeError, Rets, Value, Vm};
 
 type R = Result<Rets, NativeError>;
 
-/// The largest buffer `create` makes, as in Luau.
+/// The biggest buffer `create` will make, same as Luau.
 pub const MAX_BUFFER: usize = 1 << 30;
 
 fn buf(args: &[Value], i: usize, f: &str) -> Result<BufRef, NativeError> {
@@ -24,7 +24,7 @@ fn buf(args: &[Value], i: usize, f: &str) -> Result<BufRef, NativeError> {
     }
 }
 
-/// An integer argument (truncated toward zero, as Luau does).
+/// An integer argument (truncated toward zero, like Luau).
 fn int(args: &[Value], i: usize, f: &str) -> Result<i64, NativeError> {
     Ok(num(args, i, f)?.trunc() as i64)
 }
@@ -74,7 +74,7 @@ macro_rules! numeric {
             Rc::new(|ctx: &mut NativeCtx<'_>, a: &[Value]| {
                 let b = buf(a, 0, $write)?;
                 let offset = int(a, 1, $write)?;
-                // Wrapped through a 64-bit integer, as Luau converts.
+                // wrapped through a 64-bit integer, that's how Luau converts
                 let v = num(a, 2, $write)?.trunc() as i64 as $t;
                 let bytes = ctx.heap_mut().buffer_mut(b);
                 let r = range(bytes.len(), offset, size_of::<$t>() as i64)?;
@@ -205,8 +205,8 @@ fn fill(ctx: &mut NativeCtx<'_>, a: &[Value]) -> R {
     Ok(smallvec![])
 }
 
-/// The bit range `[offset, offset + count)` (count at most 32): the bytes
-/// it spans.
+/// The bit range `[offset, offset + count)` (count 32 at most), the bytes it
+/// covers.
 fn bits(
     len: usize,
     a: &[Value],

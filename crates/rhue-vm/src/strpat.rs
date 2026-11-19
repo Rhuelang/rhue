@@ -1,8 +1,8 @@
-//! The pattern-matching half of the `string` library: `find`, `match`,
-//! `gmatch` and `gsub` (see [`crate::pattern`] for the patterns).
+//! The pattern-matching half of the `string` library: `find`, `match`, `gmatch`
+//! and `gsub` (see [`crate::pattern`] for the patterns).
 //!
-//! Positions are byte offsets, as in Lua. Captured text that cuts through
-//! a multi-byte character comes out with U+FFFD in its place, like
+//! Positions are byte offsets, like Lua. Captured text that cuts through a
+//! multi-byte character comes out with U+FFFD in its place, same as
 //! `string.sub`.
 
 use std::cell::Cell;
@@ -28,8 +28,8 @@ fn capture_value(ctx: &mut NativeCtx<'_>, src: &[u8], c: Capture) -> Value {
     }
 }
 
-/// Lua 5.4's `init` for `find`/`match`/`gmatch`: 1-based, negative from
-/// the end. `None` when it starts past the end (no match possible).
+/// Lua 5.4's `init` for `find`/`match`/`gmatch`: 1-based, negative from the
+/// end. `None` when it starts past the end (nothing can match).
 fn start_index(len: usize, init: i64) -> Option<usize> {
     let len = len as i64;
     let i = if init > 0 {

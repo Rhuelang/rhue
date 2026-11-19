@@ -1,9 +1,10 @@
-//! The standard library: base functions plus the `table`, `string` and
-//! `math` libraries (`coroutine` is in `coroutine.rs`). Error messages
-//! follow Luau's wording.
+//! The standard library: base functions plus the `table`, `string` and `math`
+//! libraries (`coroutine` is in `coroutine.rs`). Error messages follow Luau's
+//! wording.
 //!
 //! The pattern functions (`find`, `match`, `gmatch`, `gsub`) are in
-//! `strpat.rs`. Not here: `io` and the parts of `os` that touch the system.
+//! `strpat.rs`. Not here at all: `io` and the bits of `os` that touch the
+//! system.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -17,7 +18,7 @@ use crate::meta::Event;
 type R = Result<Rets, NativeError>;
 
 pub(crate) fn install(vm: &mut Vm) {
-    // --- base ------------------------------------------------------------
+    // ─ Base ──────────────────────────────────────────────────────────────────
     vm.register_native("print", Rc::new(print));
     vm.register_native("type", Rc::new(type_));
     vm.register_native("typeof", Rc::new(typeof_));
@@ -66,7 +67,7 @@ pub(crate) fn install(vm: &mut Vm) {
         }),
     );
 
-    // --- libraries -------------------------------------------------------
+    // ─ Libraries ─────────────────────────────────────────────────────────────
     let table = library(
         vm,
         &[
@@ -194,7 +195,7 @@ pub(crate) fn library(vm: &mut Vm, entries: &[(&str, crate::NativeFn)]) -> Value
     Value::Table(vm.heap_mut().alloc_table(table))
 }
 
-// --- argument helpers ------------------------------------------------------
+// ─ Argument Helpers ──────────────────────────────────────────────────────────
 
 pub(crate) fn bad_arg(n: usize, fname: &str, expected: &str, got: Value) -> NativeError {
     NativeError::Message(format!(
@@ -239,8 +240,8 @@ pub(crate) fn opt_int(
     }
 }
 
-/// Strings, plus numbers converted to strings (Lua coerces them for the
-/// string library).
+/// Strings, plus numbers converted to strings (Lua coerces them for the string
+/// library).
 pub(crate) fn text_arg(
     ctx: &NativeCtx<'_>,
     args: &[Value],
@@ -254,7 +255,7 @@ pub(crate) fn text_arg(
     }
 }
 
-/// A table argument the function will change: not a frozen one.
+/// A table argument the function's going to change, so not a frozen one.
 fn writable_arg(
     ctx: &NativeCtx<'_>,
     args: &[Value],
@@ -275,7 +276,7 @@ fn table_arg(args: &[Value], i: usize, fname: &str) -> Result<crate::TableRef, N
     }
 }
 
-// --- base ------------------------------------------------------------------
+// ─ Base ──────────────────────────────────────────────────────────────────────
 
 fn print(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let mut line = Vec::with_capacity(args.len());
@@ -313,7 +314,7 @@ fn tostring(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     Ok(smallvec![ctx.string(&s)])
 }
 
-/// `setmetatable(t, mt)`: sets (or with nil, removes) `t`'s metatable and
+/// `setmetatable(t, mt)` sets (or with nil, removes) `t`'s metatable and
 /// returns `t`. A metatable with a `__metatable` field is protected.
 fn setmetatable(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let t = writable_arg(ctx, args, 0, "setmetatable")?;
@@ -329,8 +330,8 @@ fn setmetatable(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     Ok(smallvec![Value::Table(t)])
 }
 
-/// `getmetatable(v)`: `v`'s metatable (strings share one), or its
-/// `__metatable` field when it has one.
+/// `getmetatable(v)`, `v`'s metatable (strings share one), or its `__metatable`
+/// field when it has one.
 fn getmetatable(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let v = arg(args, 0, "getmetatable")?;
     let Some(meta) = ctx.vm.metatable_of(v) else {
@@ -368,9 +369,9 @@ fn tonumber(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     Ok(smallvec![result.map_or(Value::Nil, Value::Number)])
 }
 
-/// Luau's number syntax: decimal (with optional fraction/exponent) or hex,
-/// with surrounding whitespace allowed. Unlike Rust's `parse`, rejects
-/// `inf`, `nan` and `infinity`.
+/// Luau's number syntax, decimal (with an optional fraction/exponent) or hex,
+/// whitespace around it allowed. Unlike Rust's `parse` it rejects `inf`, `nan`
+/// and `infinity`.
 fn parse_number(s: &str) -> Option<f64> {
     let s = s.trim();
     let (neg, body) = match s.strip_prefix('-') {
@@ -406,9 +407,9 @@ fn error(_ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     Err(NativeError::Raise { value, level })
 }
 
-/// `xpcall(f, handler, ...)`: like `pcall`, but an error value is passed
-/// through `handler` first. Unlike Lua, the handler runs after the stack has
-/// unwound, so it can't inspect the failing frames.
+/// `xpcall(f, handler, ...)`, like `pcall` but the error value goes through
+/// `handler` first. Unlike Lua, the handler runs after the stack's unwound, so
+/// it can't look at the failing frames.
 fn xpcall(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let f = arg(args, 0, "xpcall")?;
     let handler = match args.get(1) {
@@ -545,7 +546,7 @@ fn collectgarbage(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
         "count" => Ok(smallvec![Value::Number(
             ctx.heap().stats().bytes as f64 / 1024.0,
         )]),
-        // Runs at the VM's next safe point (right after this call returns).
+        // runs at the VM's next safe point (right after this call returns)
         "collect" => {
             ctx.heap_mut().request_collection();
             Ok(smallvec![Value::Number(0.0)])
@@ -556,7 +557,7 @@ fn collectgarbage(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     }
 }
 
-// --- table -------------------------------------------------------------------
+// ─ table ─────────────────────────────────────────────────────────────────────
 
 fn table_insert(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let t = writable_arg(ctx, args, 0, "insert")?;
@@ -627,7 +628,7 @@ fn table_concat(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let j = opt_int(args, 3, "concat", n)?;
     let mut out = String::new();
     for k in i..=j {
-        // Checked as it grows (the final size isn't known up front).
+        // checked as it grows (the final size isn't known up front)
         ctx.reserve(out.len())?;
         match ctx.heap().table(t).get(Value::Number(k as f64)) {
             Value::String(s) => out.push_str(ctx.heap().get(s)),
@@ -674,7 +675,7 @@ fn table_isfrozen(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     Ok(smallvec![Value::Bool(ctx.heap().table(t).is_frozen())])
 }
 
-/// A shallow copy with the same metatable; not frozen.
+/// A shallow copy with the same metatable, not frozen.
 fn table_clone(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let t = table_arg(args, 0, "clone")?;
     if ctx.vm.metamethod(Value::Table(t), Event::Metatable) != Value::Nil {
@@ -720,9 +721,8 @@ fn table_create(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     Ok(smallvec![ctx.new_table(Table::filled(n as usize, v))])
 }
 
-/// `table.move(a1, f, e, t, a2?)`: `a2[t..] = a1[f..=e]`, raw, as if
-/// copied through a temporary (so overlapping moves within one table work).
-/// Returns `a2`.
+/// `table.move(a1, f, e, t, a2?)`: `a2[t..] = a1[f..=e]`, raw, as if it went
+/// through a temporary (so overlapping moves in one table work). Returns `a2`.
 fn table_move(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     const MAX_MOVE: i64 = 1 << 26;
     let a1 = table_arg(args, 0, "move")?;
@@ -764,8 +764,8 @@ fn table_sort(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let mut items: Vec<Value> = (1..=n).map(|i| ctx.heap().table(t).get_int(i)).collect();
     match comparator {
         Some(f) => {
-            // The comparator may change the table, so the items are rooted
-            // independently of it.
+            // the comparator might change the table, so the items get rooted
+            // separately from it
             for &v in &items {
                 ctx.root(v);
             }
@@ -800,9 +800,9 @@ fn table_sort(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     Ok(smallvec![])
 }
 
-/// A stable merge sort over a fallible "less than". Unlike `slice::sort_by`
-/// it never panics when a script's comparator is inconsistent (`a < b` and
-/// `b < a` both true); the order is then unspecified but every item stays.
+/// A stable merge sort over a fallible "less than". Unlike `slice::sort_by` it
+/// never panics when a script's comparator is inconsistent (`a < b` and `b < a`
+/// both true). The order's unspecified then, but every item stays.
 fn merge_sort(
     items: &mut [Value],
     lt: &mut dyn FnMut(Value, Value) -> Result<bool, NativeError>,
@@ -810,7 +810,7 @@ fn merge_sort(
     if items.len() <= 1 {
         return Ok(());
     }
-    // Insertion sort for short runs.
+    // insertion sort for short runs
     if items.len() <= 12 {
         for i in 1..items.len() {
             let mut j = i;
@@ -827,7 +827,7 @@ fn merge_sort(
     let (left, right) = (items[..mid].to_vec(), items[mid..].to_vec());
     let (mut i, mut j, mut k) = (0, 0, 0);
     while i < left.len() && j < right.len() {
-        // Take from the right only when strictly less: keeps it stable.
+        // only take from the right when it's strictly less, keeps it stable
         if lt(right[j], left[i])? {
             items[k] = right[j];
             j += 1;
@@ -844,7 +844,7 @@ fn merge_sort(
     Ok(())
 }
 
-// --- string ------------------------------------------------------------------
+// ─ string ────────────────────────────────────────────────────────────────────
 
 fn string_len(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let s = text_arg(ctx, args, 0, "len")?;
@@ -862,8 +862,8 @@ fn string_map(
     Ok(smallvec![ctx.string(&out)])
 }
 
-/// Lua's index rules: negative counts from the end, then clamp to the
-/// string. Returns a 0-based half-open byte range.
+/// Lua's index rules: negative counts from the end, then clamp to the string.
+/// Returns a 0-based half-open byte range.
 pub(crate) fn byte_range(len: usize, i: i64, j: i64) -> (usize, usize) {
     let len = len as i64;
     let start = if i < 0 {
@@ -884,7 +884,7 @@ fn string_sub(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let i = opt_int(args, 1, "sub", 1)?;
     let j = opt_int(args, 2, "sub", -1)?;
     let (a, b) = byte_range(s.len(), i, j);
-    // Rhue strings are UTF-8: a cut through a character becomes U+FFFD.
+    // Rhue strings are UTF-8, a cut through a character becomes U+FFFD
     let out = String::from_utf8_lossy(&s.as_bytes()[a..b]).into_owned();
     Ok(smallvec![ctx.string(&out)])
 }
@@ -920,8 +920,8 @@ fn string_char(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let mut out = String::new();
     for i in 0..args.len() {
         let c = int(args, i, "char")?;
-        // Rhue strings are UTF-8, so values are code points (0..=255 match
-        // Lua for ASCII; 128..=255 become the Latin-1 characters).
+        // Rhue strings are UTF-8, so values are code points (0..=255 match Lua
+        // for ASCII, 128..=255 become the Latin-1 characters)
         let ch = u32::try_from(c)
             .ok()
             .and_then(char::from_u32)
@@ -1130,7 +1130,7 @@ fn c_exponent(n: f64, precision: usize) -> String {
 }
 
 /// C's `%g`: the shorter of `%e` and `%f` at `precision` significant digits,
-/// with trailing zeros removed (unless `#`).
+/// trailing zeros removed (unless `#`).
 fn c_general(n: f64, precision: usize, keep_zeros: bool) -> String {
     if !n.is_finite() {
         return if n.is_nan() {
@@ -1175,7 +1175,7 @@ fn quote(s: &str) -> String {
     out
 }
 
-// --- math --------------------------------------------------------------------
+// ─ Math ──────────────────────────────────────────────────────────────────────
 
 fn math1(args: &[Value], fname: &str, f: impl Fn(f64) -> f64) -> R {
     Ok(smallvec![Value::Number(f(num(args, 0, fname)?))])
@@ -1225,7 +1225,7 @@ fn math_clamp(_: &mut NativeCtx<'_>, args: &[Value]) -> R {
     Ok(smallvec![Value::Number(x.max(lo).min(hi))])
 }
 
-/// xorshift64*: small, fast, deterministic per seed. Not cryptographic.
+/// xorshift64*. Small, fast, deterministic per seed. Not cryptographic.
 fn math_random(state: &Cell<u64>, args: &[Value]) -> R {
     let mut x = state.get();
     x ^= x >> 12;

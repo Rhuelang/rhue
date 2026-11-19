@@ -1,12 +1,12 @@
-//! Rhue's type checker: Luau-style gradual typing.
+//! Rhue's type checker, Luau-style gradual typing.
 //!
-//! Part of [Rhue](https://docs.rs/rhue)'s implementation. To embed Rhue, use
-//! the `rhue` crate: its API is the one kept stable.
+//! This is part of [Rhue](https://docs.rs/rhue)'s guts. If you're embedding
+//! Rhue, use the `rhue` crate, that's the API that stays stable.
 //!
-//! A chunk opts in with a directive on its first lines: `--!strict` checks
-//! everything that can be inferred, `--!nonstrict` checks only what's
-//! annotated, `--!nocheck` (or no directive, by default) checks nothing.
-//! Types never affect how code runs; the compiler erases them.
+//! A chunk opts in with a directive on its first lines. `--!strict` checks
+//! everything that can be inferred, `--!nonstrict` only checks what's
+//! annotated, and `--!nocheck` (or no directive, by default) checks
+//! nothing. Types never change how code runs, the compiler erases them.
 //!
 //! ```
 //! use rhue_types::{Env, check_chunk};
@@ -33,8 +33,8 @@ pub use env::{ClassType, Env, any_function};
 pub use export::Exported;
 pub use portable::portable;
 
-/// The checker's maps: keyed by small ids and names, hashed with foldhash
-/// (SipHash, the default, cost about 5% of checking a large file).
+/// The checker's maps, keyed by small ids and names and hashed with foldhash
+/// (SipHash, the default, was about 5% of checking a big file).
 pub type HashMap<K, V> = std::collections::HashMap<K, V, foldhash::fast::RandomState>;
 pub type HashSet<T> = std::collections::HashSet<T, foldhash::fast::RandomState>;
 pub use types::{FnType, Pack, TableType, Type, intersection, union};

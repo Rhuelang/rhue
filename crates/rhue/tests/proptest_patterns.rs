@@ -1,9 +1,9 @@
 //! Property test: random Lua patterns (classes, sets, `.`, all four
-//! quantifiers, captures, anchors) run through `string.find` and compared
-//! with the same pattern translated to a `regex` crate regex. Without
-//! alternation, Lua's backtracking matcher and the regex crate's
-//! leftmost-first semantics agree on where the first match is and what each
-//! group captured, so any difference is a bug in one of them (ours).
+//! quantifiers, captures, anchors) run through `string.find` and compared with
+//! the same pattern translated into a `regex` crate regex. Without alternation,
+//! Lua's backtracking matcher and the regex crate's leftmost-first semantics
+//! agree on where the first match is and what each group captured, so any
+//! difference is a bug in one of them (ours).
 
 use proptest::prelude::*;
 use regex::bytes::Regex;
@@ -92,7 +92,7 @@ impl Atom {
             Atom::Any => "(?s:.)".into(),
             Atom::Class(c) => class_regex(*c),
             Atom::Set { negated, items } => {
-                // A union of nested classes: `[[a][0-9]]`, or `[^...]`.
+                // a union of nested classes: `[[a][0-9]]`, or `[^...]`
                 let parts: Vec<String> = items
                     .iter()
                     .map(|i| match i {

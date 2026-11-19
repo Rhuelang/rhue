@@ -1,19 +1,17 @@
-//! `rhue-dap`: a debugger for Rhue scripts, speaking the Debug Adapter
-//! Protocol over stdio (what VS Code, Neovim's nvim-dap and other editors
-//! use).
+//! `rhue-dap`, a debugger for Rhue scripts that speaks the Debug Adapter
+//! Protocol over stdio (what VS Code, nvim-dap and friends use).
 //!
-//! It runs the program named by the `launch` request in an [`Engine`] with a
-//! debug hook, and supports breakpoints (by line, with conditions, hit
-//! counts and log messages), stepping (over, into, out), pausing, the call
-//! stack, scopes (locals, upvalues, globals) with expandable tables,
-//! evaluating expressions in a frame (hovers only read names and field
-//! paths, like `player.stats.hp`, so they never run code), and the
-//! script's `print` output.
+//! It runs whatever the `launch` request names in an [`Engine`] with a debug
+//! hook. You get breakpoints (by line, with conditions, hit counts and log
+//! messages), stepping (over, into, out), pausing, the call stack, scopes
+//! (locals, upvalues, globals) with expandable tables, evaluating expressions
+//! in a frame, and the script's `print` output. Hovers only read names and
+//! field paths like `player.stats.hp`, so they never run code.
 //!
 //! One thread reads the protocol from stdin and hands each message to the
 //! session thread, which owns the engine (engines aren't `Send`). While the
-//! script runs, the hook checks for new messages at each line; while it's
-//! stopped, the hook waits for them.
+//! script runs the hook checks for new messages every line, and while it's
+//! stopped the hook waits on them.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -26,7 +24,7 @@ use std::sync::{Arc, Mutex};
 use rhue::{DebugEvent, Debugger, Engine, HookMask, Table, Value};
 use serde_json::{Value as Json, json};
 
-/// Writes protocol messages (shared by the session and the print hook).
+/// Writes protocol messages (the session and the print hook share it).
 #[derive(Clone)]
 struct Out {
     inner: Arc<Mutex<(std::io::Stdout, i64)>>,
@@ -105,7 +103,7 @@ fn main() {
     Session::new(out, rx).run();
 }
 
-/// How execution should go after a stop.
+/// How to carry on after a stop.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Mode {
     Run,
@@ -117,8 +115,7 @@ enum Mode {
     Out(usize),
 }
 
-/// What a `variablesReference` stands for (valid until the script runs
-/// again).
+/// What a `variablesReference` stands for (good until the script runs again).
 #[derive(Clone)]
 enum VarRef {
     Locals(usize),
@@ -127,8 +124,8 @@ enum VarRef {
     Table(Table),
 }
 
-/// A line breakpoint, perhaps with a condition, a hit count or a log
-/// message (a logpoint, which prints instead of stopping).
+/// A line breakpoint, maybe with a condition, a hit count or a log message (a
+/// logpoint, which prints instead of stopping).
 struct Breakpoint {
     line: u32,
     condition: Option<String>,
@@ -137,8 +134,8 @@ struct Breakpoint {
     hits: u32,
 }
 
-/// When a breakpoint's hit count lets it stop: `N` or `== N` (the Nth hit
-/// only), `> N`, `>= N`, `< N`, `<= N`, `% N` (every Nth).
+/// When a breakpoint's hit count lets it stop: `N` or `== N` (only the Nth
+/// hit), `> N`, `>= N`, `< N`, `<= N`, `% N` (every Nth).
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum HitCondition {
     Eq(u32),
@@ -335,8 +332,8 @@ impl Session {
 }
 
 impl State {
-    /// Requests that make sense whether or not the script is stopped.
-    /// Returns `false` for ones it doesn't handle.
+    /// Requests that make sense whether the script's stopped or not. Returns
+    /// `false` for ones it doesn't handle.
     fn common(&mut self, msg: &Json, dbg: Option<&mut Debugger<'_, '_>>) -> bool {
         let out = self.out.clone();
         let args = &msg["arguments"];
@@ -431,7 +428,7 @@ impl State {
         json!({ "name": name, "value": value, "type": v.type_of(), "variablesReference": reference })
     }
 
-    /// The requests that look at a stopped script.
+    /// The requests that poke at a stopped script.
     fn inspect(&mut self, msg: &Json, dbg: &mut Debugger<'_, '_>) {
         let out = self.out.clone();
         let args = &msg["arguments"];
@@ -517,8 +514,8 @@ impl State {
             "evaluate" => {
                 let level = args["frameId"].as_u64().unwrap_or(1).saturating_sub(1) as usize;
                 let expr = args["expression"].as_str().unwrap_or("").trim();
-                // Hovering mustn't run code (a call could do anything), so
-                // it only reads names and field paths.
+                // hovering can't run code (a call could do anything), so it
+                // only reads names and field paths
                 let result = if args["context"] == "hover" {
                     evaluate_path(dbg, level, expr)
                         .map(|v| vec![v])
@@ -556,8 +553,8 @@ impl State {
         }
     }
 
-    /// Whether the breakpoints on `line` of `path` stop here, after
-    /// counting the hit, checking conditions and printing log messages.
+    /// Whether the breakpoints on `line` of `path` stop here, after counting
+    /// the hit, checking conditions and printing log messages.
     fn breakpoint_stops(&mut self, path: &Path, line: u32, dbg: &mut Debugger<'_, '_>) -> bool {
         let out = self.out.clone();
         let Some(list) = self.breakpoints.get_mut(path) else {
@@ -570,7 +567,7 @@ impl State {
                     Ok(v) if v.first().is_some_and(Value::is_truthy) => {}
                     Ok(_) => continue,
                     Err(e) => {
-                        // Stop, so the broken condition gets noticed.
+                        // stop, so the broken condition gets noticed
                         out.event(
                             "output",
                             json!({ "category": "stderr", "output": format!("breakpoint condition `{cond}` failed: {e}\n") }),
@@ -599,7 +596,8 @@ impl State {
     }
 }
 
-/// How a value reads in the debugger: strings quoted, the rest as `tostring`.
+/// How a value reads in the debugger, strings quoted and the rest as
+/// `tostring`.
 fn shown(v: &Value) -> String {
     match v {
         Value::String(s) => format!("{s:?}"),
@@ -607,8 +605,8 @@ fn shown(v: &Value) -> String {
     }
 }
 
-/// A logpoint's message with each `{expression}` replaced by its value
-/// (`{{` and `}}` for literal braces).
+/// A logpoint's message with each `{expression}` swapped for its value (`{{`
+/// and `}}` for literal braces).
 fn interpolate(dbg: &mut Debugger<'_, '_>, message: &str) -> String {
     let mut out = String::new();
     let mut rest = message;
@@ -649,8 +647,8 @@ fn interpolate(dbg: &mut Debugger<'_, '_>, message: &str) -> String {
     out
 }
 
-/// A name (local, upvalue or global) followed by `.field`s, in frame
-/// `level`, read without running any code.
+/// A name (local, upvalue or global) followed by `.field`s in frame `level`,
+/// read without running any code.
 fn evaluate_path(dbg: &mut Debugger<'_, '_>, level: usize, expr: &str) -> Option<Value> {
     let mut parts = expr.split('.');
     let first = parts.next()?.trim();
@@ -675,7 +673,7 @@ fn evaluate_path(dbg: &mut Debugger<'_, '_>, level: usize, expr: &str) -> Option
     Some(v)
 }
 
-/// The hook: decides whether to stop at `line`, and serves requests while
+/// The hook. Decides whether to stop at `line`, and serves requests while
 /// stopped.
 fn on_line(
     state: &Rc<RefCell<State>>,
@@ -683,7 +681,7 @@ fn on_line(
     line: u32,
 ) -> Result<(), String> {
     let mut st = state.borrow_mut();
-    // Requests that arrived while running.
+    // requests that came in while running
     loop {
         match st.rx.try_recv() {
             Ok(msg) => {
@@ -727,7 +725,7 @@ fn on_line(
         "stopped",
         json!({ "reason": reason, "threadId": 1, "allThreadsStopped": true }),
     );
-    // Stopped: serve requests until one resumes.
+    // stopped, serve requests until one resumes
     loop {
         let Ok(msg) = st.rx.recv() else {
             return Err("the debugger went away".into());
@@ -766,8 +764,8 @@ fn on_line(
     }
 }
 
-/// `disconnect` while running stops the script; resuming requests are
-/// answered (there's nothing to resume). `Ok(true)`: handled.
+/// `disconnect` while running stops the script, resuming requests just get
+/// answered (there's nothing to resume). `Ok(true)` means it was handled.
 fn handle_while_running(st: &mut State, msg: &Json) -> Result<bool, String> {
     match msg["command"].as_str().unwrap_or("") {
         "disconnect" | "terminate" => {

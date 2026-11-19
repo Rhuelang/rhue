@@ -1,8 +1,8 @@
-//! What editors need from a file without type-checking it: its symbols,
-//! a classification of its tokens for highlighting, and how it uses and
-//! defines module fields (for going to definitions and finding references
-//! across files). Parsing and resolving names is enough for all of it, so
-//! it's cheap to compute for every file in a workspace.
+//! What editors need from a file without type-checking it: its symbols, its
+//! tokens classified for highlighting, and how it uses and defines module
+//! fields (for go to definition and find references across files). Parsing and
+//! resolving names is enough for all of it, so it's cheap to do for every file
+//! in a workspace.
 
 use std::collections::HashMap;
 
@@ -18,15 +18,14 @@ use crate::Span;
 /// A file's outline; see [`outline`].
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Outline {
-    /// Its functions, variables, fields and types, nested as written:
-    /// `function M.f()` sits under `local M`.
+    /// Its functions, variables, fields and types, nested as written: `function
+    /// M.f()` sits under `local M`.
     pub symbols: Vec<Symbol>,
-    /// Every keyword, literal and name, classified, in source order and
-    /// not overlapping. Only keywords and literals when the file doesn't
-    /// parse.
+    /// Every keyword, literal and name, classified, in source order with no
+    /// overlaps. Only keywords and literals when the file doesn't parse.
     pub tokens: Vec<SemanticToken>,
-    /// Locals bound to a module: `local m = require("m")` gives the
-    /// declaration of `m` and `"m"`.
+    /// Locals bound to a module. `local m = require("m")` gives the declaration
+    /// of `m` and `"m"`.
     pub requires: Vec<(Span, String)>,
     /// Every `x.name` and `x:name(...)` where `x` is a local or a
     /// `require(...)` call.
@@ -38,7 +37,7 @@ pub struct Outline {
 /// A named thing defined in a file, for outlines and workspace symbols.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Symbol {
-    /// Its name (a field's own name: `f` for `M.f`, listed under `M`).
+    /// Its name (a field's own name, `f` for `M.f`, listed under `M`).
     pub name: String,
     /// What kind of thing it is.
     pub kind: SymbolKind,
@@ -110,7 +109,8 @@ pub enum TokenKind {
     Namespace,
 }
 
-/// A field read from a local or a module (`m.name`, `m:name()`), for navigation across modules.
+/// A field read from a local or a module (`m.name`, `m:name()`), for navigating
+/// across modules.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FieldUse {
     /// The field's name as written.
@@ -130,20 +130,20 @@ pub enum Base {
     Module(String),
 }
 
-/// What a module file exports, for navigation across modules.
+/// What a module file exports, for navigating across modules.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Exports {
     /// For `return M`, where `M` is declared.
     pub local: Option<Span>,
     /// The fields it's known to have and where each is defined: `function
-    /// M.f()`, `M.x = ...` and fields of `local M = { ... }` at the top
-    /// level, or the fields of a returned table literal (where a field's
-    /// value is a local, the local's declaration).
+    /// M.f()`, `M.x = ...` and fields of `local M = { ... }` at the top level,
+    /// or the fields of a returned table literal (where a field's value is a
+    /// local, the local's declaration).
     pub fields: Vec<(String, Span)>,
 }
 
 /// The outline of `source` (see [`Outline`]). A file that doesn't parse or
-/// resolve gets only its lexical tokens.
+/// resolve only gets its lexical tokens.
 pub fn outline(source: &str) -> Outline {
     let mut out = Outline::default();
     let lexed = rhue_lexer::lex(source);
@@ -170,7 +170,7 @@ pub fn outline(source: &str) -> Outline {
     let mut tokens = lexical(&lexed.tokens, &holes);
     tokens.extend(names);
     tokens.sort_by_key(|t| (t.span.start, std::cmp::Reverse(t.span.end)));
-    // Keep the first of overlapping tokens (a name reached two ways).
+    // keep the first of overlapping tokens (a name reached two ways)
     let mut end = 0;
     tokens.retain(|t| {
         let keep = t.span.start >= end && t.span.end > t.span.start;
@@ -185,7 +185,7 @@ pub fn outline(source: &str) -> Outline {
     out
 }
 
-/// Keywords and literals; interpolated strings minus their holes.
+/// Keywords and literals, interpolated strings minus their holes.
 fn lexical(tokens: &[rhue_lexer::Spanned], holes: &[Span]) -> Vec<SemanticToken> {
     let mut out = Vec::new();
     let mut push = |span: Span, kind| {
@@ -256,7 +256,7 @@ fn is_require(e: &Expr, res: &Resolution) -> Option<String> {
     }
 }
 
-/// `x.name` written with a dot (not `x["name"]`): the name.
+/// `x.name` written with a dot (not `x["name"]`), the name.
 fn dotted(key: &Expr) -> Option<&str> {
     match &key.kind {
         ExprKind::String(s) if (key.span.end - key.span.start) as usize == s.len() => Some(s),
@@ -279,7 +279,7 @@ impl Walker<'_, '_> {
         self.token(name.span, kind, true, false);
     }
 
-    /// The local `name` refers to: where it's declared.
+    /// The local `name` refers to, where it's declared.
     fn local_decl(&self, name: &Name) -> Option<Span> {
         match self.res.binding(name) {
             Binding::Local(id) => Some(self.res.locals[id as usize].span),
@@ -426,7 +426,7 @@ impl Walker<'_, '_> {
                 self.function(func);
             }
             StmtKind::TypeAlias(a) => {
-                // `export type` / `type`: contextual keywords.
+                // `export type` / `type`, contextual keywords
                 let head = &self.source[s.span.start as usize..a.name_span.start as usize];
                 let mut at = s.span.start;
                 for word in head.split_whitespace() {
@@ -450,7 +450,7 @@ impl Walker<'_, '_> {
         }
     }
 
-    /// An assignment target; `defines` for `function a.b()`.
+    /// An assignment target. `defines` for `function a.b()`.
     fn target(&mut self, t: &Expr, defines: bool) {
         match &t.kind {
             ExprKind::Name(n) => self.name(n, defines, defines),
@@ -500,7 +500,7 @@ impl Walker<'_, '_> {
         self.open_generics(&f.generics);
         for (i, p) in f.params.iter().enumerate() {
             if f.is_method && i == 0 {
-                // The implicit `self` isn't written.
+                // the implicit `self` isn't written
                 self.decls.insert(p.span, TokenKind::Parameter);
                 continue;
             }
@@ -538,7 +538,7 @@ impl Walker<'_, '_> {
         }
     }
 
-    /// `called`: the callee of a call (a name there is a function).
+    /// `called` means it's the callee of a call (a name there is a function).
     fn expr(&mut self, e: &Expr, called: bool) {
         match &e.kind {
             ExprKind::Nil
@@ -652,7 +652,7 @@ impl Walker<'_, '_> {
                 } else {
                     TokenKind::Type
                 };
-                // `nil` is lexed as a keyword already.
+                // `nil` already lexes as a keyword
                 if &**name != "nil" {
                     self.token(span, kind, false, false);
                 }
@@ -679,7 +679,7 @@ impl Walker<'_, '_> {
             }
             TypeKind::Table { props, indexer } => {
                 for p in props {
-                    // The span starts at the name; `read`/`write` is before it.
+                    // the span starts at the name, `read`/`write` is before it
                     let prefix = p.access.prefix().trim_end();
                     let before = self.source[..p.span.start as usize].trim_end();
                     if !prefix.is_empty() && before.ends_with(prefix) {
@@ -724,7 +724,7 @@ impl Walker<'_, '_> {
     }
 }
 
-// --- symbols -------------------------------------------------------------------------
+// ─ Symbols ───────────────────────────────────────────────────────────────────
 
 fn symbol(name: &str, kind: SymbolKind, span: Span, name_span: Span) -> Symbol {
     Symbol {
@@ -762,8 +762,8 @@ fn joined(parts: &[String], method: bool) -> String {
     }
 }
 
-/// The symbols a block defines. At the top level, every local and global
-/// is one; inside functions and blocks, only functions.
+/// The symbols a block defines. At the top level every local and global is one,
+/// inside functions and blocks only functions are.
 fn symbols(b: &Block, res: &Resolution, top: bool) -> Vec<Symbol> {
     let mut out: Vec<Symbol> = Vec::new();
     for s in &b.stmts {
@@ -803,7 +803,7 @@ fn symbols(b: &Block, res: &Resolution, top: bool) -> Vec<Symbol> {
                 } else {
                     SymbolKind::Function
                 };
-                // Under the local or global it's defined on, if that's here.
+                // under the local or global it's defined on, if that's here
                 let parent = (path.len() > 1)
                     .then(|| out.iter_mut().rev().find(|p| p.name == path[0]))
                     .flatten();
@@ -915,7 +915,7 @@ fn table_fields(items: &[TableItem], res: &Resolution) -> Vec<Symbol> {
         .collect()
 }
 
-// --- exports -------------------------------------------------------------------------
+// ─ Exports ───────────────────────────────────────────────────────────────────
 
 fn exports(chunk: &Chunk, res: &Resolution) -> Exports {
     let mut out = Exports::default();

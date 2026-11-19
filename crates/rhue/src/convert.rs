@@ -5,9 +5,9 @@
 //!   `T` is a one-element list, `()` is empty, tuples are lists, and
 //!   [`Variadic<T>`] is "all the rest".
 //!
-//! Conversions are strict, like a typed Luau signature: a `String`
-//! parameter rejects a number, an integer parameter rejects `1.5`.
-//! `Option<T>` accepts `nil` (and a missing argument).
+//! Conversions are strict, like a typed Luau signature. A `String`
+//! parameter won't take a number, an integer parameter won't take `1.5`.
+//! `Option<T>` takes `nil` (and a missing argument).
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -23,7 +23,7 @@ use crate::{AnyUserData, Buffer, Context, Function, Table, Thread, Value};
 pub struct ConversionError {
     /// The type that was wanted (`number`, `string`, `Player`...).
     pub expected: Cow<'static, str>,
-    /// The type of the value that was given instead.
+    /// The type of what got passed instead.
     pub got: String,
 }
 
@@ -50,7 +50,7 @@ pub trait IntoValue {
     /// Converts `self` into a script value.
     fn into_value(self, cx: &mut Context<'_>) -> Value;
 
-    /// The Luau type of the values this produces, for the type checker
+    /// The Luau type of the values this makes, for the type checker
     /// (`"number"`, `"{string}"`, `"Player?"`). `any` by default.
     fn luau_type() -> Cow<'static, str>
     where
@@ -73,7 +73,7 @@ pub trait FromValue: Sized {
     /// Converts a script value into `Self`, or says why it can't.
     fn from_value(value: Value, cx: &mut Context<'_>) -> Result<Self, ConversionError>;
 
-    /// The Luau type this accepts, for the type checker. `any` by default.
+    /// The Luau type this takes, for the type checker. `any` by default.
     fn luau_type() -> Cow<'static, str> {
         "any".into()
     }
@@ -91,7 +91,7 @@ pub(crate) fn optional(t: &str) -> String {
     }
 }
 
-// --- one value ---------------------------------------------------------------
+// ─ One Value ─────────────────────────────────────────────────────────────────
 
 impl IntoValue for Value {
     fn into_value(self, _: &mut Context<'_>) -> Value {
@@ -197,7 +197,7 @@ macro_rules! integers {
             }
         }
 
-        /// Accepts numbers with no fractional part that fit the type.
+        /// Takes numbers with no fractional part that fit the type.
         impl FromValue for $t {
             #[inline]
             fn from_value(value: Value, _: &mut Context<'_>) -> Result<Self, ConversionError> {
@@ -421,7 +421,7 @@ impl<K: IntoValue, V: IntoValue> IntoValue for HashMap<K, V> {
         let t = cx.new_table();
         for (k, v) in self {
             let (k, v) = (k.into_value(cx), v.into_value(cx));
-            // Keys from a Rust map can only be invalid if they're NaN.
+            // keys from a Rust map can only be invalid if they're NaN
             let _ = cx.set(&t, k, v);
         }
         Value::Table(t)
@@ -459,9 +459,9 @@ impl<K: FromValue + Eq + Hash, V: FromValue> FromValue for HashMap<K, V> {
     }
 }
 
-// --- lists of values ---------------------------------------------------------
+// ─ Lists of Values ───────────────────────────────────────────────────────────
 
-/// Any number of values of one type: as a parameter it takes all remaining
+/// Any number of values of one type. As a parameter it takes all the remaining
 /// arguments, as a result it returns several values (not a table).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Variadic<T>(pub Vec<T>);
@@ -512,8 +512,8 @@ pub struct Args {
 enum ArgSource {
     /// Values already converted (results of a call from Rust).
     Lifted(std::vec::IntoIter<Value>),
-    /// A native's arguments straight from the VM, converted one at a time
-    /// as parameters take them (no list is built for the common case).
+    /// A native's arguments straight from the VM, converted one at a time as
+    /// parameters take them (no list gets built for the common case).
     Raw(rhue_vm::SmallVec<[rhue_vm::Value; 8]>, usize),
 }
 
@@ -550,8 +550,8 @@ impl Args {
     }
 }
 
-/// Something that takes its value(s) from an argument list: any
-/// [`FromValue`] takes one (`nil` if missing), [`Variadic`] takes the rest.
+/// Something that takes its value(s) from an argument list. Any [`FromValue`]
+/// takes one (`nil` if missing), [`Variadic`] takes the rest.
 pub trait FromArg: Sized {
     /// Takes this parameter's value (or values) from the arguments.
     fn from_arg(args: &mut Args, cx: &mut Context<'_>) -> Result<Self, ArgError>;
@@ -569,7 +569,7 @@ impl<T: FromValue> FromArg for T {
         let v = match args.take(cx) {
             Some(v) => v,
             None => {
-                // A missing argument is nil (and still counts for errors).
+                // a missing argument is nil (and still counts for errors)
                 args.next += 1;
                 Value::Nil
             }
@@ -625,8 +625,8 @@ pub trait IntoValues {
     /// Converts `self` into the values a call returns.
     fn into_values(self, cx: &mut Context<'_>) -> Vec<Value>;
 
-    /// Appends the values, converted for the VM, to `out` (what natives
-    /// return; overridden so a single value builds no list).
+    /// Appends the values, converted for the VM, to `out` (what natives return.
+    /// overridden so a single value doesn't build a list).
     #[doc(hidden)]
     fn lower_into(self, cx: &mut Context<'_>, out: &mut rhue_vm::Rets)
     where
@@ -638,8 +638,8 @@ pub trait IntoValues {
         }
     }
 
-    /// The list's types, as the result of a Luau function type
-    /// (`"number"`, `"(number, string)"`, `"()"`, `"...any"`).
+    /// The list's types as the result of a Luau function type (`"number"`,
+    /// `"(number, string)"`, `"()"`, `"...any"`).
     fn pack_type() -> String
     where
         Self: Sized;

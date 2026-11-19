@@ -3,9 +3,9 @@ use std::rc::Rc;
 
 use rhue_common::Span;
 
-/// Identifies one occurrence of a name (a declaration or a use). The parser
-/// numbers them densely from 0, so later passes can keep side tables in a
-/// `Vec` indexed by `NameId` instead of hashing AST nodes.
+/// One occurrence of a name, a declaration or a use. The parser hands these out
+/// densely from 0, so later passes can keep side tables in a `Vec` indexed by
+/// `NameId` instead of hashing AST nodes.
 pub type NameId = u32;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -19,22 +19,22 @@ pub struct Name {
 pub struct Chunk {
     pub body: Block,
     pub span: Span,
-    /// Number of `NameId`s handed out; sizes the resolver's tables.
+    /// How many `NameId`s got handed out, sizes the resolver's tables.
     pub name_count: u32,
     /// The `--!strict` / `--!nonstrict` / `--!nocheck` directive, if any.
     pub mode: Option<(TypeMode, Span)>,
 }
 
-/// How thoroughly a chunk is type-checked, set by a directive comment at
-/// the top of the file.
+/// How hard a chunk gets type-checked, set by a directive comment at the top of
+/// the file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TypeMode {
-    /// `--!nocheck`: no type checking.
+    /// `--!nocheck`: nothing's checked.
     NoCheck,
-    /// `--!nonstrict`: unannotated values are `any`; only definite
-    /// mismatches are errors.
+    /// `--!nonstrict`: anything unannotated is `any`, only definite mismatches
+    /// are errors.
     NonStrict,
-    /// `--!strict`: also unknown globals, possibly-nil values, and the like.
+    /// `--!strict`: also unknown globals, maybe-nil values and so on.
     Strict,
 }
 
@@ -62,11 +62,11 @@ pub enum StmtKind {
     /// `local a, b = 1, 2` (or `local a: number = 1`)
     Local {
         names: Vec<Name>,
-        /// One per name; `None` where unannotated.
+        /// One per name, `None` where it's unannotated.
         types: Vec<Option<TypeExpr>>,
         values: Vec<Expr>,
     },
-    /// `a, b = b, a` (targets are names until tables arrive)
+    /// `a, b = b, a`
     Assign {
         targets: Vec<Expr>,
         values: Vec<Expr>,
@@ -83,7 +83,7 @@ pub enum StmtKind {
         cond: Expr,
         body: Block,
     },
-    /// The condition can see the body's locals, as in Lua.
+    /// The condition can see the body's locals, same as Lua.
     Repeat {
         body: Block,
         cond: Expr,
@@ -102,29 +102,29 @@ pub enum StmtKind {
     },
     Break,
     Continue,
-    /// A call used as a statement (its results are discarded).
+    /// A call used as a statement (results get thrown away).
     Call(Expr),
-    /// `function name(...) end`: assigns a new function to `name`.
+    /// `function name(...) end`, assigns a new function to `name`.
     Function {
         target: Expr,
         func: Rc<FunctionBody>,
     },
-    /// `local function name(...) end`: `name` is in scope inside the body,
-    /// so the function can call itself.
+    /// `local function name(...) end`. `name` is in scope inside the body so
+    /// the function can call itself.
     LocalFunction {
         name: Name,
         func: Rc<FunctionBody>,
     },
-    /// `for k, v in explist do ... end`. The list evaluates to an iterator
-    /// function, a state and an initial control value; Luau's generalized
-    /// iteration (`for k, v in t`) also accepts a table directly.
+    /// `for k, v in explist do ... end`. The list gives an iterator function, a
+    /// state and a starting control value. Luau's generalized iteration (`for
+    /// k, v in t`) also takes a table directly.
     GenericFor {
         names: Vec<Name>,
         types: Vec<Option<TypeExpr>>,
         exprs: Vec<Expr>,
         body: Block,
     },
-    /// `type Name<T> = ...` or `export type ...`. No runtime effect.
+    /// `type Name<T> = ...` or `export type ...`. Does nothing at runtime.
     TypeAlias(Rc<TypeAlias>),
 }
 
@@ -137,14 +137,14 @@ pub struct TypeAlias {
     pub exported: bool,
 }
 
-/// Parameters and body shared by every way of writing a function.
+/// Parameters and body, shared by every way of writing a function.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FunctionBody {
     /// `<T, U>` after the name.
     pub generics: Vec<GenericParam>,
     pub params: Vec<Name>,
-    /// One per parameter; `None` where unannotated (always for the implicit
-    /// `self` of a `function a:m()` method).
+    /// One per parameter, `None` where it's unannotated (always for the
+    /// implicit `self` of a `function a:m()` method).
     pub param_types: Vec<Option<TypeExpr>>,
     pub is_vararg: bool,
     /// `...: T`
@@ -171,12 +171,12 @@ pub enum ExprKind {
     Bool(bool),
     Number(f64),
     String(Rc<str>),
-    /// `` `text {expr} text` `` with at least one hole (one without holes
-    /// is a plain [`ExprKind::String`]).
+    /// `` `text {expr} text` `` with at least one hole (no holes is just an
+    /// [`ExprKind::String`]).
     Interp(Vec<InterpPart>),
     Name(Name),
-    /// A parenthesised expression. Kept as a node because in Lua semantics
-    /// `(f())` truncates multiple results to one.
+    /// A parenthesised expression. It stays a node because `(f())` truncates
+    /// multiple results to one.
     Group(Box<Expr>),
     Unary {
         op: UnOp,
@@ -203,12 +203,12 @@ pub enum ExprKind {
     Vararg,
     /// `function(...) ... end`
     Function(Rc<FunctionBody>),
-    /// `t[k]`, or `t.name` (with `key` a string literal).
+    /// `t[k]`, or `t.name` (`key` is a string literal then).
     Index {
         object: Box<Expr>,
         key: Box<Expr>,
     },
-    /// `obj:name(args)`: calls `obj.name` with `obj` as the first argument.
+    /// `obj:name(args)`, calls `obj.name` with `obj` as the first argument.
     MethodCall {
         object: Box<Expr>,
         method: Rc<str>,
@@ -217,14 +217,14 @@ pub enum ExprKind {
     },
     /// `{ a, b, name = c, [k] = d }`
     Table(Vec<TableItem>),
-    /// `expr :: Type`: a type assertion; at runtime just `expr`.
+    /// `expr :: Type`, a type assertion. At runtime it's just `expr`.
     Cast {
         expr: Box<Expr>,
         ty: Box<TypeExpr>,
     },
 }
 
-// --- types ---------------------------------------------------------------
+// ─ Types ─────────────────────────────────────────────────────────────────────
 
 /// A type written in the source.
 #[derive(Clone, Debug, PartialEq)]
@@ -253,11 +253,10 @@ pub enum TypeKind {
         props: Vec<TableProp>,
         indexer: Option<Box<(TypeExpr, TypeExpr)>>,
     },
-    /// `T...`, a generic type pack, where a variadic type can go (`...:
+    /// `T...`, a generic type pack, wherever a variadic type can go (`...:
     /// T...`, `(A, T...) -> T...`).
     GenericPack(Rc<str>),
-    /// An explicit type pack given as a type alias's argument: `(A, B)`,
-    /// `()`, `(...T)`.
+    /// An explicit type pack passed to a type alias: `(A, B)`, `()`, `(...T)`.
     Pack(TypePack),
     /// `<T>(a: T, ...number) -> (T, string)`
     Function {
@@ -279,7 +278,7 @@ pub struct TableProp {
     pub name: Rc<str>,
     pub ty: TypeExpr,
     pub span: Span,
-    /// `read name: T` / `write name: T` (default: both).
+    /// `read name: T` / `write name: T` (both if neither).
     pub access: Access,
 }
 
@@ -288,9 +287,9 @@ pub struct TableProp {
 pub enum Access {
     #[default]
     ReadWrite,
-    /// `read x: T`: can be read, not assigned.
+    /// `read x: T`: readable, can't be assigned.
     Read,
-    /// `write x: T`: can be assigned, not read.
+    /// `write x: T`: assignable, can't be read.
     Write,
 }
 
@@ -315,7 +314,7 @@ impl Access {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FnParam {
-    /// Parameter names in function types are documentation only.
+    /// Parameter names in function types are just documentation.
     pub name: Option<Rc<str>>,
     pub ty: TypeExpr,
 }
@@ -326,7 +325,7 @@ pub struct GenericParam {
     pub span: Span,
     /// `T...`: a generic type pack (any number of types).
     pub pack: bool,
-    /// `T = string` (type aliases only); for a pack, a [`TypeKind::Pack`]
+    /// `T = string` (type aliases only). For a pack it's a [`TypeKind::Pack`]
     /// or [`TypeKind::GenericPack`].
     pub default: Option<TypeExpr>,
 }
@@ -408,7 +407,7 @@ impl fmt::Display for TypePack {
     }
 }
 
-/// A variadic slot: `...T`, or a generic pack `T...` as is.
+/// A variadic slot: `...T`, or a generic pack `T...` as-is.
 fn variadic_text(v: &TypeExpr) -> String {
     match &v.kind {
         TypeKind::GenericPack(_) => v.to_string(),
@@ -419,16 +418,16 @@ fn variadic_text(v: &TypeExpr) -> String {
 /// One entry of a table constructor.
 #[derive(Clone, Debug, PartialEq)]
 pub enum TableItem {
-    /// `expr`: stored at the next array index (1, 2, ...). A trailing call
-    /// or `...` expands to all its values.
+    /// `expr`, stored at the next array index (1, 2, ...). A trailing call or
+    /// `...` expands to all its values.
     Positional(Expr),
     /// `name = expr` or `[key] = expr`.
     Keyed { key: Expr, value: Expr },
 }
 
 impl ExprKind {
-    /// Calls and `...` can produce any number of values; everything else
-    /// produces exactly one.
+    /// Calls and `...` can give any number of values, everything else gives
+    /// exactly one.
     pub fn is_multi(&self) -> bool {
         matches!(
             self,
@@ -441,7 +440,7 @@ impl ExprKind {
 #[derive(Clone, Debug, PartialEq)]
 pub enum InterpPart {
     Text(Rc<str>),
-    /// A hole's expression; its value goes through `tostring`.
+    /// A hole's expression, its value goes through `tostring`.
     Expr(Expr),
 }
 
@@ -472,16 +471,16 @@ pub enum BinOp {
     Or,
 }
 
-/// Binding power of every prefix operator. Higher than `* / // %`, lower than
-/// `^`, so `-2^2 == -(2^2)` while `-2*3 == (-2)*3`.
+/// Binding power for every prefix operator. Higher than `* / // %` but lower
+/// than `^`, so `-2^2 == -(2^2)` while `-2*3 == (-2)*3`.
 pub const UNARY_BP: u8 = 30;
 
 impl BinOp {
     /// `(left, right)` binding powers, Pratt-style. Left-associative operators
-    /// have `right = left + 1`; right-associative ones (`..`, `^`) have
+    /// have `right = left + 1`, right-associative ones (`..`, `^`) have
     /// `right < left`.
     ///
-    /// Luau precedence, lowest to highest:
+    /// Luau's precedence, lowest to highest:
     /// `or` < `and` < comparison < `..` < `+ -` < `* / // %` < unary < `^`.
     pub fn binding_power(self) -> (u8, u8) {
         use BinOp::*;
@@ -529,7 +528,8 @@ impl UnOp {
     }
 }
 
-/// S-expression printing, used heavily by tests: `1 + 2 * 3` → `(+ 1 (* 2 3))`.
+/// S-expression printing, the tests lean on this a lot: `1 + 2 * 3` → `(+ 1 (*
+/// 2 3))`.
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.kind {

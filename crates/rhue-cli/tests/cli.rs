@@ -103,7 +103,7 @@ fn repl_keeps_globals_between_lines() {
         )
         .unwrap();
     let out = child.wait_with_output().unwrap();
-    // A `local` starting an entry lasts; one inside a block doesn't.
+    // a `local` starting an entry lasts, one inside a block doesn't
     assert_eq!(
         String::from_utf8(out.stdout).unwrap(),
         "10\nsum: 10\n1\nnil\n"
@@ -158,7 +158,7 @@ fn strict_flag_checks_before_running() {
     assert!(!ok);
     assert_eq!(out, "");
     assert!(err.contains("could not be converted"), "{err}");
-    // A file can still opt out.
+    // a file can still opt out
     let (ok, _, _) = run(&["--strict", "-e", "--!nocheck\nlocal x: number = 'one'"]);
     assert!(ok);
 }
@@ -251,13 +251,13 @@ fn compile_then_run_the_chunk() {
     assert!(ok, "{err}");
     let chunk = dir.join("hello.rhuec");
     assert!(std::fs::read(&chunk).unwrap().starts_with(b"\x1bRhue"));
-    // Running the chunk doesn't need the source any more.
+    // running the chunk doesn't need the source any more
     std::fs::remove_file(&src).unwrap();
     let (ok, out, err) = run(&[chunk.to_str().unwrap()]);
     assert!(ok, "{err}");
     assert_eq!(out, "sum\t10\n20\n");
 
-    // -o, type errors, and damaged chunks.
+    // -o, type errors, and damaged chunks
     let typed = dir.join("typed.rhue");
     std::fs::write(&typed, "--!strict\nlocal n: number = 'x'\n").unwrap();
     let out_path = dir.join("custom.bin");
@@ -311,8 +311,8 @@ fn repl_continues_unfinished_input() {
     );
     assert!(ok, "{err}");
     assert_eq!(out, "55\ntwo\nlines\n1\n");
-    // A finished entry with an error isn't held open; one that never
-    // finishes is reported when the input ends.
+    // a finished entry with an error isn't held open, one that never finishes
+    // is reported when the input ends
     let (ok, out, err) = repl("x = )\n1 + 1\nfunction f()\n");
     assert!(!ok);
     assert_eq!(out, "2\n");
@@ -446,7 +446,7 @@ test('plain error', function() local t = nil; return t.x end)
     ] {
         assert!(out.contains(message), "{message} in\n{out}");
     }
-    // Failures point at the test's line, not the matcher's insides.
+    // failures point at the test's line, not the matcher's insides
     assert!(out.contains("sums_test.rhue:3:3"), "{out}");
     assert!(!out.contains("<rhue test>"), "{out}");
 }
@@ -457,7 +457,7 @@ fn test_runner_options_and_problems() {
     let (code, out, _) = rhue_test("filter", &[("a_test.rhue", tests)], &["--filter", "alph"]);
     assert_eq!(code, Some(0), "{out}");
     assert!(out.contains("✓ alpha") && !out.contains("beta"), "{out}");
-    // `.test.rhue` counts too; named files run whatever they're called.
+    // `.test.rhue` counts too, named files run whatever they're called
     let (code, out, _) = rhue_test(
         "names",
         &[("x.test.rhue", tests), ("other.rhue", tests)],
@@ -465,7 +465,7 @@ fn test_runner_options_and_problems() {
     );
     assert_eq!(code, Some(1));
     assert!(out.contains("2 passed, 2 failed in 2 files"), "{out}");
-    // A file that can't run fails the run; so does a strict type error.
+    // a file that can't run fails the run, so does a strict type error
     let (code, out, _) = rhue_test(
         "broken",
         &[
@@ -481,7 +481,7 @@ fn test_runner_options_and_problems() {
         out.contains("could not be converted into 'number'"),
         "{out}"
     );
-    // Nothing to run is a failure too.
+    // nothing to run is a failure too
     let (code, _, err) = rhue_test("empty", &[("readme.md", "hi")], &[]);
     assert_eq!(code, Some(1));
     assert!(err.contains("no test files"), "{err}");

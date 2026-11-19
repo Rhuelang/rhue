@@ -9,10 +9,10 @@ use crate::userdata::{Ud, UserData};
 
 /// A Rhue value, owned and independent of the VM's heap.
 ///
-/// Strings are copied out of the VM. Functions, tables and userdata are
-/// handles: while any clone of one is alive, the garbage collector keeps
-/// the object alive too. Handles are only meaningful to the [`Engine`]
-/// that created them; passing one to another engine panics.
+/// Strings get copied out of the VM. Functions, tables and userdata are
+/// handles, and while any clone of one is alive the garbage collector keeps the
+/// object alive too. Handles only mean something to the [`Engine`] that made
+/// them, passing one to another engine panics.
 ///
 /// [`Engine`]: crate::Engine
 #[derive(Clone, Debug, PartialEq)]
@@ -21,7 +21,7 @@ pub enum Value {
     Nil,
     /// `true` or `false`.
     Bool(bool),
-    /// A number (always `f64`, as in Luau).
+    /// A number (always `f64`, like Luau).
     Number(f64),
     /// A string (UTF-8).
     String(Rc<str>),
@@ -39,7 +39,7 @@ pub enum Value {
     Vector([f32; 3]),
 }
 
-/// A handle to a buffer (`buffer.create`) inside an engine: a fixed-size,
+/// A handle to a buffer (`buffer.create`) inside an engine, a fixed-size
 /// mutable array of bytes. Read and write it through a
 /// [`Context`](crate::Context).
 #[derive(Clone, Debug)]
@@ -82,7 +82,7 @@ impl PartialEq for Table {
     }
 }
 
-/// A handle to a coroutine inside an engine. Create one with
+/// A handle to a coroutine inside an engine. Make one with
 /// [`Context::create_thread`](crate::Context::create_thread) and run it with
 /// [`Context::resume`](crate::Context::resume), or get one from a script.
 #[derive(Clone, Debug)]
@@ -141,7 +141,7 @@ impl fmt::Debug for AnyUserData {
 }
 
 impl Value {
-    /// The name `type()` returns. Userdata report `"userdata"`; see
+    /// The name `type()` returns. Userdata report `"userdata"`, see
     /// [`Value::type_of`] for the name `typeof()` gives.
     pub fn type_name(&self) -> &'static str {
         match self {
@@ -158,7 +158,7 @@ impl Value {
         }
     }
 
-    /// Like Luau's `typeof`: userdata report their own type name.
+    /// Like Luau's `typeof`, userdata report their own type name.
     pub fn type_of(&self) -> &str {
         match self {
             Value::UserData(u) => u.type_name(),

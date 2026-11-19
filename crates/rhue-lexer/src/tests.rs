@@ -123,7 +123,7 @@ fn comments_are_skipped() {
     );
     assert_eq!(kinds("--[==[ has ]] inside ]==] 7"), vec![Number(7.0), Eof]);
     assert_eq!(kinds("-- trailing comment"), vec![Eof]);
-    // `--[` without a second bracket is an ordinary line comment.
+    // `--[` without a second bracket is just a line comment
     assert_eq!(kinds("--[ not block\n3"), vec![Number(3.0), Eof]);
 }
 

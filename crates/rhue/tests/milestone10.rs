@@ -1,7 +1,7 @@
-//! Milestone 10: Lua patterns (`find`, `match`, `gmatch`, `gsub`), the
-//! `utf8` library and the sandbox-safe part of `os`, and `require` with
-//! host-provided modules (typed, when the requiring chunk is checked).
-//! Runtime tests also run with the collector going at every safe point.
+//! Milestone 10: Lua patterns (`find`, `match`, `gmatch`, `gsub`), the `utf8`
+//! library and the sandbox-safe part of `os`, and `require` with host-provided
+//! modules (typed, when the requiring chunk is checked). Runtime tests also run
+//! with the collector going at every safe point.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -44,7 +44,7 @@ fn type_errors(e: &mut Engine, src: &str) -> Vec<String> {
     }
 }
 
-// --- patterns ----------------------------------------------------------------------
+// ─ Patterns ──────────────────────────────────────────────────────────────────
 
 #[test]
 fn find_and_match() {
@@ -122,7 +122,7 @@ fn gsub_with_every_kind_of_replacement() {
 #[test]
 fn gsub_callbacks_can_do_anything() {
     each(|e| {
-        // A callback that allocates, raises, and is a closure over state.
+        // a callback that allocates, raises, and is a closure over state
         let src = r##"
             local seen = {}
             local s, n = ("a b c d e"):gsub("%a", function(c)
@@ -172,15 +172,15 @@ fn pattern_errors() {
 #[test]
 fn patterns_work_on_bytes() {
     let mut e = Engine::new();
-    // `.` is one byte, so `é` (two bytes) takes two; a lone half comes
-    // out as U+FFFD, as with `string.sub`. Whole characters survive.
+    // `.` is one byte, so `é` (two bytes) takes two, a lone half comes out as
+    // U+FFFD, as with `string.sub`. Whole characters survive
     assert_eq!(run(&mut e, "return ('héllo'):gsub('.', '-')"), "------ 6");
     assert_eq!(run(&mut e, "return ('héllo'):match('h(.+)o')"), "éll");
     assert_eq!(run(&mut e, "return ('héllo'):find('l')"), "4 4");
     assert_eq!(run(&mut e, "return #('é'):match('.')"), "3");
 }
 
-// --- utf8 and os ------------------------------------------------------------------------
+// ─ utf8 and os ───────────────────────────────────────────────────────────────
 
 #[test]
 fn utf8_library() {
@@ -222,7 +222,7 @@ fn os_dates_are_utc() {
     );
     assert!(fails(&mut e, "return os.time({year = 2026})").contains("field 'month' missing"));
     assert!(fails(&mut e, "return os.date('%Q')").contains("invalid conversion specifier '%Q'"));
-    // Nothing in `os` reaches outside the sandbox.
+    // nothing in `os` reaches outside the sandbox
     assert_eq!(
         run(
             &mut e,
@@ -232,7 +232,7 @@ fn os_dates_are_utc() {
     );
 }
 
-// --- require -----------------------------------------------------------------------------
+// ─ require ───────────────────────────────────────────────────────────────────
 
 #[test]
 fn require_runs_a_module_once_and_caches_it() {
@@ -252,7 +252,7 @@ fn require_runs_a_module_once_and_caches_it() {
             a.bump() b.bump()
             return a == b, a.n, a.name, loads, require('flag'), x_loaded";
         assert_eq!(run(e, src), "true 2 counter 1 true true");
-        // Still cached in a later chunk, and after a collection.
+        // still cached in a later chunk, and after a collection
         e.gc();
         assert_eq!(run(e, "return require('counter').n, loads"), "2 1");
     });
@@ -306,13 +306,13 @@ fn module_errors_and_cycles() {
         err.contains("error loading module 'typed': typed:2: Type '\"no\"'"),
         "{err}"
     );
-    // A runtime error keeps its traceback through the module.
+    // a runtime error keeps its traceback through the module
     let err = e.eval_named("main.rhue", "require('boom')").unwrap_err();
     let r = err.render(false);
     assert!(r.contains("inside module"), "{r}");
     assert!(r.contains("boom:1:"), "{r}");
     assert!(r.contains("main.rhue:1:"), "{r}");
-    // A failed module isn't cached: fixing it makes require work.
+    // a failed module isn't cached: fixing it makes require work
     e.add_module("boom", "return 'fixed'");
     assert_eq!(run(&mut e, "return require('boom')"), "fixed");
 }
@@ -355,7 +355,7 @@ fn required_modules_are_typed() {
             "Type '\"3\"' could not be converted into 'number'",
         ]
     );
-    // The module was compiled while checking, and runs once when required.
+    // the module was compiled while checking, and runs once when required
     let ok = "--!strict
         local Vec = require('vec')
         return Vec.new(3, 4):len(), (Vec.new(1, 2) + Vec.new(1, 1)).y";

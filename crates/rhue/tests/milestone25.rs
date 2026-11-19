@@ -1,6 +1,6 @@
 //! Milestone 25: async hosts. Async natives, the drivers that run scripts
 //! calling them (`eval_async`, `call_async`, `run_until_idle`), the `task`
-//! clock on real time, and interrupting scripts from elsewhere.
+//! clock on real time, and interrupting scripts from somewhere else.
 //!
 //! Time is tokio's paused clock, so waits are instant and deterministic.
 
@@ -45,8 +45,8 @@ async fn async_natives_return_and_raise() {
         .unwrap();
     assert_eq!(text(&v), "contents of /a | 6");
 
-    // An Err is raised where the script called the function, and pcall
-    // catches it like any other error.
+    // an Err is raised where the script called the function, and pcall catches
+    // it like any other error
     let v = e
         .eval_async("local ok, err = pcall(fetch, '/missing') return ok, err")
         .await
@@ -76,7 +76,7 @@ async fn waits_overlap() {
     )
     .await
     .unwrap();
-    // The main script finishes at 20ms; the slow task is still waiting.
+    // the main script finishes at 20ms, the slow task is still waiting
     assert_eq!(*log.borrow(), ["fast", "main"]);
     assert_eq!(start.elapsed(), Duration::from_millis(20));
     assert!(e.run_until_idle().await.is_empty());
@@ -101,7 +101,7 @@ async fn the_task_clock_runs_on_real_time() {
     assert_eq!(text(&v), "1.5 | late");
     assert_eq!(start.elapsed(), Duration::from_millis(2500));
 
-    // Without a sleep function there's nothing to wait with.
+    // without a sleep function there's nothing to wait with
     let mut bare = Engine::new();
     bare.open_tasks();
     let err = bare.eval_async("task.wait(1)").await.unwrap_err();
@@ -111,17 +111,17 @@ async fn the_task_clock_runs_on_real_time() {
 #[tokio::test(start_paused = true)]
 async fn where_async_functions_can_be_called() {
     let mut e = engine();
-    // Not from a plain eval: nothing would resume the script.
+    // not from a plain eval: nothing would resume the script
     let err = e.eval("return wait_ms(1)").unwrap_err();
     assert!(err.to_string().contains("eval_async"), "{err}");
-    // Not inside the script's own coroutine: the wait would end up in its
-    // resumer instead of the host.
+    // not inside the script's own coroutine: the wait would end up in its
+    // resumer instead of the host
     let err = e
         .eval_async("return coroutine.wrap(function() return wait_ms(1) end)()")
         .await
         .unwrap_err();
     assert!(err.to_string().contains("task.spawn"), "{err}");
-    // A plain yield at the top just gives the host's executor a turn.
+    // a plain yield at the top just gives the host's executor a turn
     let v = e
         .eval_async("local n = 0 for i = 1, 3 do coroutine.yield() n += i end return n")
         .await
@@ -138,7 +138,7 @@ async fn call_async_and_types() {
     let s: String = e.call_async(&f, ("/x", "/y")).await.unwrap();
     assert_eq!(s, "contents of /x + contents of /y");
 
-    // Async natives are typed like any other.
+    // async natives are typed like any other
     assert_eq!(e.global_type("fetch").unwrap(), "(string) -> string");
     assert!(
         e.check("t.rhue", "--!strict\nlocal n: number = fetch('/a')")
@@ -183,7 +183,7 @@ async fn dropping_the_driver_cancels() {
     });
     let timed_out = tokio::time::timeout(Duration::from_secs(1), e.eval_async("forever()")).await;
     assert!(timed_out.is_err());
-    // The future went with it, and nothing is left waiting.
+    // the future went with it, and nothing is left waiting
     assert!(dropped.get());
     assert!(e.run_until_idle().await.is_empty());
     assert_eq!(text(&e.eval_async("return 1").await.unwrap()), "1");
@@ -200,7 +200,7 @@ async fn interrupting_a_waiting_script() {
     });
     let err = result.unwrap_err();
     assert!(err.is_interrupted(), "{err}");
-    // The engine carries on.
+    // the engine carries on
     assert_eq!(text(&e.eval_async("return 2").await.unwrap()), "2");
 }
 
@@ -212,7 +212,7 @@ fn interrupting_a_running_script_from_another_thread() {
         std::thread::sleep(Duration::from_millis(50));
         handle.interrupt();
     });
-    // pcall can't catch it, so the loop really stops.
+    // pcall can't catch it, so the loop really stops
     let err = e
         .eval("while true do pcall(function() while true do end end) end")
         .unwrap_err();
@@ -220,7 +220,7 @@ fn interrupting_a_running_script_from_another_thread() {
     assert!(err.is_interrupted(), "{err}");
     assert!(!e.eval("error('x')").unwrap_err().is_interrupted());
 
-    // An interrupt with nothing running stops the next script.
+    // an interrupt with nothing running stops the next script
     e.interrupt_handle().interrupt();
     let err = e
         .eval("local n = 0 for i = 1, 10 do n += i end")
@@ -231,7 +231,7 @@ fn interrupting_a_running_script_from_another_thread() {
 
 #[test]
 fn instruction_limits_still_count_exactly_enough() {
-    // The budget is handed out in slices now; the limit is still the limit.
+    // the budget is handed out in slices now, the limit is still the limit
     let mut e = Engine::new();
     e.set_instruction_limit(Some(100_000));
     assert!(e.eval("local n = 0 for i = 1, 1000 do n += i end").is_ok());
@@ -243,7 +243,7 @@ fn instruction_limits_still_count_exactly_enough() {
         "{err}"
     );
     assert!(!err.is_interrupted());
-    // Each run starts a fresh budget.
+    // each run starts a fresh budget
     for _ in 0..5 {
         e.eval("local n = 0 for i = 1, 20000 do n += i end")
             .unwrap();

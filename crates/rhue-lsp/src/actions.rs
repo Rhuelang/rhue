@@ -1,4 +1,4 @@
-//! Inlay hints, and code actions: the checker's fixes for errors (the name
+//! Inlay hints and code actions: the checker's fixes for errors (the name you
 //! probably meant, a nil check), and writing an inferred type in.
 
 use std::collections::HashMap;
@@ -10,9 +10,9 @@ use lsp_types::{
 
 use crate::{Docs, LineIndex, to_lsp};
 
-/// The inferred types in `range` that the source doesn't spell out:
-/// locals, loop variables, parameters and results. A hint with a writable
-/// type inserts it when double-clicked.
+/// The inferred types in `range` the source doesn't spell out: locals, loop
+/// variables, parameters and results. A hint with a writable type gets inserted
+/// when you double-click it.
 pub fn inlay_hints(docs: &Docs, uri: &Url, text: &str, range: Range) -> Vec<InlayHint> {
     let idx = LineIndex::new(text);
     let (from, to) = (idx.offset(range.start), idx.offset(range.end));
@@ -49,8 +49,8 @@ fn edit(uri: &Url, edits: Vec<TextEdit>) -> WorkspaceEdit {
     }
 }
 
-/// What can be done in `range`: fixes for errors that touch it, then
-/// writing in the inferred types of names declared on its lines.
+/// What you can do in `range`: fixes for errors touching it, then writing in
+/// the inferred types of names declared on its lines.
 pub fn code_actions(docs: &Docs, uri: &Url, text: &str, range: Range) -> Vec<CodeActionOrCommand> {
     let idx = LineIndex::new(text);
     let (from, to) = (idx.offset(range.start), idx.offset(range.end));
@@ -80,7 +80,7 @@ pub fn code_actions(docs: &Docs, uri: &Url, text: &str, range: Range) -> Vec<Cod
             }));
         }
     }
-    // Annotations, for hints on the lines the range covers.
+    // annotations, for hints on the lines the range covers
     let first = idx.offset(lsp_types::Position::new(range.start.line, 0));
     let last = idx.offset(lsp_types::Position::new(range.end.line + 1, 0));
     for h in &analysis.hints {

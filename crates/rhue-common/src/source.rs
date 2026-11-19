@@ -1,13 +1,14 @@
 use std::rc::Rc;
 
-/// A named piece of source text. Shared (`Rc`) by every prototype compiled
-/// from it, so a runtime error can always be rendered against the right
-/// file, even when a function defined in one `eval` is called from another.
+/// A named chunk of source text. Every prototype compiled from it holds an `Rc`
+/// to it, so a runtime error always renders against the right file, even when a
+/// function from one `eval` gets called from another.
 #[derive(Debug)]
 pub struct SourceFile {
     pub name: Rc<str>,
     pub text: Rc<str>,
-    /// Byte offsets where lines start, computed on first use by [`line`](Self::line).
+    /// Byte offsets where each line starts, built the first time
+    /// [`line`](Self::line) needs it.
     line_starts: std::cell::OnceCell<Vec<u32>>,
 }
 
@@ -20,8 +21,8 @@ impl SourceFile {
         })
     }
 
-    /// The 1-based line of a byte offset, by binary search over a line
-    /// table built on first use (for debug hooks, which ask per instruction).
+    /// 1-based line of a byte offset. Binary searches a line table that gets
+    /// built on first use (debug hooks ask this every instruction).
     pub fn line(&self, offset: u32) -> u32 {
         let starts = self.line_starts.get_or_init(|| {
             let mut v = vec![0u32];
@@ -42,7 +43,7 @@ impl SourceFile {
     }
 }
 
-/// Equal when the name and text are (the line table is just a cache).
+/// Equal when the name and text are, the line table's just a cache.
 impl PartialEq for SourceFile {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name && self.text == other.text

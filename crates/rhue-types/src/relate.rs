@@ -1,5 +1,5 @@
-//! Turning written types into [`Type`]s, and relating types: alias
-//! expansion, subtyping, and inferring generic arguments.
+//! Turning written types into [`Type`]s, and relating types: alias expansion,
+//! subtyping, and inferring generic arguments.
 
 use crate::HashMap;
 use std::rc::Rc;
@@ -10,11 +10,11 @@ use rhue_parser::ast::{Access, GenericParam, Singleton, TypeExpr, TypeKind, Type
 use crate::check::Checker;
 use crate::types::*;
 
-/// How deep alias expansion may nest before giving up.
+/// How deep alias expansion can nest before giving up.
 const MAX_EXPANSION: usize = 64;
 
 impl Checker<'_> {
-    // --- resolving written types --------------------------------------------------
+    // ─ Resolving Written Types ───────────────────────────────────────────────
 
     pub fn resolve_type(&mut self, te: &TypeExpr) -> Type {
         stacker::maybe_grow(64 * 1024, 1024 * 1024, || self.resolve_inner(te))
@@ -30,7 +30,7 @@ impl Checker<'_> {
                     self.error(te.span, "`typeof` can't be used in a host declaration");
                     return Type::Error;
                 }
-                // Typing the expression mustn't change anything it mentions.
+                // typing the expression can't change anything it mentions
                 let errors = self.errors.len();
                 let t = self.expr(e);
                 self.errors.truncate(errors);
@@ -39,7 +39,7 @@ impl Checker<'_> {
             TypeKind::Optional(t) => Type::optional(self.resolve_type(t)),
             TypeKind::GenericPack(name) => self.resolve_generic_pack(name, te.span),
             TypeKind::Pack(p) => match (&p.types[..], &p.variadic) {
-                // `(T)` given where a type goes is just `T`.
+                // `(T)` where a type goes is just `T`
                 ([one], None) => self.resolve_type(one),
                 _ => {
                     self.error(te.span, "A type pack can't be used as a type");
@@ -138,8 +138,8 @@ impl Checker<'_> {
         }
     }
 
-    /// A pack argument to an alias: `(A, B)`, `()`, `...T`, `T...`, or a
-    /// lone type (a pack of one).
+    /// A pack argument to an alias: `(A, B)`, `()`, `...T`, `T...`, or a lone
+    /// type (a pack of one).
     fn resolve_pack_arg(&mut self, te: &TypeExpr) -> Pack {
         match &te.kind {
             TypeKind::Pack(p) => self.resolve_pack(p),
@@ -166,7 +166,7 @@ impl Checker<'_> {
             matches!(a.kind, TypeKind::GenericPack(_))
                 || matches!(&a.kind, TypeKind::Pack(p) if p.types.len() != 1 || p.variadic.is_some())
         };
-        // `F<A, B>` for `type F<T...> = ...`: the arguments are the pack.
+        // `F<A, B>` for `type F<T...> = ...`, the arguments are the pack
         if type_params.is_empty()
             && pack_params.len() == 1
             && !(args.len() == 1 && is_pack_expr(&args[0]))
@@ -268,7 +268,7 @@ impl Checker<'_> {
         out
     }
 
-    /// Checks an alias's defaults where it's declared (so a bad default is
+    /// Checks an alias's defaults where it's declared (so a bad default gets
     /// reported even if no use needs it).
     pub(crate) fn check_alias_defaults(&mut self, alias: &Rc<AliasDef>) {
         let mut bound: HashMap<Rc<str>, Type> = HashMap::default();
@@ -352,8 +352,8 @@ impl Checker<'_> {
             }
             return Type::Class(name.clone());
         }
-        // `setmetatable<T, MT>`: table type `T` with metatable `MT` (as
-        // in Luau; how exported class instances are written).
+        // `setmetatable<T, MT>`, table type `T` with metatable `MT` (like Luau,
+        // it's how exported class instances get written)
         if &**name == "setmetatable" {
             let [t, mt] = args else {
                 self.error(span, "setmetatable<T, MT> takes two type arguments");
@@ -380,7 +380,7 @@ impl Checker<'_> {
         Type::Error
     }
 
-    /// Expands an imported alias: its body resolved in its own scope (the
+    /// Expands an imported alias. Its body gets resolved in its own scope (the
     /// aliases imported with it), whatever this checker has in scope.
     fn expand_closed(&mut self, n: &Rc<NamedType>, closed: &std::rc::Weak<ClosedScope>) -> Type {
         let Some(scope) = closed.upgrade() else {
@@ -428,13 +428,13 @@ impl Checker<'_> {
         t
     }
 
-    /// Looks through aliases (repeatedly) to the type they stand for.
+    /// Looks through aliases (over and over) to the type they stand for.
     pub fn expand(&mut self, t: &Type) -> Type {
         let mut t = t.clone();
         let mut chain: Vec<Rc<NamedType>> = Vec::new();
         while let Type::Named(n) = &t {
-            // `type A = B; type B = A` goes round without ever reaching a
-            // real type.
+            // `type A = B, type B = A` goes in circles without ever reaching a
+            // real type
             if chain.iter().any(|c| Rc::ptr_eq(&c.alias, &n.alias)) {
                 let name = n.alias.name.clone();
                 let span = n.alias.body.span;
@@ -476,13 +476,13 @@ impl Checker<'_> {
             let _ = n.expanded.set(t.clone());
             return t;
         }
-        // Resolve the body as it was written: the alias's own scopes, with
-        // its generic parameters bound to the arguments.
+        // resolve the body as it was written, the alias's own scopes with its
+        // generic parameters bound to the arguments
         let saved = (self.alias_view, self.generic_view);
         self.alias_view = Some(n.alias.scope_depth.min(self.alias_scopes.len()));
         let generic_depth = n.alias.generic_depth.min(self.generic_scopes.len());
-        // Type parameters are bound to their arguments; pack parameters to
-        // fresh pack variables, substituted by the pack arguments after.
+        // type parameters get bound to their arguments, pack parameters to
+        // fresh pack variables that get substituted by the pack arguments after
         let mut scope: HashMap<Rc<str>, Type> = HashMap::default();
         let mut packs = Subst::new(&[]);
         let mut args = n.args.iter();
@@ -498,7 +498,7 @@ impl Checker<'_> {
                 scope.insert(g.name.clone(), a.clone());
             }
         }
-        // The parameters go right above the alias's visible generic scopes.
+        // the parameters go right above the alias's visible generic scopes
         let tail = self.generic_scopes.split_off(generic_depth);
         self.generic_scopes.push(scope);
         self.generic_view = None;
@@ -509,7 +509,7 @@ impl Checker<'_> {
         (self.alias_view, self.generic_view) = saved;
         self.expanding.pop();
         let t = match t {
-            // `type A = B` where B expands to A again.
+            // `type A = B` where B expands back to A
             Type::Named(ref inner) if Rc::ptr_eq(&inner.alias, &n.alias) => {
                 self.error(
                     n.alias.body.span,
@@ -526,9 +526,9 @@ impl Checker<'_> {
         t
     }
 
-    // --- subtyping -------------------------------------------------------------------
+    // ─ Subtyping ─────────────────────────────────────────────────────────────
 
-    /// Whether a value of type `a` can be used where `b` is expected.
+    /// Whether a value of type `a` can be used where a `b` is expected.
     pub fn sub(&mut self, a: &Type, b: &Type) -> bool {
         let mut assumed = Vec::new();
         self.sub_in(a, b, &mut assumed)
@@ -538,16 +538,16 @@ impl Checker<'_> {
         use Type::*;
         match (a, b) {
             (Any | Error, _) | (_, Any | Error | Unknown) | (Never, _) => true,
-            // Generic aliases whose arguments grow at every level
-            // (`type T<A> = {x: T<{A}>}`) never repeat a pair; past this
-            // depth, assume related.
+            // generic aliases whose arguments grow every level (`type T<A> =
+            // {x: T<{A}>}`) never repeat a pair, so past this depth just assume
+            // they're related
             (Named(_), _) | (_, Named(_)) if assumed.len() > 64 => true,
             (Named(_), Named(_)) => {
                 if a.same(b) || assumed.iter().any(|(x, y)| x.same(a) && y.same(b)) {
                     return true;
                 }
-                // Recursive aliases: assume the pair related while checking
-                // their expansions (coinduction).
+                // recursive aliases, assume the pair's related while checking
+                // their expansions (coinduction)
                 assumed.push((a.clone(), b.clone()));
                 let (ea, eb) = (self.expand(a), self.expand(b));
                 let r = self.sub_in(&ea, &eb, assumed);
@@ -555,8 +555,8 @@ impl Checker<'_> {
                 r
             }
             (Named(_), _) | (_, Named(_)) => {
-                // Same coinduction when only one side is an alias (it may
-                // meet the other inside a union).
+                // same coinduction when only one side is an alias (it might
+                // meet the other inside a union)
                 if assumed.iter().any(|(x, y)| x.same(a) && y.same(b)) {
                     return true;
                 }
@@ -598,7 +598,7 @@ impl Checker<'_> {
     }
 
     fn fn_sub(&mut self, f: &FnType, g: &FnType, assumed: &mut Vec<(Type, Type)>) -> bool {
-        // Generic functions are compared with their parameters as `any`.
+        // generic functions get compared with their parameters as `any`
         let erase = |func: &FnType| {
             if func.generics.is_empty() {
                 func.clone()
@@ -615,8 +615,8 @@ impl Checker<'_> {
         let (f, g) = (erase(f), erase(g));
         let n = f.params.len().max(g.params.len());
         for i in 0..n {
-            // What callers of `g` pass (nil past its parameters), which `f`
-            // must accept (it ignores extras when it has fewer).
+            // what callers of `g` pass (nil past its parameters), which `f` has
+            // to accept (it ignores extras when it has fewer)
             let passed = g
                 .params
                 .get(i)
@@ -647,7 +647,7 @@ impl Checker<'_> {
         let n = p.types.len().max(q.types.len());
         for i in 0..n {
             let Some(want) = q.types.get(i).cloned().or_else(|| q.variadic.clone()) else {
-                // Values past what's expected are dropped.
+                // values past what's expected get dropped
                 continue;
             };
             if !self.sub_in(&p.get(i), &want, assumed) {
@@ -657,7 +657,7 @@ impl Checker<'_> {
         match (&p.variadic, &q.variadic) {
             (Some(pv), Some(qv)) => self.sub_in(pv, qv, assumed),
             (Some(pv), None) if q.types.len() > p.types.len() => {
-                // Any of the missing positions could come from the variadic.
+                // any of the missing positions could come from the variadic
                 (p.types.len()..q.types.len()).all(|i| {
                     let want = q.types[i].clone();
                     self.sub_in(pv, &want, assumed)
@@ -667,8 +667,8 @@ impl Checker<'_> {
         }
     }
 
-    /// Width subtyping with covariant fields (simpler than Luau's
-    /// read/write variance; see the design notes).
+    /// Width subtyping with covariant fields (simpler than Luau's read/write
+    /// variance, see the design notes).
     fn table_sub(&mut self, t: &TableType, u: &TableType, assumed: &mut Vec<(Type, Type)>) -> bool {
         if t.is_empty_literal() {
             return true;
@@ -681,12 +681,12 @@ impl Checker<'_> {
                     Some((k, v)) if self.sub_in(&Type::StrLit(name.clone()), k, assumed) => {
                         Type::optional(v.clone())
                     }
-                    // A missing field reads as nil.
+                    // a missing field reads as nil
                     _ => Type::Nil,
                 },
             };
-            // What `u` allows through it, `t` must allow too: a read-only
-            // property is covariant, a write-only one contravariant.
+            // whatever `u` allows through it `t` has to allow too. a read-only
+            // property is covariant, a write-only one contravariant
             let fits = match u.access(name) {
                 Access::Read => got_access.can_read() && self.sub_in(&got, want, assumed),
                 Access::Write => {
@@ -717,7 +717,7 @@ impl Checker<'_> {
                     }
                 }
                 None => {
-                    // The fields become the entries.
+                    // the fields become the entries
                     for (name, got) in &t.props {
                         if !self.sub_in(&Type::StrLit(name.clone()), uk, assumed)
                             || !self.sub_in(got, uv, assumed)
@@ -731,11 +731,11 @@ impl Checker<'_> {
         true
     }
 
-    // --- generics ------------------------------------------------------------------------
+    // ─ Generics ──────────────────────────────────────────────────────────────
 
     /// Infers generic arguments by matching a parameter type against an
-    /// argument type. The first match for each generic wins; the argument
-    /// check afterwards reports any conflict.
+    /// argument type. The first match for each generic wins, and the argument
+    /// check after reports any conflict.
     pub fn unify(&mut self, param: &Type, arg: &Type, subst: &mut Subst) {
         self.unify_in(param, arg, subst, 0);
     }
@@ -802,7 +802,7 @@ impl Checker<'_> {
                         self.unify_in(p, a, subst, depth + 1);
                     }
                     // `(A...) -> R...` takes the rest of the function's
-                    // parameters and results.
+                    // parameters and results
                     if let Some(g) = pf.variadic.as_ref().and_then(Type::pack_var) {
                         let rest = af.params.get(pf.params.len()..).unwrap_or_default();
                         subst.bind_pack_once(
@@ -869,12 +869,12 @@ impl Subst {
         self.map.insert(id, Some(t));
     }
 
-    /// Adds a pack variable already bound (for expanding aliases).
+    /// Adds a pack variable that's already bound (for expanding aliases).
     pub(crate) fn add_pack(&mut self, id: u32, p: Pack) {
         self.packs.insert(id, Some(p));
     }
 
-    /// Binds pack `id` if it's ours and still free; the first match wins.
+    /// Binds pack `id` if it's ours and still free, first match wins.
     pub(crate) fn bind_pack_once(&mut self, id: u32, p: Pack) {
         if let Some(slot @ None) = self.packs.get_mut(&id) {
             let widen = |t: &Type| t.widen();
@@ -885,7 +885,7 @@ impl Subst {
         }
     }
 
-    /// What pack `id` stands for, if it's ours (`...any` while unbound).
+    /// What pack `id` stands for, if it's ours (`...any` while it's unbound).
     pub(crate) fn pack(&self, id: u32) -> Option<Pack> {
         self.packs
             .get(&id)
@@ -921,13 +921,13 @@ impl Subst {
             || p.variadic.as_ref().is_some_and(|v| self.mentions(v))
     }
 
-    /// `t` with these generics replaced (unbound ones by `any`).
+    /// `t` with these generics replaced (unbound ones become `any`).
     pub fn apply(&self, t: &Type) -> Type {
         if self.is_empty() || !self.mentions(t) {
             return t.clone();
         }
         match t {
-            // A pack where one value goes (`local a = ...`): any.
+            // a pack where one value goes (`local a = ...`), so any
             Type::Generic(g) if g.pack => Type::Any,
             Type::Generic(g) => match self.map.get(&g.id) {
                 Some(Some(b)) => b.clone(),
@@ -981,7 +981,7 @@ impl Subst {
         }
     }
 
-    /// A pack with these generics replaced; a generic pack in its tail is
+    /// A pack with these generics replaced. A generic pack in its tail gets
     /// spliced in (`(number, T...)` with `T... = (string, boolean)` is
     /// `(number, string, boolean)`).
     pub fn apply_pack(&self, p: &Pack) -> Pack {

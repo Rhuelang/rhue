@@ -1,7 +1,7 @@
-//! Milestone 22: performance III. Table constructors with constant keys
-//! build their tables from a template (`DUPTABLE`), `table.move` copies
-//! array runs in one go, and `table.create` fills in one go. Templates must
-//! be invisible to programs; these tests pin that down along with the new
+//! Milestone 22: performance III. Table constructors with constant keys build
+//! their tables from a template (`DUPTABLE`), `table.move` copies array runs in
+//! one go, and so does `table.create` when filling. Programs should never be
+//! able to tell templates exist, so these tests pin that down, plus the new
 //! library function.
 
 use std::rc::Rc;
@@ -69,38 +69,38 @@ fn constructors_with_constant_keys_use_templates() {
 
 #[test]
 fn templates_are_invisible() {
-    // Values, `#`, `next` and `pairs` order are what the plain path gives.
+    // values, `#`, `next` and `pairs` order are what the plain path gives
     assert_eq!(
         run(&format!(
             "{KEYS}local p = {{ x = 1, y = 2, [1] = 'a', z = 3 }}\nreturn keys(p), p.x, p.y, p.z, #p"
         )),
         "1,x,y,z | 1 | 2 | 3 | 1"
     );
-    // A field set to nil isn't stored, so it goes in where it's first
-    // assigned, as without a template.
+    // a field set to nil isn't stored, so it goes in where it's first assigned,
+    // as without a template
     assert_eq!(
         run(&format!(
             "{KEYS}local p = {{ x = 1, y = nil, z = 3 }}\np.w = 0\np.y = 2\nreturn keys(p), next({{ a = nil }})"
         )),
         "x,z,w,y | nil"
     );
-    // A computed key ends the template, so later constant keys still go
-    // in after it.
+    // a computed key ends the template, so later constant keys still go in
+    // after it
     assert_eq!(
         run(&format!(
             "{KEYS}local k = 'mid'\nlocal p = {{ a = 1, [k] = 2, b = 3 }}\nreturn keys(p)"
         )),
         "a,mid,b"
     );
-    // A key given twice keeps its first place and its last value.
+    // a key given twice keeps its first place and its last value
     assert_eq!(
         run(&format!(
             "{KEYS}local p = {{ x = 1, y = 2, x = 3 }}\nreturn keys(p), p.x"
         )),
         "x,y | 3"
     );
-    // Many keys (past the small linear form), nested constructors, and
-    // values that come from calls and branches.
+    // many keys (past the small linear form), nested constructors, and values
+    // that come from calls and branches
     let mut many = String::from("local p = {");
     for i in 0..20 {
         many.push_str(&format!(" f{i} = {i},"));
@@ -116,15 +116,15 @@ fn templates_are_invisible() {
         ),
         "5 | yes | 6"
     );
-    // Each constructor call makes a new table.
+    // each constructor call makes a new table
     assert_eq!(
         run(
             "local function new(v) return { v = v } end\nlocal a, b = new(1), new(2)\na.v = 10\nreturn a.v, b.v, a ~= b"
         ),
         "10 | 2 | true"
     );
-    // A metatable set afterwards sees nothing odd: the template's nil slots
-    // don't stop __newindex from firing for fields not given a value.
+    // a metatable set afterwards sees nothing odd: the template's nil slots
+    // don't stop __newindex from firing for fields not given a value
     assert_eq!(
         run(
             "local log = {}\nlocal p = setmetatable({ x = 1, y = nil }, { __newindex = function(t, k, v) table.insert(log, k) rawset(t, k, v) end })\np.y = 2\np.x = 3\nreturn table.concat(log, ','), p.x, p.y"
@@ -190,7 +190,7 @@ fn the_verifier_checks_templates() {
     assert!(msg.contains("fewer hash slots than keys"), "{msg}");
     let msg = broken(&|p| p.templates[0].array = u32::MAX);
     assert!(msg.contains("too large"), "{msg}");
-    // A hand-made template the compiler wouldn't write still runs.
+    // a hand-made template the compiler wouldn't write still runs
     let mut p = (*good).clone();
     p.templates.push(TableTemplate {
         array: 4,
@@ -205,7 +205,7 @@ fn the_verifier_checks_templates() {
 fn table_move() {
     let show = "local function show(t, n) local o = {} for i = 1, n do o[i] = tostring(t[i]) end return table.concat(o, ' ') end\n";
     let cases = [
-        // Overlapping moves inside one table, both directions.
+        // overlapping moves inside one table, both directions
         (
             "local a = {1,2,3,4,5} table.move(a, 1, 3, 3) return show(a, 5), #a",
             "1 2 1 2 3 | 5",
@@ -214,7 +214,7 @@ fn table_move() {
             "local a = {1,2,3,4,5} table.move(a, 2, 5, 1) return show(a, 5), #a",
             "2 3 4 5 5 | 5",
         ),
-        // Into another table: appending, overwriting, extending.
+        // into another table: appending, overwriting, extending
         (
             "local b = table.move({1,2,3}, 1, 3, 1, {}) return show(b, 3), #b",
             "1 2 3 | 3",
@@ -227,7 +227,7 @@ fn table_move() {
             "local b = table.move({1,2,3}, 2, 3, 2, {7,7,7,7}) return show(b, 4)",
             "7 2 3 7",
         ),
-        // Holes are copied as holes; nil at the end shortens the array.
+        // holes are copied as holes, nil at the end shortens the array
         (
             "local b = table.move({1,nil,3}, 1, 3, 1, {7,7,7}) return show(b, 3)",
             "1 nil 3",
@@ -236,7 +236,7 @@ fn table_move() {
             "local a = {1,2,3} table.move({}, 1, 2, 2, a) return show(a, 3), #a",
             "1 nil nil | 1",
         ),
-        // Keys outside the array part: zero, negatives, the hash part.
+        // keys outside the array part: zero, negatives, the hash part
         (
             "local c = table.move({1,2,3}, 1, 3, 0, {}) return c[0], c[1], c[2], #c",
             "1 | 2 | 3 | 2",
@@ -249,7 +249,7 @@ fn table_move() {
             "local s = { [10] = 'x', [11] = 'y' } local c = table.move(s, 10, 11, 1, {}) return show(c, 2), #c",
             "x y | 2",
         ),
-        // An empty range moves nothing; the destination comes back.
+        // an empty range moves nothing, the destination comes back
         (
             "local d = {5} return table.move({1,2}, 1, 0, 1, d) == d, show(d, 1)",
             "true | 5",
@@ -258,7 +258,7 @@ fn table_move() {
             "local a = {1} return table.move(a, 1, 1, 2) == a, #a",
             "true | 2",
         ),
-        // Raw: metamethods aren't consulted.
+        // raw: metamethods aren't consulted
         (
             "local log = 0 local d = setmetatable({}, { __newindex = function() log += 1 end }) table.move({1,2}, 1, 2, 1, d) return log, d[2]",
             "0 | 2",

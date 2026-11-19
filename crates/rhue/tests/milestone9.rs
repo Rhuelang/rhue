@@ -1,6 +1,6 @@
-//! Milestone 9: coroutines, metamethods running in the dispatch loop (so
-//! they can yield), and a typed `self` in class methods. Runtime tests also
-//! run with the collector going at every safe point.
+//! Milestone 9: coroutines, metamethods running in the dispatch loop (so they
+//! can yield), and a typed `self` in class methods. Runtime tests also run with
+//! the collector going at every safe point.
 
 use rhue::{Context, Engine, ErrorKind, Function, ScriptError, Thread, Value};
 
@@ -40,7 +40,7 @@ fn type_errors(e: &mut Engine, src: &str) -> Vec<String> {
     }
 }
 
-// --- coroutines -------------------------------------------------------------------
+// ─ Coroutines ────────────────────────────────────────────────────────────────
 
 #[test]
 fn resume_and_yield_pass_values_both_ways() {
@@ -295,7 +295,7 @@ fn coroutines_are_collected_when_unreachable() {
     .unwrap();
     e.gc();
     assert!(e.heap_stats().threads <= 2, "{:?}", e.heap_stats());
-    // A closure over a suspended coroutine's local keeps it alive.
+    // a closure over a suspended coroutine's local keeps it alive
     e.eval(
         "local co = coroutine.wrap(function()
             local secret = {value = 'alive'}
@@ -321,7 +321,7 @@ fn limits_stop_runaway_coroutines() {
         .eval("local co = coroutine.create(function() while true do end end) return coroutine.resume(co)")
         .unwrap_err();
     assert!(err.to_string().contains("instruction limit"), "{err}");
-    // The engine is fine afterwards.
+    // the engine is fine afterwards
     assert_eq!(
         run(&mut e, "return coroutine.wrap(function() return 1 end)()"),
         "1"
@@ -332,7 +332,7 @@ fn limits_stop_runaway_coroutines() {
         .eval("coroutine.wrap(function() local s = 'x' while true do s = s .. s end end)()")
         .unwrap_err();
     assert_eq!(err.to_string(), "not enough memory");
-    // Deeply nested resumes stop with an error, not a crash.
+    // deeply nested resumes stop with an error, not a crash
     e.set_memory_limit(None);
     let src = "
         local function nest(n)
@@ -369,7 +369,7 @@ fn hosts_resume_coroutines() {
     assert_eq!(cx.thread_status(&co), "dead");
     let err = cx.resume::<()>(&co, ()).unwrap_err();
     assert!(err.to_string().contains("cannot resume dead coroutine"));
-    // Threads cross the boundary as values.
+    // threads cross the boundary as values
     let t: Thread = e
         .eval_as("return coroutine.create(function() return 7 end)")
         .unwrap();
@@ -381,7 +381,7 @@ fn hosts_resume_coroutines() {
         run(&mut e, "return type(t), typeof(t), coroutine.status(t)"),
         "thread thread dead"
     );
-    // A native can resume what a script gave it.
+    // a native can resume what a script gave it
     e.register(
         "drain",
         |cx: &mut Context, co: Thread| -> Result<f64, ScriptError> {
@@ -411,7 +411,7 @@ fn tracebacks_inside_coroutines() {
     assert!(r.contains("in `deep` (co.rhue:1:"), "{r}");
 }
 
-// --- metamethods in the dispatch loop -------------------------------------------
+// ─ Metamethods in the Dispatch Loop ──────────────────────────────────────────
 
 #[test]
 fn deep_metamethod_recursion_is_a_stack_overflow_not_a_crash() {
@@ -421,7 +421,7 @@ fn deep_metamethod_recursion_is_a_stack_overflow_not_a_crash() {
         mt.__index = function(t, k) return setmetatable({}, mt)[k] end
         return setmetatable({}, mt).x";
     assert!(fails(&mut e, src).contains("stack overflow"));
-    // Chains much deeper than the native nesting limit (200) are fine now.
+    // chains much deeper than the native nesting limit (200) are fine now
     let src = "
         local mt = {}
         mt.__index = function(t, k)
@@ -475,7 +475,7 @@ fn metamethods_that_are_natives_or_callable_tables() {
             rawset(b, 'k', 'raw')
             local c = setmetatable({}, {__add = math.max})
             return a.hey, b.k, #b, c + 5";
-        // `math.max(c, 5)` fails: natives as metamethods get the operands as is.
+        // `math.max(c, 5)` fails: natives as metamethods get the operands as is
         let err = e.eval(src).unwrap_err().to_string();
         assert!(err.contains("invalid argument #1 to 'max'"), "{err}");
         let src = "
@@ -503,7 +503,7 @@ fn metamethod_frames_show_in_tracebacks() {
     assert!(r.contains("called from <main> (mm.rhue:6:"), "{r}");
 }
 
-// --- typed self ----------------------------------------------------------------------
+// ─ Typed Self ────────────────────────────────────────────────────────────────
 
 const ACCOUNT: &str = "
     --!strict
@@ -556,7 +556,7 @@ fn self_in_class_methods_is_an_instance() {
             "Type 'boolean' could not be converted into 'string'",
         ]
     );
-    // Before any constructor, `self` is `any`.
+    // before any constructor, `self` is `any`
     let early = "--!strict
         local C = {}
         C.__index = C

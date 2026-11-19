@@ -1,5 +1,5 @@
-//! [`Context`]: access to a running (or idle) engine from Rust, and
-//! [`ScriptError`], the error type of everything done through it.
+//! [`Context`], getting at a running (or idle) engine from Rust, and
+//! [`ScriptError`], the error type for everything done through it.
 
 use std::fmt;
 use std::rc::Rc;
@@ -10,11 +10,12 @@ use crate::convert::{ArgError, ConversionError, FromValue, FromValues, IntoValue
 use crate::userdata::{Ud, UserData};
 use crate::{AnyUserData, Buffer, Function, Table, Thread, Value};
 
-/// A view of an engine's VM: call functions, read and write tables and
-/// globals, create userdata.
+/// A view of an engine's VM. Call functions, read and write tables and globals,
+/// make userdata.
 ///
-/// Natives receive one when registered with a `&mut Context` first
-/// parameter; the host gets one from [`Engine::context`](crate::Engine::context).
+/// Natives get one when they're registered with `&mut Context` as the first
+/// parameter, and the host gets one from
+/// [`Engine::context`](crate::Engine::context).
 pub struct Context<'a> {
     pub(crate) vm: &'a mut rhue_vm::Vm,
 }
@@ -25,7 +26,7 @@ impl<'a> Context<'a> {
     }
 
     /// Calls a function and converts its results. Inside a native, an error
-    /// from the callee can be returned with `?` and propagates unchanged
+    /// from the callee can be returned with `?` and it propagates unchanged
     /// (same error value, same traceback).
     pub fn call<R: FromValues>(
         &mut self,
@@ -35,8 +36,8 @@ impl<'a> Context<'a> {
         self.call_value(&Value::Function(func.clone()), args)
     }
 
-    /// Calls any callable value: a function, or a table whose metatable
-    /// has `__call`.
+    /// Calls anything callable, a function or a table whose metatable has
+    /// `__call`.
     pub fn call_value<R: FromValues>(
         &mut self,
         func: &Value,
@@ -57,8 +58,8 @@ impl<'a> Context<'a> {
     }
 
     /// Fails with the uncatchable "not enough memory" error if allocating
-    /// `bytes` more would go over the engine's memory limit. Natives that
-    /// build something big call this first.
+    /// `bytes` more would go over the engine's memory limit. Natives that build
+    /// something big should call this first.
     pub fn reserve(&self, bytes: usize) -> Result<(), ScriptError> {
         if self.vm.would_exceed(bytes) {
             Err(ScriptError(Repr::OutOfMemory))
@@ -67,7 +68,7 @@ impl<'a> Context<'a> {
         }
     }
 
-    /// A new coroutine that will run `func` when first resumed.
+    /// A new coroutine that runs `func` when it's first resumed.
     pub fn create_thread(&mut self, func: &Function) -> Thread {
         let body = self.lower(Value::Function(func.clone()));
         let t = self.vm.new_thread(body);
@@ -77,9 +78,9 @@ impl<'a> Context<'a> {
         t
     }
 
-    /// Resumes a coroutine: runs it until it yields (giving the values it
-    /// yielded) or returns (giving its results). An error inside it comes
-    /// back as `Err` and leaves it dead, as does resuming a dead one.
+    /// Resumes a coroutine, running it until it yields (giving the values it
+    /// yielded) or returns (giving its results). An error inside it comes back
+    /// as `Err` and leaves it dead, same as resuming a dead one.
     pub fn resume<R: FromValues>(
         &mut self,
         co: &Thread,
@@ -99,7 +100,7 @@ impl<'a> Context<'a> {
         R::from_values(results, self).map_err(ScriptError::result)
     }
 
-    /// The coroutine running now, or `None` on the main thread (where
+    /// The coroutine running right now, or `None` on the main thread (where
     /// nothing can yield).
     pub fn current_thread(&mut self) -> Option<Thread> {
         let t = self.vm.running_coroutine()?;
@@ -109,8 +110,8 @@ impl<'a> Context<'a> {
         }
     }
 
-    /// Kills a suspended coroutine, as `coroutine.close` does (closing a
-    /// dead one does nothing).
+    /// Kills a suspended coroutine, like `coroutine.close` (closing a dead one
+    /// does nothing).
     pub fn close_thread(&mut self, co: &Thread) -> Result<(), ScriptError> {
         self.check_owner(&co.pin);
         self.vm.close_thread(co.r).map_err(ScriptError::new)
@@ -147,8 +148,8 @@ impl<'a> Context<'a> {
         self.vm.set_global(name, v);
     }
 
-    /// Wraps a Rust function as a script function value (without making
-    /// it a global), e.g. to return a callback to a script.
+    /// Wraps a Rust function as a script function value (without making it a
+    /// global), like for handing a callback back to a script.
     pub fn create_function<M>(&mut self, name: &str, f: impl crate::IntoNative<M>) -> Function {
         let native = f.into_native(Rc::from(name));
         let v = self.vm.native(name, native);
@@ -158,8 +159,8 @@ impl<'a> Context<'a> {
         f
     }
 
-    /// A buffer holding a copy of `bytes`, as `buffer.fromstring` would
-    /// make (but any bytes).
+    /// A buffer holding a copy of `bytes`, like `buffer.fromstring` would make
+    /// (but any bytes).
     pub fn create_buffer(&mut self, bytes: &[u8]) -> Buffer {
         let r = self.vm.heap_mut().alloc_buffer(bytes.into());
         let Value::Buffer(b) = self.lift(rhue_vm::Value::Buffer(r)) else {
@@ -174,7 +175,7 @@ impl<'a> Context<'a> {
         self.vm.heap().buffer(b.r).to_vec()
     }
 
-    /// Copies `bytes` into a buffer at `offset`; an error if they don't fit.
+    /// Copies `bytes` into a buffer at `offset`, an error if they don't fit.
     pub fn write_buffer(
         &mut self,
         b: &Buffer,
@@ -244,7 +245,6 @@ impl<'a> Context<'a> {
         self.vm.heap().table(r).len()
     }
 
-    /// Every key-value pair, in `next` order.
     /// Every global variable, by name.
     pub fn globals_table(&mut self) -> Vec<(String, Value)> {
         let raw: Vec<_> = self.vm.globals().collect();
@@ -278,7 +278,7 @@ impl<'a> Context<'a> {
         Ud { any, cell }
     }
 
-    // --- conversion to and from the VM's values -------------------------
+    // ─ Conversion to and from the VM's Values ────────────────────────────────
 
     fn check_owner(&self, pin: &rhue_vm::Pin) {
         assert_eq!(
@@ -364,12 +364,12 @@ impl<'a> Context<'a> {
     }
 }
 
-/// An error raised by a script, by a native, or by a conversion.
+/// An error raised by a script, a native, or a conversion.
 ///
-/// Natives return it (or anything that converts into it, such as `String`)
-/// to raise an error in the calling script. An error that came from a
-/// script through [`Context::call`] keeps its original value and traceback
-/// when passed on.
+/// Natives return it (or anything that converts into it, like `String`) to
+/// raise an error in the script that called them. An error that came from a
+/// script through [`Context::call`] keeps its original value and traceback when
+/// it's passed on.
 pub struct ScriptError(pub(crate) Repr);
 
 pub(crate) enum Repr {
@@ -381,25 +381,25 @@ pub(crate) enum Repr {
 }
 
 impl ScriptError {
-    /// An error with this message (scripts' `pcall` sees it prefixed with
-    /// the position of the call, like errors from the standard library).
+    /// An error with this message (a script's `pcall` sees it with the call's
+    /// position in front, like errors from the standard library).
     pub fn new(message: impl Into<String>) -> Self {
         ScriptError(Repr::Message(message.into()))
     }
 
-    /// Raises an arbitrary value, like `error(value, 0)`: a table, say,
-    /// that a script's `pcall` receives as is.
+    /// Raises any value, like `error(value, 0)`. A table, say, that a script's
+    /// `pcall` gets as-is.
     pub fn raise(value: Value) -> Self {
         ScriptError(Repr::Value(value))
     }
 
-    /// Not an error: suspends the script's coroutine, handing `values` to
-    /// whoever resumed it, as `coroutine.yield(...)` would. When the
-    /// coroutine is resumed, the values passed become the native's results.
+    /// Not an error. Suspends the script's coroutine and hands `values` to
+    /// whoever resumed it, like `coroutine.yield(...)` would, and when the
+    /// coroutine gets resumed the values passed become the native's results.
     /// Return it (`Err(ScriptError::yield_with(...))`) from a native a script
-    /// calls directly inside a coroutine, such as one started with
-    /// [`Engine::spawn`](crate::Engine::spawn); anywhere else, the script
-    /// gets the error that yielding there would give.
+    /// calls directly inside a coroutine, like one started with
+    /// [`Engine::spawn`](crate::Engine::spawn). Anywhere else the script gets
+    /// the error yielding there would give.
     pub fn yield_with(values: Vec<Value>) -> Self {
         ScriptError(Repr::Yield(values))
     }

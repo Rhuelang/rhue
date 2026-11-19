@@ -32,7 +32,7 @@ fn err(src: &str, want: &[&str]) {
     assert_eq!(strict(src), want, "in:\n{src}");
 }
 
-// --- annotations and inference -------------------------------------------------
+// ─ Annotations and Inference ─────────────────────────────────────────────────
 
 #[test]
 fn annotations_are_checked_in_both_modes() {
@@ -57,9 +57,9 @@ fn strict_infers_local_types_and_nonstrict_does_not() {
         ["Type '\"a\"' could not be converted into 'number'"]
     );
     assert!(nonstrict(src).is_empty());
-    // Literals widen: `local s = "a"` is a string, not `"a"`.
+    // literals widen, `local s = "a"` is a string and not `"a"`
     ok("local s = 'a' s = 'b' local f = true f = false");
-    // `local x` / `local x = nil` are filled in later: `any`.
+    // `local x` / `local x = nil` get filled in later, so `any`
     ok("local x x = 5 x = 'now a string' local y = nil y = {}");
 }
 
@@ -70,7 +70,7 @@ fn unknown_globals_only_in_strict() {
         ["Unknown global 'undefined_thing'"]
     );
     assert!(nonstrict("print(undefined_thing)").is_empty());
-    // A global the chunk assigns anywhere is known, even before the assignment.
+    // a global the chunk assigns anywhere is known, even before the assignment
     ok("local function f() return later end later = 1");
 }
 
@@ -101,7 +101,7 @@ fn operators() {
     );
 }
 
-// --- functions ------------------------------------------------------------------
+// ─ Functions ─────────────────────────────────────────────────────────────────
 
 #[test]
 fn parameters_results_and_arity() {
@@ -131,12 +131,12 @@ fn results_are_inferred_in_strict() {
         "local function half(n: number) return n / 2 end local s: string = half(4)",
         &["Type 'number' could not be converted into 'string'"],
     );
-    // A function that may fall off the end may return nil.
+    // a function that can fall off the end might return nil
     err(
         "local function f(x: boolean) if x then return 1 end end local n: number = f(true)",
         &["Type 'number?' could not be converted into 'number'"],
     );
-    // Non-strict: unannotated results are `any`.
+    // non-strict, unannotated results are `any`
     assert!(
         nonstrict("local function half(n: number) return n / 2 end local s: string = half(4)")
             .is_empty()
@@ -178,7 +178,7 @@ fn varargs_and_multiple_results() {
             "Type 'string' could not be converted into 'number'",
         ],
     );
-    // Results expand into a call's last argument.
+    // results expand into a call's last argument
     ok(
         "local function two(): (number, number) return 1, 2 end local function add(a: number, b: number) return a + b end local n: number = add(two())",
     );
@@ -208,7 +208,7 @@ fn generics() {
         "local function first<T>(xs: {T}): T return xs[1] end local s: string = first({1, 2})",
         &["Type 'number' could not be converted into 'string'"],
     );
-    // Inside the function, T is opaque.
+    // inside the function T is opaque
     err(
         "local function bad<T>(x: T): T return x + 1 end",
         &[
@@ -216,7 +216,7 @@ fn generics() {
             "Type pack 'number' could not be converted into 'T'",
         ],
     );
-    // Generic function types and aliases.
+    // generic function types and aliases
     ok(
         "type Mapper<A, B> = (A) -> B local m: Mapper<number, string> = function(n) return tostring(n) end local s: string = m(1)",
     );
@@ -224,7 +224,7 @@ fn generics() {
 
 #[test]
 fn callbacks_are_typed_by_the_parameter_they_fill() {
-    // `a` and `b` are strings here, from `{string}`.
+    // `a` and `b` are strings here, from `{string}`
     err(
         "local words: {string} = {'b', 'a'} table.sort(words, function(a, b) return a + b end)",
         &[
@@ -240,7 +240,7 @@ fn callbacks_are_typed_by_the_parameter_they_fill() {
     );
 }
 
-// --- tables ---------------------------------------------------------------------
+// ─ Tables ────────────────────────────────────────────────────────────────────
 
 #[test]
 fn records() {
@@ -275,7 +275,7 @@ fn table_literals_grow_through_their_local() {
          local n: number = M.x local s: string = M.add(1, 2)",
         &["Type 'number' could not be converted into 'string'"],
     );
-    // An empty literal fits any table type.
+    // an empty literal fits any table type
     ok("local list: {number} = {} table.insert(list, 5)");
 }
 
@@ -303,7 +303,7 @@ fn arrays_and_indexers() {
     ok("local t: {number} = {3, 1} for i, v in t do local n: number = i + v end");
 }
 
-// --- unions, nil and narrowing ---------------------------------------------------
+// ─ Unions, Nil and Narrowing ─────────────────────────────────────────────────
 
 #[test]
 fn optional_values_must_be_checked_in_strict() {
@@ -371,7 +371,7 @@ fn narrowing_field_paths() {
         "local function f(n: {next: {value: number}?}) return n.next.value end",
         &["Value of type '{ value: number }?' could be nil"],
     );
-    // Assigning the field forgets what was known about it.
+    // assigning the field forgets what was known about it
     err(
         "local function f(n: {v: number?}) if n.v then n.v = nil return n.v + 1 end return 0 end",
         &["Type 'nil' could not be converted into 'number'"],
@@ -380,19 +380,19 @@ fn narrowing_field_paths() {
 
 #[test]
 fn narrowing_is_forgotten_where_it_could_be_stale() {
-    // The loop body runs again after assigning nil.
+    // the loop body runs again after assigning nil
     err(
         "local function f(x: number?) if not x then return end while true do local y = x + 1 x = nil end end",
         &["Type 'number?' could not be converted into 'number'"],
     );
-    // A closure may run after `x` changes.
+    // a closure could run after `x` changes
     err(
         "local function f(x: number?) if not x then return end return function() return x + 1 end end",
         &["Type 'number?' could not be converted into 'number'"],
     );
 }
 
-// --- aliases and casts -----------------------------------------------------------
+// ─ Aliases and Casts ─────────────────────────────────────────────────────────
 
 #[test]
 fn type_aliases() {
@@ -415,7 +415,7 @@ fn type_aliases() {
         "type T = number type T = string",
         &["Redefinition of type 'T'"],
     );
-    // Aliases are block-scoped, and visible before their declaration.
+    // aliases are block-scoped, and visible before their declaration
     ok("local p: Later = 1 type Later = number");
     err(
         "do type Inner = number end local x: Inner = 1",
@@ -442,7 +442,7 @@ fn casts() {
     ok("local function f(x: number?) local n = x :: number return n + 1 end");
 }
 
-// --- the standard library --------------------------------------------------------
+// ─ The Standard Library ──────────────────────────────────────────────────────
 
 #[test]
 fn standard_library_types() {
@@ -464,7 +464,7 @@ fn standard_library_types() {
     ok("local n: number? = tonumber('12') local parts: {string} = string.split('a,b', ',')");
 }
 
-// --- the environment ---------------------------------------------------------------
+// ─ The Environment ───────────────────────────────────────────────────────────
 
 #[test]
 fn host_declarations() {
@@ -494,12 +494,12 @@ fn host_declarations() {
             "Type '\"lots\"' could not be converted into 'number'",
         ]
     );
-    // Host globals keep their declared types.
+    // host globals keep their declared types
     assert_eq!(
         errors_in(TypeMode::Strict, &env, "add = 5"),
         ["Type 'number' could not be converted into '(number, number) -> number'"]
     );
-    // A declaration may mention a host type before it's declared.
+    // a declaration can mention a host type before it's declared
     env.declare_global("spawn", "(string) -> Enemy").unwrap();
     assert!(env.class("Enemy").is_some());
     assert!(env.declare_global("bad", "(number) ->").is_err());
@@ -525,7 +525,7 @@ fn chunks_export_their_globals() {
         errors_in(TypeMode::Strict, &env, "local n: number = greet('x')"),
         ["Type 'string' could not be converted into 'number'"]
     );
-    // Script globals can be redefined by a later chunk.
+    // script globals can be redefined by a later chunk
     assert!(
         errors_in(
             TypeMode::Strict,
@@ -568,7 +568,7 @@ fn errors_are_capped_and_nothing_cascades() {
         .map(|i| format!("local x{i}: number = 'a'\n"))
         .collect::<String>();
     assert_eq!(strict(&src).len(), crate::MAX_TYPE_ERRORS);
-    // An unknown type gives one error; its uses don't add more.
+    // an unknown type gives one error, its uses don't pile on more
     err(
         "local x: Nope = 1 local y = x + 1 local z = x.field",
         &["Unknown type 'Nope'"],
@@ -589,9 +589,9 @@ fn nocheck_checks_nothing() {
 
 #[test]
 fn pathological_types_terminate() {
-    // Arguments that grow at every level.
+    // arguments that grow every level
     strict("type T<A> = {x: T<{A}>?} local a: T<number> = {} local b: T<string> = a");
-    // Deeply nested types and long unions.
+    // deeply nested types and long unions
     let nested = format!("local x: {}number{} = 1", "{".repeat(200), "}".repeat(200));
     strict(&nested);
     let wide = (0..300)
@@ -599,7 +599,7 @@ fn pathological_types_terminate() {
         .collect::<Vec<_>>()
         .join(" | ");
     strict(&format!("local x: {wide} = 'k5' local y: {wide} = x"));
-    // Long `and` chains are linear, not exponential.
+    // long `and` chains are linear, not exponential
     let chain = (0..200)
         .map(|i| format!("x{i}"))
         .collect::<Vec<_>>()

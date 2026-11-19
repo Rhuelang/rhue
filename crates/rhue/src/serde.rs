@@ -1,7 +1,7 @@
 //! Converting between Rhue values and Rust types with `serde` (the
 //! `serde` feature).
 //!
-//! The mapping is the one JSON uses, in Lua's terms:
+//! The mapping's the one JSON uses, in Lua terms:
 //!
 //! | Rust | Rhue |
 //! |---|---|
@@ -84,20 +84,20 @@ pub fn from_value<T: de::DeserializeOwned>(cx: &mut Context<'_>, value: Value) -
     T::deserialize(Deserializer { cx, value })
 }
 
-// --- to Rhue ----------------------------------------------------------------------
+// ─ To Rhue ───────────────────────────────────────────────────────────────────
 
 struct Serializer<'a, 'b> {
     cx: &'a mut Context<'b>,
 }
 
-/// A table being filled: sequence items by index, or entries by key.
+/// A table being filled, sequence items by index or entries by key.
 struct TableBuilder<'a, 'b> {
     cx: &'a mut Context<'b>,
     table: Table,
     next: usize,
     /// For a map: the key whose value comes next.
     key: Option<Value>,
-    /// For a variant: the table to wrap this one in, under its name.
+    /// For a variant, the table to wrap this one in under its name.
     wrap: Option<&'static str>,
 }
 
@@ -339,7 +339,7 @@ macro_rules! fields {
 }
 fields!(SerializeStruct, SerializeStructVariant);
 
-// --- from Rhue --------------------------------------------------------------------
+// ─ From Rhue ─────────────────────────────────────────────────────────────────
 
 struct Deserializer<'a, 'b> {
     cx: &'a mut Context<'b>,
@@ -382,7 +382,7 @@ impl<'de> de::Deserializer<'de> for Deserializer<'_, '_> {
             }
             Value::String(s) => visitor.visit_str(&s),
             Value::Buffer(b) => visitor.visit_byte_buf(self.cx.buffer_bytes(&b)),
-            // A vector reads as its three components.
+            // a vector reads as its three components
             Value::Vector(v) => visitor.visit_seq(Seq {
                 cx: self.cx,
                 items: v.into_iter().map(|c| Value::Number(f64::from(c))),

@@ -1,13 +1,13 @@
-//! A chunk's exported types (what it returns, the globals it defines) as
-//! Luau type syntax plus the aliases they need, written while the chunk's
-//! checker is still alive, and read back with [`Env::import`].
+//! A chunk's exported types (what it returns, the globals it defines) as Luau
+//! type syntax plus the aliases they need. Written while the chunk's checker is
+//! still alive, read back with [`Env::import`].
 //!
-//! Unlike [`portable`](crate::portable), nothing is unrolled: every alias
-//! the types mention, and every class, becomes a named alias, so recursive
-//! types stay recursive. A class is two aliases: its instances,
-//! `setmetatable<{ fields }, CounterClass>`, and its class table
-//! `CounterClass` (methods, metamethods, `__index: CounterClass`), so
-//! instances keep their exact shape and their operators.
+//! Unlike [`portable`](crate::portable) nothing gets unrolled. Every alias the
+//! types mention, and every class, becomes a named alias, so recursive types
+//! stay recursive. A class is two aliases, its instances (`setmetatable<{
+//! fields }, CounterClass>`) and its class table `CounterClass` (methods,
+//! metamethods, `__index: CounterClass`), so instances keep their exact shape
+//! and their operators.
 
 use std::rc::Rc;
 
@@ -42,7 +42,8 @@ pub(crate) struct Exporter<'c, 'a> {
     defs: Vec<String>,
 }
 
-/// Nesting (of types written inline) past which a type is written `any`.
+/// Nesting (of types written inline) past which a type just gets written as
+/// `any`.
 const MAX_DEPTH: u32 = 48;
 
 impl<'c, 'a> Exporter<'c, 'a> {
@@ -57,14 +58,14 @@ impl<'c, 'a> Exporter<'c, 'a> {
         }
     }
 
-    /// Writes `t`, queuing the definitions it needs.
+    /// Writes `t`, queuing up the definitions it needs.
     pub(crate) fn write(&mut self, t: &Type) -> String {
         let mut out = String::new();
         self.ty(&mut out, t, 0);
         out
     }
 
-    /// Writes every queued definition (and those they need in turn).
+    /// Writes every queued definition (and the ones those need).
     pub(crate) fn finish(mut self) -> Vec<String> {
         while let Some(job) = self.jobs.pop() {
             let def = match job {
@@ -267,7 +268,7 @@ impl<'c, 'a> Exporter<'c, 'a> {
                     self.wrapped(out, m, depth);
                 }
             }
-            // Everything else reads the same as written by `portable`.
+            // everything else reads the same as `portable` writes it
             other => out.push_str(&crate::portable(other)),
         }
     }
@@ -315,7 +316,7 @@ impl<'c, 'a> Exporter<'c, 'a> {
         }
     }
 
-    /// A single result: parenthesized if it's a function.
+    /// A single result, parenthesized if it's a function.
     fn wrapped_fn(&mut self, out: &mut String, t: &Type, depth: u32) {
         if matches!(t, Type::Function(_)) {
             out.push('(');
@@ -351,8 +352,8 @@ impl<'c, 'a> Exporter<'c, 'a> {
         }
     }
 
-    /// `{ a: T, read b: U, [K]: V }`, and `__index: Class` first for a
-    /// class table (`class` is its alias).
+    /// `{ a: T, read b: U, [K]: V }`, with `__index: Class` first for a class
+    /// table (`class` is its alias).
     fn table_fields(&mut self, out: &mut String, tt: &TableType, class: Option<&str>, depth: u32) {
         let mut parts: Vec<String> = Vec::new();
         if let Some(class) = class {

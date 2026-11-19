@@ -1,6 +1,6 @@
-//! Milestone 16: types II. Read-only and write-only properties, flow
-//! typing through loops, the fields methods add to `self`, and recursive
-//! types that survive exporting and saving.
+//! Milestone 16: types II. Read-only and write-only properties, flow typing
+//! through loops, the fields methods add to `self`, and recursive types that
+//! survive exporting and saving.
 
 use rhue::Engine;
 
@@ -41,7 +41,7 @@ fn read_only_and_write_only_properties() {
         "Property 'audit' is write-only",
     );
     fails(&format!("{decl}  a.id += 1\nend"), "read-only");
-    // `read`/`write` are only keywords before a property name.
+    // `read`/`write` are only keywords before a property name
     ok("type T = { read: number, write: string }\nlocal function f(t: T) t.read = 1 end");
     let err = Engine::new()
         .check("t.rhue", "type T = { read [string]: number }")
@@ -54,12 +54,12 @@ fn read_only_and_write_only_properties() {
 
 #[test]
 fn access_follows_variance() {
-    // Read-only is covariant: a narrower type can be read where a wider one
-    // is expected.
+    // read-only is covariant: a narrower type can be read where a wider one is
+    // expected
     ok(
         "type Shape = { read kind: string }\nlocal function show(s: Shape) end\nshow({ kind = 'circle' })\nlocal c: { kind: \"circle\" } = { kind = 'circle' }\nshow(c)",
     );
-    // Write-only is contravariant: a sink for `string?` takes a string.
+    // write-only is contravariant: a sink for `string?` takes a string
     ok(
         "type Sink = { write value: string }\nlocal function fill(s: Sink) s.value = 'x' end\nlocal t: { value: string? } = { value = nil }\nfill(t)",
     );
@@ -67,7 +67,7 @@ fn access_follows_variance() {
         "type Sink = { write value: string? }\nlocal function fill(s: Sink) s.value = nil end\nlocal t: { value: string } = { value = 'x' }\nfill(t)",
         "could not be converted",
     );
-    // A read-only value can't be passed where it would be written.
+    // a read-only value can't be passed where it would be written
     fails(
         "type Ro = { read n: number }\nlocal function bump(t: { n: number }) t.n += 1 end\nlocal function f(r: Ro) bump(r) end",
         "field 'n' is read-only",
@@ -76,7 +76,7 @@ fn access_follows_variance() {
         "type Wo = { write n: number }\nlocal function show(t: { read n: number }) end\nlocal function f(w: Wo) show(w) end",
         "field 'n' is write-only",
     );
-    // Read-write can be narrowed to either.
+    // read-write can be narrowed to either
     ok(
         "local function f(t: { n: number })\n  local r: { read n: number } = t\n  local w: { write n: number } = t\nend",
     );
@@ -106,8 +106,8 @@ fn access_shows_in_types() {
 
 #[test]
 fn flow_locals_are_typed_inside_loops() {
-    // An earlier iteration assigned a number: inside the loop it's
-    // `number?`, not `any`.
+    // an earlier iteration assigned a number: inside the loop it's `number?`,
+    // not `any`
     fails(
         "local prev\nfor i = 1, 3 do\n  if prev then local s: string = prev end\n  prev = i\nend",
         "could not be converted into 'string'",
@@ -119,9 +119,9 @@ fn flow_locals_are_typed_inside_loops() {
         "local prev\nfor i = 1, 3 do\n  local n: number = prev + i\n  prev = i\nend",
         "'number?' could not be converted",
     );
-    // A value built from itself settles.
+    // a value built from itself settles
     ok("local acc\nfor i = 1, 10 do acc = (acc or 0) + i end\nlocal n: number = acc or 0");
-    // Types an iteration can leave, whatever order they're assigned in.
+    // types an iteration can leave, whatever order they're assigned in
     ok(
         "local v\nwhile math.random() > 0.1 do\n  if v == nil then v = 0 else v = tostring(v) end\nend\nlocal w: nil | number | string = v",
     );
@@ -129,7 +129,7 @@ fn flow_locals_are_typed_inside_loops() {
         "local v\nwhile math.random() > 0.1 do\n  if v == nil then v = 0 else v = tostring(v) end\nend\nlocal w: number? = v",
         "could not be converted",
     );
-    // repeat-until and generic for, and loops inside loops.
+    // repeat-until and generic for, and loops inside loops
     ok("local last\nrepeat last = 'x' until last ~= nil\nlocal s: string = last");
     ok(
         "local found\nfor _, v in {1, 2, 3} do\n  if v > 1 then found = v break end\nend\nif found then local n: number = found end",
@@ -138,7 +138,7 @@ fn flow_locals_are_typed_inside_loops() {
         "local best\nfor i = 1, 3 do\n  for j = 1, 3 do\n    if best then local s: string = best end\n    best = i * j\n  end\nend",
         "could not be converted into 'string'",
     );
-    // After the loop, it may never have run.
+    // after the loop, it may never have run
     fails(
         "local last\nfor i = 1, 3 do last = i end\nlocal n: number = last",
         "could not be converted",
@@ -147,8 +147,8 @@ fn flow_locals_are_typed_inside_loops() {
 
 #[test]
 fn silent_passes_leave_no_trace() {
-    // One error, reported once (not once per pass), and hover types aren't
-    // duplicated.
+    // one error, reported once (not once per pass), and hover types aren't
+    // duplicated
     let src = "--!strict\nlocal prev\nfor i = 1, 3 do\n  local bad: string = 1\n  prev = i\nend\n";
     let err = Engine::new()
         .check("t.rhue", src)
@@ -176,8 +176,8 @@ end
 
 #[test]
 fn methods_add_fields_to_self() {
-    // Later methods (and code using instances) see them, as optional:
-    // something may read them before `fill` has run.
+    // later methods (and code using instances) see them, as optional: something
+    // may read them before `fill` has run
     ok(&format!(
         "{CACHE}function Cache:describe(): string\n  return self.label or 'empty'\nend"
     ));
@@ -192,16 +192,16 @@ fn methods_add_fields_to_self() {
     ok(&format!(
         "{CACHE}local c = Cache.new(3)\nc:fill()\nif c.label then local s: string = c.label end"
     ));
-    // Within the method that assigns it, it's known.
+    // within the method that assigns it, it's known
     ok(
         "local K = {}\nK.__index = K\nfunction K.new() return setmetatable({}, K) end\nfunction K:init()\n  self.n = 1\n  local m: number = self.n + 1\nend",
     );
-    // Constructor fields keep their exact, checked types.
+    // constructor fields keep their exact, checked types
     fails(
         &format!("{CACHE}function Cache:shrink() self.size = 'small' end"),
         "could not be converted into 'number'",
     );
-    // Only the class's methods widen it; other code has to fit.
+    // only the class's methods widen it, other code has to fit
     fails(
         &format!("{CACHE}local c = Cache.new(3)\nc:fill()\nc.label = 5"),
         "could not be converted into 'string?'",
@@ -209,7 +209,7 @@ fn methods_add_fields_to_self() {
     ok(&format!(
         "{CACHE}local c = Cache.new(3)\nc.label = 'x'\nc.label = nil"
     ));
-    // A field assigned different things holds any of them.
+    // a field assigned different things holds any of them
     ok(
         "local K = {}\nK.__index = K\nfunction K.new() return setmetatable({}, K) end\nfunction K:a() self.v = 1 end\nfunction K:b() self.v = 'x' end\nfunction K:c(): number | string | nil return self.v end",
     );
@@ -235,7 +235,7 @@ local function list<T>(x: T): List<T> return { head = x, tail = nil } end
 return { V = V, ring = ring, list = list }
 ";
 
-/// The same checks, against the module as source and as saved bytes.
+/// Same checks, against the module as source and as saved bytes.
 fn engines() -> Vec<(&'static str, Engine)> {
     let mut source = Engine::new();
     source.add_module("shapes", SHAPES);
@@ -255,7 +255,7 @@ fn recursive_types_survive_requiring() {
             )
             .map_err(|err| err.render(false))
         };
-        // Deep enough that unrolling a few levels (as before) gave `any`.
+        // deep enough that unrolling a few levels (as before) gave `any`
         check(&mut e, "local r = shapes.ring()\nlocal n: number = r.next().next().next().next().next().next().next().value")
             .unwrap_or_else(|err| panic!("{how}: {err}"));
         let err = check(&mut e, "local r = shapes.ring()\nlocal s: string = r.next().next().next().next().next().next().next().value")
@@ -264,7 +264,7 @@ fn recursive_types_survive_requiring() {
             err.contains("could not be converted into 'string'"),
             "{how}: {err}"
         );
-        // Generic recursive aliases.
+        // generic recursive aliases
         check(&mut e, "local l = shapes.list('a')\nif l.tail and l.tail.tail then local s: string = l.tail.tail.head end")
             .unwrap_or_else(|err| panic!("{how}: {err}"));
         assert!(
@@ -306,7 +306,7 @@ fn classes_keep_methods_and_operators() {
         );
         let err = check(&mut e, "V.new(1, 2):nope()").unwrap_err();
         assert!(err.contains("nope"), "{how}: {err}");
-        // And it all runs.
+        // and it all runs
         let out = e
             .eval_as::<f64>(
                 "local V = require('shapes').V\nreturn (V.new(3, 0) + V.new(0, 4)):scale(2):len()",
@@ -344,8 +344,8 @@ fn exported_types_read_as_written() {
 
 #[test]
 fn exported_names_dont_collide() {
-    // A user alias already called `CounterClass`, and two classes named
-    // `Counter` in different scopes.
+    // a user alias already called `CounterClass`, and two classes named
+    // `Counter` in different scopes
     let src = "--!strict
 type CounterClass = { label: string }
 local function make()
@@ -391,7 +391,7 @@ fn older_chunk_formats_still_load() {
     let (proto, types) = read_chunk(&bytes).unwrap();
     let mut types = types.unwrap();
     types.aliases.clear();
-    // Format 2 is format 3 without the alias list: drop its (zero) count.
+    // format 2 is format 3 without the alias list: drop its (zero) count
     let with = write_chunk(&proto, Some(&types));
     let without = write_chunk(&proto, None);
     let header = with
@@ -429,8 +429,8 @@ fn older_chunk_formats_still_load() {
 
 #[test]
 fn import_falls_back_when_a_type_is_missing() {
-    // Types naming something the loading engine lacks (a host type, say)
-    // don't stop the module loading; they fall back to `any`.
+    // types naming something the loading engine lacks (a host type, say) don't
+    // stop the module loading, they fall back to `any`
     use rhue_bytecode::{read_chunk, write_chunk};
     let src = "--!strict\nlocal M = {}\nfunction M.len(n: number): number return n end\nreturn M";
     let bytes = Engine::new().compile_to_bytes("m", src).unwrap();

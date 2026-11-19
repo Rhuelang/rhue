@@ -1,6 +1,6 @@
-//! Milestone 14: generic type packs and default type parameters, flow
-//! typing of locals declared without a value, and types that survive
-//! saving (compiled chunks and modules).
+//! Milestone 14: generic type packs and default type parameters, flow typing
+//! for locals declared without a value, and types that survive saving (compiled
+//! chunks and modules).
 
 use rhue::{Engine, ErrorKind};
 
@@ -74,7 +74,7 @@ fn packs_link_a_callback_to_its_arguments() {
         &format!("{call}local s: string = call(add, 1, 2)"),
         "'number' could not be converted into 'string'",
     );
-    // Wrapping keeps the whole signature.
+    // wrapping keeps the whole signature
     let wrap = "local function wrap<A..., R...>(f: (A...) -> R...): (A...) -> R... return f end\nlocal g = wrap(function(x: number): string return tostring(x) end)\n";
     ok(&format!("{wrap}local s: string = g(1)"));
     fails(
@@ -111,7 +111,7 @@ fn packs_in_type_aliases() {
         &format!("{mixed}local n: number = f(1)"),
         "could not be converted into 'number'",
     );
-    // Inside a generic function, an alias can be given its packs.
+    // inside a generic function, an alias can be given its packs
     ok(
         "type Callback<A...> = (A...) -> ()\nlocal function each<A...>(cb: Callback<A...>, ...: A...) cb(...) end\neach(function(a: number, b: string) end, 1, 'x')",
     );
@@ -126,7 +126,7 @@ fn default_type_parameters() {
         &format!("{bx}local b: Box = {{ value = 'x' }}"),
         "could not be converted",
     );
-    // A default can name an earlier parameter.
+    // a default can name an earlier parameter
     let pair = "type Pair<A, B = A> = { a: A, b: B }\n";
     ok(&format!(
         "{pair}local p: Pair<string> = {{ a = 'x', b = 'y' }}"
@@ -146,7 +146,7 @@ fn default_type_parameters() {
         &format!("{pair}local p: Pair<number, number, number> = {{ a = 1, b = 1 }}"),
         "expects at most 2 type arguments",
     );
-    // Packs can have defaults too.
+    // packs can have defaults too
     let h = "type Handler<A... = (string)> = (A...) -> ()\n";
     ok(&format!(
         "{h}local f: Handler = function(s: string) end\nf('x')"
@@ -158,7 +158,7 @@ fn default_type_parameters() {
     ok(&format!(
         "{h}local f: Handler<number> = function(n: number) end\nf(1)"
     ));
-    // A bad default is reported even if no use needs it.
+    // a bad default is reported even if no use needs it
     fails("type Bad<T = Nope> = { value: T }", "Unknown type 'Nope'");
 }
 
@@ -230,52 +230,52 @@ fn locals_without_a_value_follow_their_assignments() {
     ok(
         "local x\nif math.random() > 0.5 then x = 'a' else x = 'b' end\nlocal s: string = x:upper()",
     );
-    // Not assigned on every path: could still be nil.
+    // not assigned on every path: could still be nil
     fails(
         "local x\nif math.random() > 0.5 then x = 1 end\nlocal n: number = x",
         "could not be converted",
     );
-    // ...until something rules nil out.
+    // ...until something rules nil out
     ok(
         "local x\nif math.random() > 0.5 then x = 1 end\nif x == nil then x = 0 end\nlocal n: number = x",
     );
     ok(
         "local x\nif math.random() > 0.5 then x = 1 end\nif not x then return end\nlocal n: number = x",
     );
-    // A union of everything assigned.
+    // a union of everything assigned
     fails(
         "local x\nif math.random() > 0.5 then x = 1 else x = 'a' end\nlocal n: number = x",
         "could not be converted",
     );
     ok("local x\nif math.random() > 0.5 then x = 1 else x = 'a' end\nlocal v: number | string = x");
-    // Branches that leave don't count.
+    // branches that leave don't count
     ok("local x\nif math.random() > 0.5 then x = 1 else error('no') end\nlocal n: number = x");
     ok("local x\ndo x = 'inner' end\nlocal s: string = x");
-    // Read before any assignment: it's nil.
+    // read before any assignment: it's nil
     fails("local x\nlocal n: number = x + 1", "nil");
-    // Assigning different things is allowed (it's how the type is built).
+    // assigning different things is allowed (it's how the type is built)
     ok("local x\nx = 1\nx = 'two'\nlocal s: string = x");
 }
 
 #[test]
 fn flow_locals_stay_safe_where_one_pass_cant_see() {
-    // Loops: after one, it may not have run.
+    // loops: after one, it may not have run
     fails(
         "local last\nfor i = 1, 3 do last = i end\nlocal n: number = last",
         "could not be converted",
     );
     ok("local last\nfor i = 1, 3 do last = i end\nlocal n: number = last or 0");
-    // Inside the loop, an earlier iteration may have set it: `any`.
+    // inside the loop, an earlier iteration may have set it: `any`
     ok(
         "local prev\nfor i = 1, 3 do\n  if prev then local s: string = tostring(prev + i) end\n  prev = i\nend",
     );
-    // Closures: reading it inside one is `any` (it may run later)...
+    // closures: reading it inside one is `any` (it may run later)...
     ok("local cb\nlocal function run() cb() end\ncb = function() end\nrun()");
-    // ...and a local a closure assigns is plain `any` from then on.
+    // ...and a local a closure assigns is plain `any` from then on
     ok("local x\nlocal function set() x = 'late' end\nx = 1\nset()\nlocal s: string = x");
-    // Tables grow fields after they're assigned: `any`.
+    // tables grow fields after they're assigned: `any`
     ok("local t\nt = {}\nt.count = 1\nlocal n: number = t.count");
-    // `local x = nil` is still the gradual "fill it in later".
+    // `local x = nil` is still the gradual "fill it in later"
     ok("local x = nil\nx = 1\nx = 'a'");
 }
 
@@ -298,7 +298,7 @@ fn hovering_a_flow_local_shows_what_it_can_hold() {
 
 #[test]
 fn narrowings_now_survive_if_statements() {
-    // Declared locals benefit too: both branches assign a number.
+    // declared locals benefit too: both branches assign a number
     ok(
         "local x: number? = nil\nif math.random() > 0.5 then x = 1 else x = 2 end\nlocal n: number = x",
     );
@@ -338,13 +338,13 @@ local v: string = counter.version
 return n, a, b, v";
     e.check("main.rhue", use_it)
         .unwrap_or_else(|err| panic!("{}", err.render(false)));
-    // And it runs, without the module's source anywhere.
+    // and it runs, without the module's source anywhere
     let out = e.eval_named("main.rhue", use_it).unwrap();
     assert_eq!(
         format!("{out:?}"),
         r#"[Number(15.0), Number(1.0), String("x"), String("1.0")]"#
     );
-    // Misuse is caught as if the source were there.
+    // misuse is caught as if the source were there
     for (bad, needle) in [
         (
             "local counter = require('counter')\ncounter.new('ten')",
@@ -374,7 +374,7 @@ fn loaded_chunks_declare_their_globals() {
     let bytes = Engine::new().compile_to_bytes("lib.rhue", lib).unwrap();
     let mut e = Engine::new();
     let proto = e.load(&bytes).unwrap();
-    // Known to the checker as soon as it's loaded...
+    // known to the checker as soon as it's loaded...
     e.check(
         "a.rhue",
         "--!strict\nlocal s: string = greet('ada')\nlocal n: number = VERSION",
@@ -385,7 +385,7 @@ fn loaded_chunks_declare_their_globals() {
         err.render(false)
             .contains("could not be converted into 'string'")
     );
-    // ...and defined once it runs.
+    // ...and defined once it runs
     e.run(&proto).unwrap();
     assert_eq!(e.eval_as::<String>("return greet('bo')").unwrap(), "hi bo");
 }
@@ -394,12 +394,12 @@ fn loaded_chunks_declare_their_globals() {
 fn older_and_untyped_chunks_still_load() {
     let mut e = Engine::new();
     let proto = e.compile("old.rhue", "return 1 + 1").unwrap();
-    // Format 1: no types section.
+    // format 1: no types section
     let v2 = proto.to_bytes();
     let mut v1 = v2.clone();
     let magic = rhue_bytecode::MAGIC.len();
     v1[magic] = 1;
-    // The types flag comes after the name and text (both short here).
+    // the types flag comes after the name and text (both short here)
     let flag = magic + 1 + 1 + "old.rhue".len() + 1 + "return 1 + 1".len();
     assert_eq!(v1.remove(flag), 0);
     for bytes in [v1, v2] {
@@ -407,7 +407,7 @@ fn older_and_untyped_chunks_still_load() {
         let p = fresh.load(&bytes).unwrap();
         assert_eq!(fresh.run(&p).unwrap(), vec![rhue::Value::Number(2.0)]);
     }
-    // A compiled module without types is `any` to the checker.
+    // a compiled module without types is `any` to the checker
     let untyped = Engine::new()
         .compile("m", "return { f = function(x: number) return x end }")
         .unwrap()
@@ -422,7 +422,7 @@ fn older_and_untyped_chunks_still_load() {
 
 #[test]
 fn saved_types_that_dont_resolve_are_any() {
-    // A host type the loading engine doesn't have.
+    // a host type the loading engine doesn't have
     let mut host = Engine::new();
     host.declare("spawn", "(Vec3) -> ()").unwrap_or(());
     let lib = "--!strict\nfunction place(p: Vec3) spawn(p) end\n";

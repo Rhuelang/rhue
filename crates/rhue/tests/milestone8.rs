@@ -1,6 +1,6 @@
-//! Milestone 8: metatables, tail calls, string interpolation, the memory
-//! limit, and metatables in the type checker. Runtime tests also run with
-//! the collector going at every safe point.
+//! Milestone 8: metatables, tail calls, string interpolation, the memory limit,
+//! and metatables in the type checker. Runtime tests also run with the
+//! collector going at every safe point.
 
 use rhue::{Context, Engine, ErrorKind, Function, ScriptError};
 
@@ -40,7 +40,7 @@ fn type_errors(e: &mut Engine, src: &str) -> Vec<String> {
     }
 }
 
-// --- metatables -------------------------------------------------------------------
+// ─ Metatables ────────────────────────────────────────────────────────────────
 
 const VEC: &str = "
     local Vec = {}
@@ -93,8 +93,8 @@ fn eq_is_only_asked_about_two_tables() {
         local a, b = setmetatable({}, mt), setmetatable({}, mt)
         local r = {a == b, a == a, a == 1, 1 == a, a == 'x', a ~= b}
         return calls, r[1], r[2], r[3], r[4], r[5], r[6]";
-    // `a == a` is raw-equal, so `__eq` isn't asked; neither is it for a
-    // table against a number or string.
+    // `a == a` is raw-equal, so `__eq` isn't asked, neither is it for a table
+    // against a number or string
     assert_eq!(run(&mut e, src), "2 true true false false false false");
 }
 
@@ -261,7 +261,7 @@ fn classes_with_inheritance() {
     });
 }
 
-// --- tail calls -----------------------------------------------------------------------
+// ─ Tail Calls ────────────────────────────────────────────────────────────────
 
 #[test]
 fn tail_calls_run_in_constant_stack() {
@@ -272,7 +272,7 @@ fn tail_calls_run_in_constant_stack() {
         function odd(n) if n == 0 then return false end return even(n - 1) end
         return count(1000000, 0), even(100001)";
     assert_eq!(run(&mut e, src), "1000000 false");
-    // Without the tail call, the same depth overflows.
+    // without the tail call, the same depth overflows
     assert_eq!(
         fails(
             &mut e,
@@ -317,7 +317,7 @@ fn tracebacks_name_the_tail_calls_that_led_there() {
         "{r}"
     );
     assert!(r.contains("called from `z` (tail.rhue:4:"), "{r}");
-    // Long chains keep the latest two and count the rest.
+    // long chains keep the latest two and count the rest
     let src =
         "local function f(n) if n == 0 then return nil + 1 end return f(n - 1) end\nreturn (f(5))";
     let r = e.eval_named("chain.rhue", src).unwrap_err().render(false);
@@ -334,7 +334,7 @@ fn the_instruction_limit_stops_infinite_tail_recursion() {
     assert!(err.to_string().contains("instruction limit"), "{err}");
 }
 
-// --- string interpolation ----------------------------------------------------------------
+// ─ String Interpolation ──────────────────────────────────────────────────────
 
 #[test]
 fn interpolated_strings() {
@@ -373,7 +373,7 @@ fn interpolation_syntax_errors() {
     }
 }
 
-// --- the memory limit -----------------------------------------------------------------------
+// ─ The Memory Limit ──────────────────────────────────────────────────────────
 
 #[test]
 fn the_memory_limit_stops_runaway_allocation() {
@@ -387,7 +387,7 @@ fn the_memory_limit_stops_runaway_allocation() {
         "return string.rep('ab', 1e7)",
         "return table.create(1e7, 0)",
         "local t = {} for i = 1, 1e6 do t[i] = 'abcdefgh' end return table.concat(t)",
-        // `pcall` can't catch it.
+        // `pcall` can't catch it
         "pcall(function() local s = 'x' while true do s = s .. s end end) return 'escaped'",
     ] {
         let err = e.eval(src).unwrap_err();
@@ -395,7 +395,7 @@ fn the_memory_limit_stops_runaway_allocation() {
         e.gc();
         assert!(e.memory_used() < 8 << 20, "{src}: {}", e.memory_used());
     }
-    // Programs that churn through garbage but keep little are fine.
+    // programs that churn through garbage but keep little are fine
     let src = "local keep for i = 1, 200000 do keep = {i, tostring(i)} end return keep[1]";
     assert_eq!(run(&mut e, src), "200000");
     e.set_memory_limit(None);
@@ -421,7 +421,7 @@ fn natives_can_check_the_memory_limit() {
     );
 }
 
-// --- types --------------------------------------------------------------------------------
+// ─ Types ─────────────────────────────────────────────────────────────────────
 
 #[test]
 fn the_class_pattern_type_checks() {
@@ -457,7 +457,7 @@ fn the_class_pattern_type_checks() {
             "Type 'number' could not be converted into 'string'",
         ]
     );
-    // And it runs.
+    // and it runs
     assert_eq!(
         run(&mut e, &format!("{class} a:deposit(5) return a.balance")),
         "15"

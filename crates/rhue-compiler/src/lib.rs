@@ -1,22 +1,22 @@
-//! Compiler from the Rhue AST to register bytecode.
+//! Compiles the Rhue AST down to register bytecode.
 //!
-//! Part of [Rhue](https://docs.rs/rhue)'s implementation. To embed Rhue, use
-//! the `rhue` crate: its API is the one kept stable.
+//! This is part of [Rhue](https://docs.rs/rhue)'s guts. If you're embedding
+//! Rhue, use the `rhue` crate, that's the API that stays stable.
 //!
-//! Pipeline: [`resolve`] binds names, [`fold`] folds constants (per
-//! expression root), then a single codegen pass emits instructions. Each
-//! function gets its own `FuncState`; the enclosing ones wait on a stack,
-//! which is how upvalue chains are threaded through intermediate functions.
+//! Pipeline: [`resolve`] binds names, [`fold`] folds constants (per expression
+//! root), then one codegen pass emits instructions. Each function gets its own
+//! `FuncState` and the enclosing ones wait on a stack, which is how upvalue
+//! chains get threaded through the functions in between.
 //!
-//! **Registers.** Locals live at the bottom of the register window in
-//! declaration order; temporaries are pushed above them and popped after
-//! use (`free_reg`), as in Lua. `locals_top` marks where the locals end, so a
-//! local's register is never mistaken for a disposable temporary.
+//! **Registers.** Locals live at the bottom of the register window in the order
+//! they're declared. Temporaries get pushed above them and popped after use
+//! (`free_reg`), like Lua. `locals_top` marks where the locals end, so a
+//! local's register never gets mistaken for a throwaway temporary.
 //!
-//! **Jumps.** Conditions compile to *jump lists*: `cond_jump(e, when)` emits
+//! **Jumps.** Conditions compile to *jump lists*. `cond_jump(e, when)` emits
 //! code that jumps if `e`'s truthiness equals `when` and falls through
-//! otherwise, returning the jumps to patch. `and`/`or`/`not` compose these
-//! lists, so conditions short-circuit without materialising booleans.
+//! otherwise, and hands back the jumps to patch. `and`/`or`/`not` combine these
+//! lists, so conditions short-circuit without ever making a boolean.
 
 mod fold;
 pub mod resolve;
@@ -34,7 +34,7 @@ use rhue_parser::ast::*;
 pub use fold::{fold, fold_number};
 use resolve::{Binding, LocalId, Resolution};
 
-/// Registers are addressed by a `u8`; keep a little headroom for calls later.
+/// Registers are addressed by a `u8`, keep a little headroom for calls.
 pub const MAX_REGISTERS: u32 = 250;
 
 #[derive(Clone, Copy, Debug)]
@@ -53,8 +53,8 @@ impl Default for CompileOptions {
 
 /// Resolves and compiles a chunk into its main function prototype.
 ///
-/// `source` is attached to every prototype so runtime errors can be rendered
-/// against the right text.
+/// `source` gets attached to every prototype so runtime errors render against
+/// the right text.
 pub fn compile_chunk(
     chunk: &Chunk,
     source: &Rc<SourceFile>,
@@ -64,8 +64,8 @@ pub fn compile_chunk(
     compile_resolved(chunk, &resolution, source, options)
 }
 
-/// Compiles a chunk that [`resolve::resolve`] already resolved (the type
-/// checker needs the resolution too).
+/// Compiles a chunk [`resolve::resolve`] already resolved (the type checker
+/// needs the resolution too).
 pub fn compile_resolved(
     chunk: &Chunk,
     resolution: &resolve::Resolution,
@@ -84,12 +84,13 @@ pub fn compile_resolved(
     };
     let end = Span::new(chunk.span.end, chunk.span.end);
     c.block(&chunk.body).map_err(|d| vec![*d])?;
-    // Falling off the end of a chunk returns nothing.
+    // falling off the end of a chunk returns nothing
     c.emit(Instr::abc(Op::Return, 0, 0, 0), end);
     c.fs.finish_debug();
     let proto = c.fs.proto;
-    // The compiler's output always verifies; if it doesn't, that's a bug
-    // here, reported as an error rather than left for the VM to trip on.
+    // the compiler's output always verifies. if it doesn't that's a bug in
+    // here, so report it as an error instead of leaving it for the VM to trip
+    // on
     if let Err(e) = rhue_bytecode::verify_once(&proto) {
         if cfg!(debug_assertions) {
             panic!("the compiler produced bytecode that doesn't verify: {e}");
@@ -105,7 +106,7 @@ pub fn compile_resolved(
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 enum ConstKey {
-    /// Keyed by bits, so `0` and `-0` stay distinct.
+    /// Keyed by bits, so `0` and `-0` stay different.
     Number(u64),
     String(Rc<str>),
 }
@@ -113,13 +114,13 @@ enum ConstKey {
 struct LoopState {
     breaks: Vec<usize>,
     continues: Vec<usize>,
-    /// Registers at or above these hold locals declared inside the loop;
-    /// leaving through `break`/`continue` must close any that are captured.
+    /// Registers at or above these hold locals declared inside the loop.
+    /// Leaving through `break`/`continue` has to close any that got captured.
     break_close: u32,
     continue_close: u32,
 }
 
-/// Everything the compiler tracks for one function being compiled.
+/// Everything the compiler keeps track of for one function.
 #[derive(Default)]
 struct FuncState {
     proto: Proto,
@@ -127,18 +128,18 @@ struct FuncState {
     locals_top: u32,
     /// Registers of this function's locals (by resolver id).
     local_regs: HashMap<LocalId, u8>,
-    /// Locals currently in scope, innermost last: `(id, register)`.
+    /// Locals in scope right now, innermost last: `(id, register)`.
     active: Vec<(LocalId, u8)>,
     /// For each of `active`, its entry in `proto.locals`.
     active_debug: Vec<usize>,
     constants: HashMap<ConstKey, u16>,
     loops: Vec<LoopState>,
-    /// Upvalues by the local they ultimately refer to.
+    /// Upvalues by the local they end up pointing at.
     upvalue_ids: Vec<LocalId>,
 }
 
 impl FuncState {
-    /// Locals still in scope at the end of the function live to its end.
+    /// Locals still in scope at the end of the function live until its end.
     fn finish_debug(&mut self) {
         let end = self.proto.code.len() as u32;
         for l in &mut self.proto.locals {
@@ -158,7 +159,7 @@ enum Var {
 struct Compiler<'r> {
     options: CompileOptions,
     res: &'r Resolution,
-    /// The function currently being compiled.
+    /// The function being compiled right now.
     fs: FuncState,
     /// Enclosing functions, outermost first.
     parents: Vec<FuncState>,
@@ -184,11 +185,11 @@ enum Key {
     Register(u8),
 }
 
-/// How many values an expression list should produce.
+/// How many values an expression list should give.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Want {
     Exactly(u32),
-    /// Every value, including all results of a trailing call or `...`
+    /// Every value, including all the results of a trailing call or `...`
     /// (which then sets the VM's `top`).
     All,
 }
@@ -201,14 +202,14 @@ fn error(message: impl Into<String>, span: Span, label: impl Into<String>) -> Bo
 }
 
 /// A register holding an operand. `restore` is the `free_reg` to go back to
-/// once the consuming instruction has been emitted.
+/// once the instruction using it is emitted.
 struct Operand {
     reg: u8,
     restore: u32,
 }
 
 impl Compiler<'_> {
-    // --- emission, registers, constants ------------------------------------
+    // ─ Emission, Registers, Constants ────────────────────────────────────────
 
     fn pc(&self) -> usize {
         self.fs.proto.code.len()
@@ -279,8 +280,8 @@ impl Compiler<'_> {
         self.fs.free_reg = reg;
     }
 
-    /// The top temporary can hold intermediate results, because nothing
-    /// else reads it. A local's register never qualifies.
+    /// The top temporary can hold intermediate results since nothing else reads
+    /// it. A local's register never counts.
     fn is_top_temp(&self, reg: u8) -> bool {
         reg as u32 + 1 == self.fs.free_reg && reg as u32 >= self.fs.locals_top
     }
@@ -322,8 +323,8 @@ impl Compiler<'_> {
         }
     }
 
-    /// Where `name` lives: a register of this function, an upvalue (created
-    /// on first use, threaded through every enclosing function), or a global.
+    /// Where `name` lives: a register of this function, an upvalue (made on
+    /// first use and threaded through every enclosing function), or a global.
     fn var(&mut self, name: &Name) -> CResult<Var> {
         let Binding::Local(id) = self.res.binding(name) else {
             return Ok(Var::Global);
@@ -345,7 +346,7 @@ impl Compiler<'_> {
         }
     }
 
-    /// Registers a new local in the current scope.
+    /// Adds a new local to the current scope.
     fn declare_local(&mut self, name: &Name, reg: u8) {
         let Binding::Local(id) = self.res.binding(name) else {
             unreachable!("declarations are locals")
@@ -383,7 +384,7 @@ impl Compiler<'_> {
         }
     }
 
-    // --- blocks & statements -----------------------------------------------
+    // ─ Blocks & Statements ───────────────────────────────────────────────────
 
     fn block(&mut self, block: &Block) -> CResult {
         self.scoped(|c| c.block_body(block))
@@ -392,7 +393,7 @@ impl Compiler<'_> {
     fn scoped(&mut self, f: impl FnOnce(&mut Self) -> CResult) -> CResult {
         let (free, top, active) = (self.fs.free_reg, self.fs.locals_top, self.fs.active.len());
         let result = f(self);
-        // Locals captured by closures must be closed as their scope ends.
+        // locals captured by closures have to be closed when their scope ends
         if result.is_ok()
             && let Some(reg) = self.captured_from(active)
         {
@@ -430,7 +431,7 @@ impl Compiler<'_> {
     fn stmt_inner(&mut self, stmt: &Stmt) -> CResult {
         match &stmt.kind {
             StmtKind::Local { names, values, .. } => self.local(names, values),
-            // Types are erased.
+            // types get erased
             StmtKind::TypeAlias(_) => Ok(()),
             StmtKind::Assign { targets, values } => self.assign(targets, values),
             StmtKind::CompoundAssign {
@@ -439,8 +440,8 @@ impl Compiler<'_> {
                 target,
                 value,
             } => {
-                // `x op= e` is `x = x op (e)`; `x` is a name, so evaluating it
-                // twice is unobservable.
+                // `x op= e` is `x = x op (e)`. `x` is a name, so evaluating it
+                // twice can't be noticed
                 let combined = Expr {
                     span: stmt.span,
                     kind: ExprKind::Binary {
@@ -477,7 +478,8 @@ impl Compiler<'_> {
                 names, exprs, body, ..
             } => self.generic_for(names, exprs, body, stmt.span),
             StmtKind::LocalFunction { name, func } => {
-                // Declare first so the body can refer to itself (as an upvalue).
+                // declare it first so the body can refer to itself (as an
+                // upvalue)
                 let reg = self.alloc_reg(name.span)?;
                 self.fs.locals_top = self.fs.free_reg;
                 self.declare_local(name, reg);
@@ -548,11 +550,10 @@ impl Compiler<'_> {
     }
 
     /// Compiles `values` into consecutive registers starting at `free_reg`,
-    /// allocating them. With `Want::Exactly(n)`, exactly `n` registers end up
-    /// allocated (missing values are nil, extra ones are evaluated and
-    /// dropped). With `Want::All`, a trailing call or `...` keeps all its
-    /// results; the instruction that consumes them reads up to `top`.
-    /// Returns the first register.
+    /// allocating them. With `Want::Exactly(n)` exactly `n` registers end up
+    /// allocated (missing values are nil, extras get evaluated and dropped).
+    /// With `Want::All` a trailing call or `...` keeps all its results, and
+    /// whatever uses them reads up to `top`. Returns the first register.
     fn explist(&mut self, values: &[Expr], want: Want, span: Span) -> CResult<u8> {
         let base = self.fs.free_reg;
         let n = values.len() as u32;
@@ -563,11 +564,11 @@ impl Compiler<'_> {
             if is_last && value.kind.is_multi() {
                 let results = match want {
                     Want::All => None,
-                    // `local a, b, c = f()` asks `f` for 3 results.
+                    // `local a, b, c = f()` asks `f` for 3 results
                     Want::Exactly(w) => Some(w.saturating_sub(i)),
                 };
                 if results == Some(0) {
-                    // Extra value: still evaluated, for its effects.
+                    // extra value, still evaluated for its side effects
                     let reg = self.alloc_reg(value.span)?;
                     self.multi_into(&value, reg, Some(0))?;
                     self.free_to(reg as u32);
@@ -575,7 +576,7 @@ impl Compiler<'_> {
                     let reg = self.alloc_reg(value.span)?;
                     self.multi_into(&value, reg, results)?;
                     if let Some(r) = results {
-                        // The results occupy reg..reg+r.
+                        // the results take up reg..reg+r
                         for _ in 1..r {
                             self.alloc_reg(value.span)?;
                         }
@@ -587,7 +588,7 @@ impl Compiler<'_> {
             self.expr_into(&value, reg)?;
         }
         if let Want::Exactly(w) = want {
-            // Pad with nil, or drop extras.
+            // pad with nil, or drop extras
             while self.fs.free_reg < base + w {
                 let reg = self.alloc_reg(span)?;
                 self.emit(Instr::abc(Op::LoadNil, reg, 0, 0), span);
@@ -597,8 +598,8 @@ impl Compiler<'_> {
         Ok(base as u8)
     }
 
-    /// Compiles a call, method call or `...` at register `base` (which must be
-    /// the top of the stack), asking for `results` values (`None` = all).
+    /// Compiles a call, method call or `...` at register `base` (has to be the
+    /// top of the stack), asking for `results` values (`None` = all of them).
     fn multi_into(&mut self, expr: &Expr, base: u8, results: Option<u32>) -> CResult {
         match &expr.kind {
             ExprKind::Call { callee, args } => self.call(callee, args, base, results, expr.span),
@@ -621,8 +622,8 @@ impl Compiler<'_> {
         }
     }
 
-    /// `obj:m(args)`: `SELF` puts `obj.m` at `base` and `obj` at `base + 1`,
-    /// then the arguments follow and `CALL` passes `obj` as `self`.
+    /// `obj:m(args)`. `SELF` puts `obj.m` at `base` and `obj` at `base + 1`,
+    /// the arguments follow, and `CALL` passes `obj` as `self`.
     #[allow(clippy::too_many_arguments)]
     fn method_call(
         &mut self,
@@ -647,7 +648,7 @@ impl Compiler<'_> {
                 self.emit(Instr::abc(Op::SelfOp, base, obj.reg, k), span);
             }
             Err(_) => {
-                // Rare: more than 255 constants. Do SELF's job by hand.
+                // rare, more than 255 constants. do SELF's job by hand
                 if obj.reg != self_reg {
                     self.emit(Instr::abc(Op::Move, self_reg, obj.reg, 0), span);
                 }
@@ -682,14 +683,14 @@ impl Compiler<'_> {
         Ok(())
     }
 
-    /// `{ ... }` into `base` (the top register). Positional values are
-    /// gathered above the table and flushed 50 at a time with `SETLIST`;
-    /// keyed fields are stored as they're reached, preserving source order.
+    /// `{ ... }` into `base` (the top register). Positional values get gathered
+    /// above the table and flushed 50 at a time with `SETLIST`, keyed fields
+    /// get stored as they come, so source order is kept.
     ///
-    /// When fields have constant string keys, the `NEWTABLE` becomes a
-    /// `DUPTABLE` whose template already holds those keys, so each
-    /// `SETFIELD` fills a slot instead of adding one. The template stops at
-    /// the first computed key, so keys still go in in source order.
+    /// When fields have constant string keys, the `NEWTABLE` turns into a
+    /// `DUPTABLE` whose template already has those keys, so each `SETFIELD`
+    /// fills a slot instead of adding one. The template stops at the first
+    /// computed key so keys still go in in source order.
     fn table_constructor(&mut self, items: &[TableItem], base: u8, span: Span) -> CResult {
         const FLUSH: u32 = 50;
         let positional = items
@@ -735,8 +736,8 @@ impl Compiler<'_> {
                     let value = self.root(value);
                     match self.field_constant(&key)? {
                         Some(k) => {
-                            // A nil field stays out: it isn't stored, so
-                            // the key goes in when it's first assigned.
+                            // a nil field stays out, it isn't stored so the key
+                            // goes in when it's first assigned
                             let is_nil = matches!(value.kind, ExprKind::Nil);
                             if templating && !is_nil && !template.contains(&(k as u32)) {
                                 template.push(k as u32);
@@ -790,9 +791,9 @@ impl Compiler<'_> {
     }
 
     /// `for a, b in explist do ... end`. Three hidden registers (iterator,
-    /// state, control) sit below the variables; `TFORCALL` calls the
-    /// iterator with its arguments copied into the variables' registers, so
-    /// that region is at least three registers wide.
+    /// state, control) sit below the variables. `TFORCALL` calls the iterator
+    /// with its arguments copied into the variables' registers, so that
+    /// region's at least three registers wide.
     fn generic_for(&mut self, names: &[Name], exprs: &[Expr], body: &Block, span: Span) -> CResult {
         self.scoped(|c| {
             let base = c.explist(exprs, Want::Exactly(3), span)?;
@@ -812,7 +813,7 @@ impl Compiler<'_> {
             let state = c.in_loop(var_base, var_base + region, |c| c.block(body))?;
             c.patch_here(state.continues)?;
             c.patch_here(vec![to_call])?;
-            // A fresh set of variables each iteration: close captured ones.
+            // fresh variables every iteration, close captured ones
             let captured = names
                 .iter()
                 .any(|n| matches!(c.res.binding(n), Binding::Local(id) if c.res.is_captured(id)));
@@ -827,7 +828,7 @@ impl Compiler<'_> {
     }
 
     /// `R(base) := callee`, arguments above it, then `CALL`. Results land at
-    /// `base`; `free_reg` is left at `base + 1`.
+    /// `base`, and `free_reg` is left at `base + 1`.
     fn call(
         &mut self,
         callee: &Expr,
@@ -912,7 +913,7 @@ impl Compiler<'_> {
             if let ExprKind::Name(_) = target.kind {
                 return self.assign_one(target, &value);
             }
-            // `t.k = v`: object and key first, then the value.
+            // `t.k = v`: object and key first, then the value
             let base = self.fs.free_reg;
             let place = self.place(target, false)?;
             let v = self.operand(&value, None)?;
@@ -920,9 +921,9 @@ impl Compiler<'_> {
             self.free_to(base);
             return Ok(());
         }
-        // Multiple assignment: evaluate every target's object and key, then
-        // every value, and only then store, so `a, b = b, a` swaps and
-        // `i, t[i] = i + 1, 20` indexes with the *old* `i`.
+        // multiple assignment: evaluate every target's object and key, then
+        // every value, and only then store. that way `a, b = b, a` swaps and
+        // `i, t[i] = i + 1, 20` indexes with the *old* `i`
         let base = self.fs.free_reg;
         let mut places = Vec::with_capacity(targets.len());
         for target in targets {
@@ -937,10 +938,10 @@ impl Compiler<'_> {
         Ok(())
     }
 
-    /// Resolves an assignment target. For `t[k]`, evaluates `t` and `k` into
+    /// Resolves an assignment target. For `t[k]` it evaluates `t` and `k` into
     /// registers that stay allocated until the caller frees them. With
-    /// `copy_locals`, even a local's register is copied, so a later store to
-    /// that local in the same statement can't change which slot is written.
+    /// `copy_locals` even a local's register gets copied, so a later store to
+    /// that local in the same statement can't change which slot gets written.
     fn place(&mut self, target: &Expr, copy_locals: bool) -> CResult<Place> {
         match &target.kind {
             ExprKind::Name(name) => Ok(match self.var(name)? {
@@ -972,8 +973,8 @@ impl Compiler<'_> {
         }
     }
 
-    /// The constant index for `t.name` / `t["name"]`, if it fits in an
-    /// 8-bit operand.
+    /// The constant index for `t.name` / `t["name"]`, if it fits in an 8-bit
+    /// operand.
     fn field_constant(&mut self, key: &Expr) -> CResult<Option<u8>> {
         if let ExprKind::String(s) = &key.kind {
             let k = self.string_constant(s, key.span)?;
@@ -1011,8 +1012,8 @@ impl Compiler<'_> {
         Ok(())
     }
 
-    /// `t[k] op= v`: `t` and `k` are evaluated once (Luau semantics), so
-    /// `t[next_index()] += 1` calls `next_index` a single time.
+    /// `t[k] op= v`. `t` and `k` only get evaluated once (Luau semantics), so
+    /// `t[next_index()] += 1` calls `next_index` once.
     fn compound_index(&mut self, op: BinOp, target: &Expr, value: &Expr, span: Span) -> CResult {
         let base = self.fs.free_reg;
         let place = self.place(target, false)?;
@@ -1050,9 +1051,9 @@ impl Compiler<'_> {
             unreachable!("parser only allows names")
         };
         match self.var(name)? {
-            // Compile straight into the local when the value is written only
-            // after all its operands are read; otherwise (`x = a and x`) go
-            // through a temporary so `x` isn't clobbered early.
+            // compile straight into the local when the value only gets written
+            // after all its operands are read. otherwise (`x = a and x`) go
+            // through a temporary so `x` isn't clobbered early
             Var::Register(reg) if writes_target_last(value) => self.expr_into(value, reg),
             _ => {
                 let tmp = self.alloc_reg(value.span)?;
@@ -1073,7 +1074,7 @@ impl Compiler<'_> {
     }
 
     fn return_values(&mut self, values: &[Expr], span: Span) -> CResult {
-        // A single local is returned straight from its register.
+        // a single local gets returned straight from its register
         if let [value] = values
             && let ExprKind::Name(name) = &strip_groups(value).kind
             && let Var::Register(reg) = self.var(name)?
@@ -1093,7 +1094,7 @@ impl Compiler<'_> {
             span,
         )?;
         if multi_tail {
-            // `return f(x)` (not parenthesised) is a tail call.
+            // `return f(x)` (not parenthesised) is a tail call
             if let [value] = values
                 && matches!(
                     value.kind,
@@ -1153,7 +1154,7 @@ impl Compiler<'_> {
         let start = self.pc();
         let base = self.fs.free_reg;
         let active = self.fs.active.len();
-        // The condition is inside the body's scope (it can read its locals).
+        // the condition's inside the body's scope (it can read its locals)
         let mut breaks = Vec::new();
         self.scoped(|c| {
             let state = c.in_loop(base, base, |c| c.block_body(body))?;
@@ -1167,8 +1168,9 @@ impl Compiler<'_> {
                     }
                 }
                 Some(reg) => {
-                    // Captured body locals must be closed before each new
-                    // iteration as well as on exit (the scope's own CLOSE).
+                    // captured body locals have to be closed before each new
+                    // iteration as well as on the way out (the scope's own
+                    // CLOSE)
                     let exit = c.cond_jump(&cond, true)?;
                     c.emit(Instr::abc(Op::Close, reg, 0, 0), cond.span);
                     let back = c.emit_jump(cond.span);
@@ -1192,7 +1194,7 @@ impl Compiler<'_> {
         span: Span,
     ) -> CResult {
         self.scoped(|c| {
-            // Hidden locals: index, limit, step; then the visible variable.
+            // hidden locals: index, limit, step, then the visible variable
             let base = c.alloc_reg(span)?;
             let start = c.root(start);
             c.expr_into(&start, base)?;
@@ -1215,12 +1217,12 @@ impl Compiler<'_> {
 
             let prep = c.emit(Instr::asbx(Op::ForPrep, base, 0), span);
             let body_start = c.pc();
-            // `break` also closes the loop variable; `continue` only the body
-            // (the variable is closed just before FORLOOP, below).
+            // `break` also closes the loop variable, `continue` only the body
+            // (the variable gets closed just before FORLOOP, below)
             let state = c.in_loop(var_reg as u32, var_reg as u32 + 1, |c| c.block(body))?;
             c.patch_here(state.continues)?;
-            // Each iteration gets a fresh variable, as in Luau: close a
-            // captured one before FORLOOP overwrites it.
+            // every iteration gets a fresh variable like in Luau, so close a
+            // captured one before FORLOOP overwrites it
             let Binding::Local(id) = c.res.binding(var) else {
                 unreachable!("loop variable is a local")
             };
@@ -1251,7 +1253,7 @@ impl Compiler<'_> {
         result.map(|()| state)
     }
 
-    // --- expressions -------------------------------------------------------
+    // ─ Expressions ───────────────────────────────────────────────────────────
 
     /// Compiles `expr`, leaving its value in register `target`.
     fn expr_into(&mut self, expr: &Expr, target: u8) -> CResult {
@@ -1275,7 +1277,7 @@ impl Compiler<'_> {
                 self.emit(Instr::abx(Op::LoadK, target, k), span);
             }
             ExprKind::Interp(parts) => {
-                // Every piece into consecutive registers, then one INTERP.
+                // every piece into consecutive registers, then one INTERP
                 let base = self.fs.free_reg;
                 for part in parts {
                     let reg = self.alloc_reg(span)?;
@@ -1312,7 +1314,7 @@ impl Compiler<'_> {
                 }
             },
             ExprKind::Call { .. } | ExprKind::MethodCall { .. } => {
-                // A call needs its own base at the top of the stack.
+                // a call needs its own base at the top of the stack
                 if self.is_top_temp(target) {
                     self.multi_into(expr, target, Some(1))?;
                 } else {
@@ -1336,7 +1338,7 @@ impl Compiler<'_> {
                 self.free_to(obj.restore);
             }
             ExprKind::Table(items) => {
-                // Positional values are gathered just above the table.
+                // positional values get gathered just above the table
                 if self.is_top_temp(target) {
                     self.table_constructor(items, target, span)?;
                 } else {
@@ -1365,7 +1367,8 @@ impl Compiler<'_> {
             }
             ExprKind::Binary { op, lhs, rhs, .. } => match op {
                 BinOp::And | BinOp::Or => {
-                    // `a and b`: target := a; if falsy, done; else target := b.
+                    // `a and b`: target := a, if falsy we're done, else target
+                    // := b
                     self.expr_into(lhs, target)?;
                     let jump = if *op == BinOp::And {
                         Op::JmpIfNot
@@ -1403,7 +1406,7 @@ impl Compiler<'_> {
         Ok(())
     }
 
-    /// `target := cond and true or false`, via a jump list and a pair of
+    /// `target := cond and true or false`, through a jump list and a pair of
     /// `LOADB`s (the first skips the second).
     fn bool_from_condition(&mut self, expr: &Expr, target: u8) -> CResult {
         let when_true = self.cond_jump(expr, true)?;
@@ -1416,7 +1419,7 @@ impl Compiler<'_> {
     fn arith(&mut self, op: ArithOp, lhs: &Expr, rhs: &Expr, target: u8, span: Span) -> CResult {
         let left = self.operand(lhs, Some(target))?;
         // `x + 1` → ADDK when the right side is a constant that fits in C.
-        // After folding, every constant subexpression is already a literal.
+        // after folding every constant subexpression is already a literal
         let k = match rhs.kind {
             ExprKind::Number(n) => u8::try_from(self.number_constant(n, rhs.span)?).ok(),
             _ => None,
@@ -1445,9 +1448,9 @@ impl Compiler<'_> {
         Ok(())
     }
 
-    /// Gets `expr` into some register the caller may read but not keep:
-    /// a local's own register, `hint` if it's the top temporary, or a fresh
-    /// temporary. Call `free_to(result.restore)` afterwards.
+    /// Gets `expr` into some register the caller can read but not keep: a
+    /// local's own register, `hint` if it's the top temporary, or a new
+    /// temporary. Call `free_to(result.restore)` after.
     fn operand(&mut self, expr: &Expr, hint: Option<u8>) -> CResult<Operand> {
         let restore = self.fs.free_reg;
         let inner = strip_groups(expr);
@@ -1478,10 +1481,10 @@ impl Compiler<'_> {
         Ok(())
     }
 
-    // --- conditions --------------------------------------------------------
+    // ─ Conditions ────────────────────────────────────────────────────────────
 
-    /// Emits code that jumps when `expr`'s truthiness equals `when`, and
-    /// falls through otherwise. Returns the jumps to patch.
+    /// Emits code that jumps when `expr`'s truthiness equals `when` and falls
+    /// through otherwise. Returns the jumps to patch.
     fn cond_jump(&mut self, expr: &Expr, when: bool) -> CResult<Vec<usize>> {
         stacker::maybe_grow(64 * 1024, 1024 * 1024, || self.cond_jump_inner(expr, when))
     }
@@ -1492,7 +1495,7 @@ impl Compiler<'_> {
             ExprKind::Group(inner) | ExprKind::Cast { expr: inner, .. } => {
                 self.cond_jump(inner, when)
             }
-            // Constant conditions: an unconditional jump or nothing at all.
+            // constant conditions: an unconditional jump or nothing at all
             ExprKind::Nil | ExprKind::Bool(_) | ExprKind::Number(_) | ExprKind::String(_) => {
                 let truthy = !matches!(expr.kind, ExprKind::Nil | ExprKind::Bool(false));
                 Ok(if truthy == when {
@@ -1546,7 +1549,7 @@ impl Compiler<'_> {
                     BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge
                 ) =>
             {
-                // A constant on either side: one instruction against K(C).
+                // a constant on either side, one instruction against K(C)
                 if let Some((cmp, reg_side, k)) = self.compare_with_constant(*op, lhs, rhs)? {
                     let expect = if *op == BinOp::Ne { !when } else { when };
                     let value = self.operand(reg_side, None)?;
@@ -1554,7 +1557,8 @@ impl Compiler<'_> {
                     self.free_to(value.restore);
                     return Ok(vec![self.emit_jump(span)]);
                 }
-                // `a > b` is `b < a` and `a >= b` is `b <= a`, as Lua defines them.
+                // `a > b` is `b < a` and `a >= b` is `b <= a`, that's how Lua
+                // defines them
                 let (cmp, swap, expect) = match op {
                     BinOp::Eq => (Op::Eq, false, when),
                     BinOp::Ne => (Op::Eq, false, !when),
@@ -1588,10 +1592,10 @@ impl Compiler<'_> {
 
 impl Compiler<'_> {
     /// For a comparison with a literal number or string on one side (and
-    /// something else on the other), the `..K` opcode that compares the
-    /// other side against it: `(op, other side, constant index)`. The opcode
-    /// is chosen so `R(B) op K(C)` means the same as the source expression;
-    /// `None` when neither side is a literal or the index won't fit in C.
+    /// something else on the other), the `..K` opcode that compares the other
+    /// side against it: `(op, other side, constant index)`. It's picked so
+    /// `R(B) op K(C)` means the same as the source. `None` when neither side's
+    /// a literal or the index won't fit in C.
     fn compare_with_constant<'e>(
         &mut self,
         op: BinOp,
@@ -1626,7 +1630,7 @@ impl Compiler<'_> {
             };
             return Ok(Some((cmp, lhs, k)));
         }
-        // `K op x` is `x op' K` with the comparison mirrored.
+        // `K op x` is `x op' K` with the comparison mirrored
         if is_literal(lhs) && !is_literal(rhs) {
             let Some(k) = literal(self, lhs)? else {
                 return Ok(None);
@@ -1645,8 +1649,8 @@ impl Compiler<'_> {
     }
 }
 
-/// Removes parentheses and type assertions (`(e)`, `e :: T`): both just
-/// evaluate `e` to a single value.
+/// Strips parentheses and type assertions (`(e)`, `e :: T`), both just evaluate
+/// `e` to one value.
 fn strip_groups(mut expr: &Expr) -> &Expr {
     while let ExprKind::Group(inner) | ExprKind::Cast { expr: inner, .. } = &expr.kind {
         expr = inner;
@@ -1655,8 +1659,8 @@ fn strip_groups(mut expr: &Expr) -> &Expr {
 }
 
 /// Whether compiling `expr` into a register writes it only after every
-/// operand has been read. `and`/`or`/if-expressions write their first
-/// branch's value early, so they can't target a live local directly.
+/// operand's been read. `and`/`or`/if-expressions write their first branch's
+/// value early, so they can't target a live local directly.
 fn writes_target_last(expr: &Expr) -> bool {
     !matches!(
         &strip_groups(expr).kind,
@@ -1664,7 +1668,7 @@ fn writes_target_last(expr: &Expr) -> bool {
             op: BinOp::And | BinOp::Or,
             ..
         } | ExprKind::IfElse { .. }
-            // `t = {t}` would create the new table before reading the old one.
+            // `t = {t}` would make the new table before reading the old one
             | ExprKind::Table(_)
     )
 }
@@ -1683,10 +1687,9 @@ impl BoxedDiagnosticExt for Box<Diagnostic> {
 #[cfg(test)]
 mod tests;
 
-/// Finds or creates the upvalue for local `id` in `fs`, creating matching
-/// upvalues in every intermediate enclosing function (Lua's
-/// `singlevaraux`). `None` if no enclosing function declares `id`;
-/// `Some(Err(()))` past 255 upvalues.
+/// Finds or makes the upvalue for local `id` in `fs`, making matching upvalues
+/// in every enclosing function in between (Lua's `singlevaraux`). `None` if no
+/// enclosing function declares `id`, `Some(Err(()))` past 255 upvalues.
 fn upvalue_index(
     parents: &mut [FuncState],
     fs: &mut FuncState,

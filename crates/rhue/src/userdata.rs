@@ -38,13 +38,13 @@ use crate::{AnyUserData, Context, Table, Value};
 /// assert_eq!(engine.eval_as::<f64>("return player.hp").unwrap(), 75.0);
 /// ```
 ///
-/// The derive exposes every named field as a property that scripts can
-/// read (`p.hp`) and write (`p.hp = 10`); the field's type must be
+/// The derive exposes every named field as a property scripts can read
+/// (`p.hp`) and write (`p.hp = 10`), and the field's type has to be
 /// `Clone + IntoValue + FromValue`. `#[rhue(readonly)]` drops the setter,
 /// `#[rhue(skip)]` hides the field, `#[rhue(name = "...")]` renames it, and
 /// `#[rhue(name = "...")]` on the struct renames the type.
 ///
-/// The derive rejects what it can't support, at compile time:
+/// The derive refuses what it can't handle, at compile time:
 ///
 /// ```compile_fail
 /// #[derive(rhue::UserData)]
@@ -69,9 +69,9 @@ pub trait UserData: Sized + 'static {
     /// The name scripts see (`typeof(x)`, error messages).
     const NAME: &'static str;
 
-    /// Adds fields and methods. Runs once per engine, the first time the
-    /// type is used; [`Engine::register_type`](crate::Engine::register_type)
-    /// can add more afterwards.
+    /// Adds fields and methods. Runs once per engine, the first time the type
+    /// gets used, and [`Engine::register_type`](crate::Engine::register_type)
+    /// can add more after.
     fn register(_t: &mut TypeBuilder<'_, Self>) {}
 }
 
@@ -89,16 +89,16 @@ pub(crate) fn type_id_of<T: UserData>(vm: &mut rhue_vm::Vm) -> u32 {
     ty
 }
 
-/// A typed handle to a userdata object. Clones share the object: changes
-/// made through one (or by scripts) are seen by all.
+/// A typed handle to a userdata object. Clones share the object, so changes
+/// made through one (or by scripts) show up in all of them.
 pub struct Ud<T: UserData> {
     pub(crate) any: AnyUserData,
     pub(crate) cell: Rc<RefCell<T>>,
 }
 
 impl<T: UserData> Ud<T> {
-    /// Panics if a method on this object is running (it holds a mutable
-    /// borrow); use [`try_borrow`](Self::try_borrow) to avoid that.
+    /// Panics if a method on this object is running (it's holding a mutable
+    /// borrow). Use [`try_borrow`](Self::try_borrow) to dodge that.
     pub fn borrow(&self) -> Ref<'_, T> {
         self.cell.borrow()
     }
@@ -197,8 +197,8 @@ impl<T: UserData> FromValue for Ud<T> {
     }
 }
 
-/// A copy of the object's current state. Take [`Ud<T>`] instead to change
-/// the object itself.
+/// A copy of the object's current state. Take [`Ud<T>`] instead to change the
+/// object itself.
 impl<T: UserData + Clone> FromValue for T {
     fn from_value(value: Value, cx: &mut Context<'_>) -> Result<Self, ConversionError> {
         let ud = Ud::<T>::from_value(value, cx)?;
@@ -226,7 +226,7 @@ pub struct TypeBuilder<'a, T: UserData> {
     pub(crate) _t: PhantomData<T>,
 }
 
-/// The receiver of a method or property call: argument #1 must be a `T`.
+/// The receiver of a method or property call, argument #1 has to be a `T`.
 fn receiver<T: UserData>(
     cx: &mut Context<'_>,
     args: &[rhue_vm::Value],
@@ -260,9 +260,9 @@ fn busy<T: UserData>() -> ScriptError {
 }
 
 impl<T: UserData> TypeBuilder<'_, T> {
-    /// `obj:name(...)`. The closure takes `&mut T` first, then any
-    /// arguments, like a registered function; it may also take
-    /// `&mut Context` before `&mut T`.
+    /// `obj:name(...)`. The closure takes `&mut T` first, then any arguments,
+    /// like a registered function. It can also take `&mut Context` before `&mut
+    /// T`.
     pub fn method<M, F: IntoMethod<T, M>>(&mut self, name: &str, f: F) -> &mut Self {
         F::declare_types(self.vm);
         let sig = F::signature();
@@ -317,7 +317,7 @@ impl<T: UserData> TypeBuilder<'_, T> {
         let native: NativeFn = Rc::new(move |ctx, args| {
             run_native(ctx, args, 1, |cx, args_in, _| {
                 let this = receiver::<T>(cx, args, &field)?;
-                // Skip the receiver; the value is argument #2.
+                // skip the receiver, the value is argument #2
                 let _ = Value::from_arg(args_in, cx);
                 let v = V::from_arg(args_in, cx).map_err(|e| {
                     ScriptError::new(format!(
@@ -344,8 +344,8 @@ impl<T: UserData> TypeBuilder<'_, T> {
         self.getter(name, get).setter(name, set)
     }
 
-    /// A function in the global table named after the type, e.g. a
-    /// constructor `Player.new(...)`.
+    /// A function in the global table named after the type, like a constructor
+    /// `Player.new(...)`.
     pub fn function<M, F: IntoNative<M>>(&mut self, name: &str, f: F) -> &mut Self {
         F::declare_types(self.vm);
         let sig = F::signature();
@@ -374,7 +374,8 @@ impl<T: UserData> TypeBuilder<'_, T> {
 /// A Rust function usable as a method of `T`: `Fn(&mut T, args...)`, or
 /// `Fn(&mut Context, &mut T, args...)`. See [`TypeBuilder::method`].
 pub trait IntoMethod<T, Marker> {
-    /// Wraps the function as a method named `name` (the name appears in argument errors).
+    /// Wraps the function as a method named `name` (the name shows up in
+    /// argument errors).
     fn into_method(self, name: Rc<str>) -> NativeFn;
 
     /// The method's Luau type, with the object as its first parameter.
@@ -390,9 +391,9 @@ pub trait IntoMethod<T, Marker> {
     }
 }
 
-/// A host declaration that doesn't parse is a bug in a `luau_type`
-/// implementation; it shouldn't stop the engine, so it's skipped (the item
-/// is then simply unknown to the checker).
+/// A host declaration that doesn't parse is a bug in some `luau_type`
+/// implementation. It shouldn't take the engine down, so it gets skipped (the
+/// item is just unknown to the checker then).
 pub(crate) fn declare(result: Result<(), Vec<rhue_common::Diagnostic>>, ty: &str) {
     if let Err(e) = result {
         debug_assert!(false, "bad host type `{ty}`: {}", e[0].message);

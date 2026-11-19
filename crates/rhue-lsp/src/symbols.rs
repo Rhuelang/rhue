@@ -17,7 +17,7 @@ fn kind(k: Kind) -> SymbolKind {
 }
 
 /// The document's symbols, nested (`function M.f()` under `M`), with the
-/// checker's type of each as its detail.
+/// checker's type for each as its detail.
 pub fn document_symbols(docs: &Docs, uri: &Url, text: &str) -> Vec<DocumentSymbol> {
     let idx = LineIndex::new(text);
     let outline = rhue::outline(text);
@@ -60,7 +60,7 @@ pub fn document_symbols(docs: &Docs, uri: &Url, text: &str) -> Vec<DocumentSymbo
         .collect()
 }
 
-/// Whether `query`'s characters appear in `name` in order (ignoring case).
+/// Whether `query`'s characters show up in `name` in order (ignoring case).
 fn matches(name: &str, query: &str) -> bool {
     let mut chars = name.chars().flat_map(char::to_lowercase);
     query
@@ -69,8 +69,8 @@ fn matches(name: &str, query: &str) -> bool {
         .all(|q| chars.any(|c| c == q))
 }
 
-/// Symbols across the workspace whose names fuzzy-match `query` (its
-/// characters in order), at most 1000.
+/// Symbols across the workspace whose names fuzzy-match `query` (its characters
+/// in order), 1000 at most.
 pub fn workspace_symbols(docs: &Docs, query: &str) -> Vec<SymbolInformation> {
     const LIMIT: usize = 1000;
     let mut out = Vec::new();

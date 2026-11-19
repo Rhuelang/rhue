@@ -1,8 +1,8 @@
-//! Milestone 7: performance work that must not change behaviour. Inline
-//! caches meeting tables of different shapes, the `..K` comparisons and
-//! fused jumps, the instruction budget's new accounting, the register
-//! window and spare stack slots under the collector, natives that never
-//! touch the VM, and the verifier's place in the pipeline.
+//! Milestone 7: performance work that can't change behaviour. Inline caches
+//! meeting tables of different shapes, the `..K` comparisons and fused jumps,
+//! the instruction budget's new accounting, the register window and spare stack
+//! slots under the collector, natives that never touch the VM, and where the
+//! verifier sits in the pipeline.
 
 use rhue::{Context, Engine, ErrorKind, Function, ScriptError, Value};
 
@@ -28,13 +28,13 @@ fn eval_str(e: &mut Engine, src: &str) -> String {
         .join(" ")
 }
 
-// --- inline caches -------------------------------------------------------------
+// ─ Inline Caches ─────────────────────────────────────────────────────────────
 
 #[test]
 fn field_caches_survive_tables_of_different_shapes() {
     each(|e| {
-        // One GETFIELD site sees `x` at a different position in each table,
-        // and in tables that lack it entirely.
+        // one GETFIELD site sees `x` at a different position in each table, and
+        // in tables that lack it entirely
         let src = "
             local shapes = {
                 {x = 1},
@@ -128,13 +128,13 @@ fn small_tables_grow_into_hashed_ones_without_losing_order() {
     });
 }
 
-// --- comparisons against constants ---------------------------------------------
+// ─ Comparisons Against Constants ─────────────────────────────────────────────
 
 #[test]
 fn constant_comparisons_match_register_comparisons() {
     let mut e = Engine::new();
-    // Each comparison written with the constant on the right, on the left,
-    // and with both sides in registers must agree, NaN and strings included.
+    // each comparison written with the constant on the right, on the left, and
+    // with both sides in registers must agree, NaN and strings included
     let values = ["-1", "0", "1", "2.5", "0/0", "math.huge", "-math.huge"];
     let constants = ["0", "1", "2.5", "-1"];
     let ops = ["==", "~=", "<", "<=", ">", ">="];
@@ -191,7 +191,7 @@ fn constant_comparison_errors_read_like_lua() {
         assert_eq!(err.kind, ErrorKind::Runtime);
         assert_eq!(err.to_string(), want, "{src}");
     }
-    // Equality never errors.
+    // equality never errors
     assert_eq!(
         eval_str(&mut e, "local t = {} return t == 1, 'a' ~= t"),
         "false true"
@@ -216,7 +216,7 @@ fn comparisons_drive_loops_and_branches() {
     assert_eq!(eval_str(&mut e, src), "-89 11");
 }
 
-// --- the instruction budget ----------------------------------------------------
+// ─ The Instruction Budget ────────────────────────────────────────────────────
 
 #[test]
 fn every_kind_of_loop_is_stopped_by_the_instruction_limit() {
@@ -245,8 +245,8 @@ fn every_kind_of_loop_is_stopped_by_the_instruction_limit() {
 
 #[test]
 fn the_instruction_limit_is_roughly_an_instruction_count() {
-    // A loop body of a few instructions, run 1000 times, fits in a budget
-    // a little above its size and not in one well below it.
+    // a loop body of a few instructions, run 1000 times, fits in a budget a
+    // little above its size and not in one well below it
     let src = "local s = 0 for i = 1, 1000 do s += i * 2 end return s";
     let mut e = Engine::new();
     e.set_instruction_limit(Some(10_000));
@@ -255,7 +255,7 @@ fn the_instruction_limit_is_roughly_an_instruction_count() {
     assert!(e.eval(src).is_err());
 }
 
-// --- the stack ------------------------------------------------------------------
+// ─ The Stack ─────────────────────────────────────────────────────────────────
 
 #[test]
 fn natives_calling_scripts_in_a_loop_reuse_the_stack() {
@@ -284,8 +284,8 @@ fn natives_calling_scripts_in_a_loop_reuse_the_stack() {
 #[test]
 fn deep_and_wide_frames_keep_their_values_under_collection() {
     each(|e| {
-        // Frames at many depths, each with many registers live, while
-        // natives and the collector run in between.
+        // frames at many depths, each with many registers live, while natives
+        // and the collector run in between
         let mut src = String::from("local function f(n)\n");
         for i in 0..60 {
             src.push_str(&format!("local v{i} = {{n = n + {i}}}\n"));
@@ -311,7 +311,7 @@ fn many_results_and_arguments_cross_the_register_window() {
     });
 }
 
-// --- natives --------------------------------------------------------------------
+// ─ Natives ───────────────────────────────────────────────────────────────────
 
 #[test]
 fn typed_natives_convert_arguments_lazily_and_report_the_right_index() {
@@ -340,12 +340,12 @@ fn typed_natives_convert_arguments_lazily_and_report_the_right_index() {
         err.to_string(),
         "invalid argument #1 to 'count' (number expected, got nil)"
     );
-    // Results of several kinds come back intact.
+    // results of several kinds come back intact
     e.register("three", || (1, "two", Value::Bool(true)));
     assert_eq!(eval_str(&mut e, "return three()"), "1 two true");
 }
 
-// --- the verifier -----------------------------------------------------------------
+// ─ The Verifier ──────────────────────────────────────────────────────────────
 
 #[test]
 fn compiled_chunks_verify() {
@@ -366,8 +366,8 @@ fn hand_built_backward_branches_are_charged_too() {
     use rhue_bytecode::{Instr, Op, Proto};
     use std::rc::Rc;
     // `JMPIF` jumping back to itself: the compiler never emits a backward
-    // conditional jump, but the budget must still hold for any bytecode
-    // that verifies.
+    // conditional jump, but the budget must still hold for any bytecode that
+    // verifies
     let code = vec![
         Instr::abc(Op::LoadB, 0, 1, 0),
         Instr::asbx(Op::JmpIf, 0, -1),
@@ -420,7 +420,7 @@ fn the_engine_refuses_bytecode_that_does_not_verify() {
         err.to_string(),
         "invalid bytecode in <main> at 0: target register R9 is beyond max_stack 2"
     );
-    // Compiled chunks are marked verified, so running them again is free.
+    // compiled chunks are marked verified, so running them again is free
     let p = e.compile("ok", "return 1").unwrap();
     assert!(p.verified.get());
 }

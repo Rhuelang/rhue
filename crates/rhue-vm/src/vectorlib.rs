@@ -1,6 +1,6 @@
-//! `vector`, as in Luau: making and measuring vectors. Arithmetic on them
-//! (`+ - * / //`, unary `-`) and reading `v.x` are in the interpreter.
-//! Components are 32-bit floats, so results are rounded to `f32`.
+//! `vector`, same as Luau: making and measuring vectors. Arithmetic on them (`+
+//! - * / //`, unary `-`) and reading `v.x` live in the interpreter. Components
+//! are 32-bit floats, so results get rounded to `f32`.
 
 use std::rc::Rc;
 
@@ -84,7 +84,7 @@ pub(crate) fn install(vm: &mut Vm) {
             "normalize",
             Rc::new(|_, a| {
                 let v = vec_arg(a, 0, "normalize")?;
-                // As Luau: the zero vector comes back as NaNs.
+                // same as Luau, the zero vector comes back as NaNs
                 let inv = 1.0 / magnitude(v);
                 vector(v.map(|c| c * inv))
             }),
@@ -100,8 +100,8 @@ pub(crate) fn install(vm: &mut Vm) {
         (
             "angle",
             Rc::new(|_, a| {
-                // The angle from `a` to `b` in radians, in [0, pi]; with an
-                // axis, signed by which side of it the turn is on.
+                // the angle from `a` to `b` in radians, in [0, pi]. with an
+                // axis it's signed by which side of it the turn is on
                 let (x, y) = (vec_arg(a, 0, "angle")?, vec_arg(a, 1, "angle")?);
                 let c = cross(x, y);
                 let angle = magnitude(c).atan2(dot(x, y));

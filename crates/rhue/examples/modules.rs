@@ -1,6 +1,6 @@
-//! Modules for `require`: some given as source, one compiled ahead of time
-//! (as a host would ship it), and the rest found by a loader. Types travel
-//! with them, so a strict script is checked against what it requires.
+//! Modules for `require`. Some come as source, one compiled ahead of time (like
+//! a host would ship it), and the rest get found by a loader. Types travel with
+//! them, so a strict script gets checked against what it requires.
 //!
 //! Run with `cargo run -p rhue --example modules`.
 
@@ -11,7 +11,7 @@ use rhue::Engine;
 fn main() -> Result<(), rhue::Error> {
     let mut engine = Engine::new();
 
-    // From source.
+    // from source
     engine.add_module(
         "vec2",
         r#"
@@ -25,8 +25,8 @@ fn main() -> Result<(), rhue::Error> {
         "#,
     );
 
-    // Compiled ahead of time: the bytes load without parsing or checking,
-    // pass through the bytecode verifier, and keep the module's types.
+    // compiled ahead of time. the bytes load without parsing or checking, go
+    // through the bytecode verifier, and keep the module's types
     let mut build = Engine::new();
     let bytes = build.compile_to_bytes(
         "units",
@@ -35,8 +35,8 @@ fn main() -> Result<(), rhue::Error> {
     println!("units compiled to {} bytes", bytes.len());
     engine.add_module_bytes("units", &bytes)?;
 
-    // Anything else comes from a loader (a folder, an archive, a network
-    // cache...); here, a map.
+    // anything else comes from a loader (a folder, an archive, a network
+    // cache...), here it's a map
     let files: HashMap<&str, &str> =
         HashMap::from([("greet", "return function(n) return 'hello ' .. n end")]);
     engine.set_module_loader(move |name| files.get(name).map(|s| s.to_string()));
@@ -53,7 +53,7 @@ fn main() -> Result<(), rhue::Error> {
     )?;
     println!("{report}");
 
-    // The checker knows `vec2.length` returns a number.
+    // the checker knows `vec2.length` returns a number
     let err = engine
         .check(
             "bad.rhue",

@@ -97,22 +97,22 @@ fn indentation() {
         fmt(src),
         "local function f()\n\tif x then\n\t\tfor i = 1, 3 do\n\t\t\tprint(i)\n\t\tend\n\telseif y then\n\t\twhile z do z = false end\n\telse\n\t\trepeat\n\t\t\tn += 1\n\t\tuntil n > 3\n\tend\nend\n"
     );
-    // Brackets opened on one line indent once; `end)` goes back.
+    // brackets opened on one line indent once, `end)` goes back
     let src = "foo(function()\nbar({\na = 1,\n})\nend, function()\nbaz()\nend)\n";
     assert_eq!(
         fmt(src),
         "foo(function()\n\tbar({\n\t\ta = 1,\n\t})\nend, function()\n\tbaz()\nend)\n"
     );
-    // Continuations and multi-line if-expressions.
+    // continuations and multi-line if-expressions
     let src = "local s = a\n.. b\nlocal t = x +\ny\nlocal v = if c then 1\nelse 2\nprint(v)\n";
     assert_eq!(
         fmt(src),
         "local s = a\n\t.. b\nlocal t = x +\n\ty\nlocal v = if c then 1\n\telse 2\nprint(v)\n"
     );
-    // Long strings and block comments are left exactly as written.
+    // long strings and block comments are left exactly as written
     let src = "local s = [[\n  a\n    b]]\n--[[\n   keep\n]]\nx = 1\n";
     assert_eq!(fmt(src), src);
-    // Spaces instead of tabs.
+    // spaces instead of tabs
     let four = FormatOptions {
         indent: "    ".into(),
     };
@@ -156,13 +156,13 @@ fn perturb(src: &str, seeds: &[u8]) -> String {
         let gap = &src[prev_end..a];
         let text = &src[a..b];
         if gap.contains('\n') || gap.contains("--") || prev_tok.is_none() {
-            // Keep line breaks and comments; vary the spaces around them.
+            // keep line breaks and comments, vary the spaces around them
             let mut i = 0;
             let mut in_ws = false;
             while i < gap.len() {
                 let rest = &gap[i..];
                 if let Some(body) = rest.strip_prefix("--") {
-                    // A comment, copied as is.
+                    // a comment, copied as is
                     let level = body
                         .strip_prefix('[')
                         .map(|r| (r.bytes().take_while(|&b| b == b'=').count(), r))

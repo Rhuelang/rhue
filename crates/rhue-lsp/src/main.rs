@@ -1,11 +1,11 @@
-//! `rhue-lsp`: a language server for Rhue over stdio.
+//! `rhue-lsp`, a language server for Rhue over stdio.
 //!
-//! Point your editor's LSP client at the `rhue-lsp` binary for `*.rhue`
-//! files. It offers diagnostics as you type (with quick fixes), hover
-//! types, inlay hints, go to definition and find references (locals, and
-//! module fields across the workspace), document and workspace symbols,
-//! semantic highlighting, completion (after `.` and `:`, and names in
-//! scope), renaming locals, signature help, and formatting.
+//! Point your editor's LSP client at the `rhue-lsp` binary for `*.rhue` files.
+//! You get diagnostics as you type (with quick fixes), hover types, inlay
+//! hints, go to definition and find references (locals, and module fields
+//! across the workspace), document and workspace symbols, semantic
+//! highlighting, completion (after `.` and `:`, and names in scope), renaming
+//! locals, signature help and formatting.
 
 use std::error::Error;
 
@@ -97,7 +97,7 @@ fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
         }),
     )?;
     serve(&connection, roots)?;
-    // The writer thread finishes once the connection is gone.
+    // the writer thread finishes once the connection's gone
     drop(connection);
     io_threads.join()?;
     Ok(())
@@ -168,8 +168,8 @@ fn publish(
     Ok(())
 }
 
-/// Updates the open documents; returns the documents whose diagnostics
-/// may have changed.
+/// Updates the open documents, returns the ones whose diagnostics might have
+/// changed.
 fn handle_notification(docs: &mut Docs, n: Notification) -> Vec<Url> {
     match n.method.as_str() {
         DidOpenTextDocument::METHOD => {
@@ -207,7 +207,7 @@ fn handle_notification(docs: &mut Docs, n: Notification) -> Vec<Url> {
             };
             let uri = p.text_document.uri;
             let mut out = docs.close(&uri);
-            // Clear the closed document's diagnostics.
+            // clear the closed document's diagnostics
             out.insert(0, uri);
             out
         }

@@ -9,18 +9,18 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use rhue_parser::ast::TypeExpr;
 
-/// A type. Cheap to clone: compound types are behind `Rc`.
+/// A type. Cheap to clone, compound types are behind `Rc`.
 #[derive(Clone, Debug)]
 pub enum Type {
-    /// Opts out of checking: compatible with everything, both ways.
+    /// Opts out of checking, compatible with everything both ways.
     Any,
-    /// Every value is an `unknown`, but nothing can be done with one until
+    /// Every value is an `unknown`, but you can't do anything with one until
     /// it's refined (`type(x) == "number"`).
     Unknown,
-    /// No value (the result of `error(...)`).
+    /// No value (what `error(...)` returns).
     Never,
-    /// The type of something that already produced an error. Behaves like
-    /// `any` so one mistake doesn't cascade.
+    /// The type of something that already caused an error. Acts like `any` so
+    /// one mistake doesn't cascade.
     Error,
     Nil,
     Boolean,
@@ -32,7 +32,8 @@ pub enum Type {
     StrLit(Rc<str>),
     Function(Rc<FnType>),
     Table(Rc<TableType>),
-    /// A host (userdata) type, by name. Its members live in the [`Env`](crate::Env).
+    /// A host (userdata) type, by name. Its members live in the
+    /// [`Env`](crate::Env).
     Class(Rc<str>),
     /// Normalised: flat, no duplicates, at least two members.
     Union(Rc<[Type]>),
@@ -49,9 +50,9 @@ pub enum Type {
 pub struct GenericVar {
     pub name: Rc<str>,
     pub id: u32,
-    /// A generic type pack (`T...`): stands for any number of types, and
-    /// only ever appears as a variadic (a function's `...` or a result
-    /// pack's tail).
+    /// A generic type pack (`T...`). Stands for any number of types, and only
+    /// ever shows up as a variadic (a function's `...` or a result pack's
+    /// tail).
     pub pack: bool,
 }
 
@@ -80,27 +81,26 @@ impl GenericVar {
     }
 }
 
-/// A type alias as declared: its body is resolved when a use is expanded.
+/// A type alias as declared. Its body gets resolved when a use is expanded.
 #[derive(Debug)]
 pub struct AliasDef {
     pub name: Rc<str>,
-    /// Its parameters as written (types, then packs; maybe with defaults).
+    /// Its parameters as written (types, then packs, maybe with defaults).
     pub generics: Vec<rhue_parser::ast::GenericParam>,
     pub body: TypeExpr,
-    /// How many alias scopes were open where it was declared.
+    /// How many alias scopes were open where it got declared.
     pub scope_depth: usize,
     /// How many generic scopes were open there (aliases inside a generic
     /// function can mention its parameters).
     pub generic_depth: usize,
     /// For an alias imported with a module's types (see
-    /// [`Env::import`](crate::Env::import)): the aliases its body can name,
-    /// which are all it can name (besides host types). Expanding it in any
+    /// [`Env::import`](crate::Env::import)), the aliases its body can name,
+    /// which is all it can name (besides host types). Expanding it in any
     /// checker resolves the body there instead of in the checker's scopes.
     pub closed: Option<std::rc::Weak<ClosedScope>>,
 }
 
-/// The aliases imported together with one module's (or chunk's) types,
-/// by name.
+/// The aliases imported along with one module's (or chunk's) types, by name.
 pub type ClosedScope = std::cell::RefCell<crate::HashMap<Rc<str>, Rc<AliasDef>>>;
 
 #[derive(Debug)]
@@ -140,8 +140,8 @@ impl Pack {
         }
     }
 
-    /// The type of value `i`: `nil` past the end of a fixed pack. A
-    /// value from a generic pack (`T...`) could be anything, nil included.
+    /// The type of value `i`, `nil` past the end of a fixed pack. A value from
+    /// a generic pack (`T...`) could be anything, nil included.
     pub fn get(&self, i: usize) -> Type {
         match self.types.get(i) {
             Some(t) => t.clone(),
@@ -153,7 +153,7 @@ impl Pack {
         }
     }
 
-    /// The first value, as a single expression uses it.
+    /// The first value, the way a single expression uses it.
     pub fn first(&self) -> Type {
         self.get(0)
     }
@@ -184,28 +184,28 @@ pub struct TableType {
     /// In declaration order.
     pub props: Vec<(Rc<str>, Type)>,
     pub indexer: Option<(Type, Type)>,
-    /// Built from a table literal: assigning a new field to the local that
-    /// holds it adds the field.
+    /// Built from a table literal. Assigning a new field to the local holding
+    /// it adds the field.
     pub unsealed: bool,
-    /// Set by `setmetatable`: fields this table lacks are looked up through
-    /// the metatable's `__index`, and operators use its metamethods.
+    /// Set by `setmetatable`. Fields this table doesn't have get looked up
+    /// through the metatable's `__index`, and operators use its metamethods.
     pub meta: Option<Meta>,
-    /// `T.__index = T` (the usual class): this table is its own `__index`.
+    /// `T.__index = T` (the usual class), this table is its own `__index`.
     pub index_self: bool,
-    /// May have fields it doesn't list, which read and write as `any`:
-    /// `self` inside a class's methods (an instance whose fields beyond
-    /// the constructor's aren't known).
+    /// Might have fields it doesn't list, which read and write as `any`. That's
+    /// `self` inside a class's methods (an instance whose fields past the
+    /// constructor's aren't known).
     pub open: bool,
-    /// Properties that are only readable or only writable (`read x: T`,
-    /// `write y: T`); every other property is both.
+    /// Properties that are only readable or only writable (`read x: T`, `write
+    /// y: T`), every other property is both.
     pub access: Vec<(Rc<str>, Access)>,
 }
 
 /// A table's metatable, as the checker knows it.
 #[derive(Clone, Debug)]
 pub enum Meta {
-    /// The table held by a local, looked up when needed: a class table
-    /// keeps gaining methods after instances are made with it.
+    /// The table held by a local, looked up when needed. A class table keeps
+    /// gaining methods after instances get made with it.
     Local { id: u32, name: Rc<str> },
     /// Any other metatable, by its type at the `setmetatable` call.
     Type(Type),
@@ -236,7 +236,7 @@ impl TableType {
             .map(|(_, t)| t)
     }
 
-    /// `{}` from a literal: nothing known yet, so it fits any table type.
+    /// `{}` from a literal. Nothing's known yet, so it fits any table type.
     pub fn is_empty_literal(&self) -> bool {
         self.unsealed && self.props.is_empty() && self.indexer.is_none()
     }
@@ -264,8 +264,7 @@ impl Type {
         union([t, Type::Nil])
     }
 
-    /// `any` and the error type switch checking off.
-    /// The generic pack this is, if it's one (`T...`).
+    /// The generic pack this is, if it is one (`T...`).
     pub fn pack_var(&self) -> Option<&Rc<GenericVar>> {
         match self {
             Type::Generic(g) if g.pack => Some(g),
@@ -273,6 +272,7 @@ impl Type {
         }
     }
 
+    /// `any` and the error type switch checking off.
     pub fn is_any(&self) -> bool {
         matches!(self, Type::Any | Type::Error)
     }
@@ -348,7 +348,7 @@ impl Type {
         }
     }
 
-    /// The type a variable gets from this initial value: literals widen
+    /// The type a variable gets from this starting value. Literals widen
     /// (`local s = "a"` is a `string`, not `"a"`).
     pub fn widen(&self) -> Type {
         match self {
@@ -381,7 +381,7 @@ pub fn union(types: impl IntoIterator<Item = Type>) -> Type {
     if out.iter().any(|t| matches!(t, Type::Unknown)) {
         return Type::Unknown;
     }
-    // Literals are absorbed by their base type; `true | false` is `boolean`.
+    // literals get absorbed by their base type, `true | false` is `boolean`
     let has = |out: &[Type], f: fn(&Type) -> bool| out.iter().any(f);
     if has(&out, |t| matches!(t, Type::String)) {
         out.retain(|t| !matches!(t, Type::StrLit(_)));
@@ -419,7 +419,7 @@ pub fn intersection(types: impl IntoIterator<Item = Type>) -> Type {
     }
 }
 
-// --- display, in Luau's notation -------------------------------------------------
+// ─ Display, in Luau's Notation ───────────────────────────────────────────────
 
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -517,7 +517,7 @@ impl fmt::Display for Pack {
     }
 }
 
-/// A variadic slot as written: `...T`, or a generic pack `T...` as is.
+/// A variadic slot as written: `...T`, or a generic pack `T...` as-is.
 fn variadic_text(v: &Type) -> String {
     match v.pack_var() {
         Some(g) => g.display(),

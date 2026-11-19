@@ -1,12 +1,11 @@
-//! A table's hash part: insertion-ordered, indexable by position.
+//! A table's hash part, insertion-ordered and indexable by position.
 //!
-//! Most tables with string keys are small (objects with a handful of
-//! fields), and for those hashing costs more than it saves. Up to
-//! [`SMALL_MAX`] entries live in a plain vector searched linearly; one more
-//! and the part becomes an [`FxIndexMap`]. Both keep insertion order and
-//! give every entry a stable position, which `next` and the VM's
-//! inline caches rely on (a position only changes when the table compacts
-//! its tombstones).
+//! Most tables with string keys are small (objects with a handful of fields),
+//! and for those hashing costs more than it saves. Up to [`SMALL_MAX`] entries
+//! live in a plain vector searched linearly, one more and the part turns into
+//! an [`FxIndexMap`]. Both keep insertion order and give every entry a stable
+//! position, which `next` and the VM's inline caches rely on (a position only
+//! changes when the table compacts its tombstones).
 
 use crate::Value;
 use crate::hash::FxIndexMap;
@@ -91,7 +90,7 @@ impl HashPart {
         }
     }
 
-    /// A part holding `keys` (distinct) with nil values, with room for
+    /// A part holding `keys` (all different) with nil values, with room for
     /// `capacity` entries.
     pub fn with_nil_keys(capacity: usize, keys: impl ExactSizeIterator<Item = Key>) -> Self {
         let capacity = capacity.max(keys.len());
@@ -106,7 +105,7 @@ impl HashPart {
         }
     }
 
-    /// Adds a key that isn't present yet, at the end.
+    /// Adds a key that isn't there yet, at the end.
     pub fn insert_new(&mut self, k: Key, value: Value) {
         match self {
             HashPart::Small(v) if v.len() < SMALL_MAX => v.push((k, value)),

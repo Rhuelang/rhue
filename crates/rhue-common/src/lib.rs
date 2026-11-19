@@ -1,7 +1,7 @@
-//! Shared foundations for every Rhue crate: source spans and diagnostics.
+//! Spans and diagnostics, shared by every Rhue crate.
 //!
-//! Part of [Rhue](https://docs.rs/rhue)'s implementation. To embed Rhue, use
-//! the `rhue` crate: its API is the one kept stable.
+//! This is part of [Rhue](https://docs.rs/rhue)'s guts. If you're embedding
+//! Rhue, use the `rhue` crate, that's the API that stays stable.
 
 mod diagnostic;
 mod source;

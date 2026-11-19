@@ -1,18 +1,18 @@
 //! Fast paths for common builtins, Luau's `FASTCALL` done at run time.
 //!
-//! `CALL` on a native that has a [`FastFn`] and at most three arguments
-//! tries the fast path first: the arguments are copied to a small array and
-//! the single result goes straight to the caller's registers, skipping the
-//! native context, argument buffer and result vector. Luau's compiler picks
-//! fast calls by name and has to check at run time that `math` (say) wasn't
-//! replaced; here the check is free, because the fast path belongs to the
-//! function value being called. A script that shadows `math.floor` calls
-//! its own function, which has no fast path.
+//! `CALL` on a native that has a [`FastFn`] and three arguments or fewer tries
+//! the fast path first. The arguments get copied to a small array and the
+//! single result goes straight into the caller's registers, skipping the native
+//! context, argument buffer and result vector. Luau's compiler picks fast calls
+//! by name and has to check at run time that `math` (say) wasn't replaced. Here
+//! the check is free since the fast path belongs to the function value being
+//! called, so a script that shadows `math.floor` just calls its own function,
+//! which doesn't have a fast path.
 //!
-//! Each fast path handles only the plain case and returns `None` for
-//! anything else (wrong types, extra arguments it doesn't model, any error,
-//! zero results), and the full native runs instead. So behaviour, including
-//! every error message, comes from one place: the full native in `stdlib`.
+//! Each fast path only handles the plain case and returns `None` for anything
+//! else (wrong types, extra arguments it doesn't model, any error, zero
+//! results), and then the full native runs instead. So behaviour, every error
+//! message included, comes from one place, the full native in `stdlib`.
 
 use crate::heap::{Fast, FastFn, FnRef};
 use crate::meta::Event;
@@ -178,7 +178,7 @@ fn string_len(vm: &mut Vm, args: &[Value]) -> Option<Fast> {
 }
 
 /// `s:byte()` and `s:byte(i)` when there's a byte there (no byte means no
-/// results, which the full native returns).
+/// results, the full native handles that).
 fn string_byte(vm: &mut Vm, args: &[Value]) -> Option<Fast> {
     let (s, i) = match *args {
         [Value::String(s)] | [Value::String(s), Value::Nil] => (s, 1),
@@ -202,10 +202,10 @@ fn string_sub(vm: &mut Vm, args: &[Value]) -> Option<Fast> {
     let text = vm.heap.get(s);
     let (a, b) = crate::stdlib::byte_range(text.len(), i, j);
     if a == 0 && b == text.len() {
-        // The whole string: it's already interned.
+        // the whole string, it's already interned
         return Some(Fast::One(Value::String(s)));
     }
-    // A cut through a character becomes U+FFFD, as in the full native.
+    // a cut through a character becomes U+FFFD, same as the full native
     let out = String::from_utf8_lossy(&text.as_bytes()[a..b]).into_owned();
     Some(Fast::One(Value::String(vm.heap.intern(&out))))
 }
@@ -227,7 +227,7 @@ pub(crate) fn ipairs_iter(vm: &mut Vm, args: &[Value]) -> Option<Fast> {
     let [Value::Table(t), Value::Number(i), ..] = *args else {
         return None;
     };
-    // The same conversion as the full native's.
+    // same conversion as the full native's
     let i = i as usize + 1;
     match vm.heap.table(t).get_int(i) {
         Value::Nil => Some(Fast::One(Value::Nil)),

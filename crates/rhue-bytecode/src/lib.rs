@@ -1,10 +1,9 @@
-//! Rhue's bytecode: instruction encoding, opcodes, function prototypes, and the
-//! arithmetic semantics shared by the compiler's constant folder and the VM,
-//! the verifier that checks a prototype before the VM runs it, and the
-//! binary form chunks are saved in.
+//! Rhue's bytecode. Instruction encoding, opcodes, function prototypes, the
+//! arithmetic the constant folder and VM share, the verifier that checks a
+//! prototype before it runs, and the binary format chunks get saved in.
 //!
-//! Part of [Rhue](https://docs.rs/rhue)'s implementation. To embed Rhue, use
-//! the `rhue` crate: its API is the one kept stable.
+//! This is part of [Rhue](https://docs.rs/rhue)'s guts. If you're embedding
+//! Rhue, use the `rhue` crate, that's the API that stays stable.
 
 mod arith;
 mod instr;

@@ -30,8 +30,8 @@ fn run(src: &str) -> Vec<Value> {
         format!("{y:?}"),
         "folded and unfolded disagree"
     );
-    // Again with a collection before every instruction: a value the GC
-    // can't see would be freed and break the result.
+    // again with a collection before every instruction: a value the GC can't
+    // see would be freed and break the result
     let mut stressed = Engine::new();
     stressed.set_gc_stress(true);
     let z = stressed
@@ -114,7 +114,7 @@ fn functions_and_calls() {
         "extra args are dropped"
     );
     assert_eq!(one("return (function(x) return x * 2 end)(21)"), n(42.0));
-    // Calls as statements discard results.
+    // calls as statements discard results
     assert_eq!(
         one("local c = 0 local function inc() c += 1 return c end inc() inc() return c"),
         n(2.0)
@@ -135,7 +135,7 @@ fn recursion() {
         ),
         n(6765.0)
     );
-    // Mutual recursion through globals.
+    // mutual recursion through globals
     assert_eq!(
         one(
             "function even(n) if n == 0 then return true end return odd(n - 1) end
@@ -225,7 +225,7 @@ fn varargs() {
         ),
         s("a, b, c")
     );
-    // The main chunk is vararg too (empty here).
+    // the main chunk is vararg too (empty here)
     assert_eq!(nums("return select('#', ...)"), [0.0]);
     assert_eq!(
         err("local function f(a) return ... end").kind,
@@ -324,7 +324,8 @@ fn each_loop_iteration_gets_a_fresh_variable() {
 
 #[test]
 fn break_and_continue_close_captured_variables() {
-    // `continue` skips the end of the body, where the variable would normally be closed.
+    // `continue` skips the end of the body, where the variable would normally
+    // be closed
     assert_eq!(
         nums(
             "local a, b
@@ -337,7 +338,7 @@ fn break_and_continue_close_captured_variables() {
         ),
         [100.0, 200.0]
     );
-    // `break` leaves the loop with the variable still open.
+    // `break` leaves the loop with the variable still open
     assert_eq!(
         nums(
             "local f local i = 0
@@ -402,7 +403,7 @@ fn functions_are_values() {
     let mut e = Engine::new();
     let v = e.eval("return function(x) return x end").unwrap().remove(0);
     assert_eq!(v.type_name(), "function");
-    // A function from one eval can be called from the next via a global.
+    // a function from one eval can be called from the next via a global
     e.set_global("double", v.clone());
     e.eval("function double(x) return x * 2 end").unwrap();
     assert_eq!(e.eval_expr("double(21)").unwrap(), n(42.0));
@@ -502,7 +503,7 @@ fn stack_overflow_is_an_error_not_a_crash() {
     let rendered = e.render(false);
     assert!(rendered.contains("stack traceback:"), "{rendered}");
     assert!(
-        // `return f(1)` is a tail call, so <main> has no frame of its own.
+        // `return f(1)` is a tail call, so <main> has no frame of its own
         rendered.contains("(repeated 9999 times)"),
         "recursion collapses into one line: {rendered}"
     );
@@ -511,7 +512,8 @@ fn stack_overflow_is_an_error_not_a_crash() {
 
 #[test]
 fn deep_recursion_within_the_limit_works_on_a_small_thread() {
-    // Calls don't recurse on the Rust stack, so 5000 Lua frames fit in a 256 KiB thread.
+    // calls don't recurse on the Rust stack, so 5000 Lua frames fit in a 256
+    // KiB thread
     let r = std::thread::Builder::new()
         .stack_size(256 * 1024)
         .spawn(|| {
@@ -541,8 +543,8 @@ fn errors_show_a_traceback() {
         "{rendered}"
     );
     assert!(
-        // Both calls are tail calls: their frames are gone, but the
-        // traceback still names where they came from.
+        // both calls are tail calls: their frames are gone, but the traceback
+        // still names where they came from
         rendered.contains("called from `outer` (tail call) (trace.rhue:5:10)"),
         "{rendered}"
     );
@@ -593,6 +595,6 @@ fn engine_survives_errors_inside_closures() {
         .unwrap();
     assert_eq!(e.eval_expr("bump()").unwrap(), n(1.0));
     assert!(e.eval_expr("bump()").is_err());
-    // The upvalue was closed when the defining chunk returned, so it survives.
+    // the upvalue was closed when the defining chunk returned, so it survives
     assert_eq!(e.eval_expr("bump()").unwrap(), n(3.0));
 }

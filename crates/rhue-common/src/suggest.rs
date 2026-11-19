@@ -1,9 +1,9 @@
-//! "Did you mean ...?": the closest of some names to a misspelled one.
+//! "Did you mean ...?" Finds the closest name to a misspelled one.
 
-/// The candidate nearest to `name` by edit distance (a swap of neighbours
-/// counts as one edit), if one is close enough to be a likely typo: at most
-/// one edit for names up to four characters, two up to eight, three beyond.
-/// Ties go to the earlier candidate; `name` itself never matches.
+/// The candidate closest to `name` by edit distance (swapping two neighbours
+/// counts as one edit), if it's close enough to be a typo: one edit for names
+/// up to 4 chars, two up to 8, three past that. Ties go to whichever came
+/// first, and `name` never matches itself.
 pub fn closest<'a>(name: &str, candidates: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
     let limit = match name.chars().count() {
         0..=1 => return None,
@@ -17,7 +17,7 @@ pub fn closest<'a>(name: &str, candidates: impl IntoIterator<Item = &'a str>) ->
             continue;
         }
         let d = distance(name, c);
-        // Case alone (`Print` for `print`) is always worth suggesting.
+        // case alone (`Print` for `print`) is always worth suggesting
         let d = if name.eq_ignore_ascii_case(c) { 1 } else { d };
         if d <= limit && best.is_none_or(|(b, _)| d < b) {
             best = Some((d, c));
@@ -71,7 +71,7 @@ mod tests {
         assert_eq!(closest("xyz", names), None);
         assert_eq!(closest("print", names), None);
         assert_eq!(closest("p", names), None);
-        // Short names need to be close.
+        // short names need to be close
         assert_eq!(closest("nme", ["name", "age"]), Some("name"));
         assert_eq!(closest("ag", ["name", "x"]), None);
     }

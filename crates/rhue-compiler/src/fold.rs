@@ -1,13 +1,13 @@
 use rhue_bytecode::{ArithOp, arith};
 use rhue_parser::ast::{BinOp, Expr, ExprKind, InterpPart, TableItem, UnOp};
 
-/// Constant folding as one bottom-up pass: returns a copy of `expr` where every
-/// subtree made only of number literals and arithmetic is replaced by a single
-/// `Number` node carrying the subtree's span.
+/// Constant folding in one bottom-up pass. Returns a copy of `expr` where every
+/// subtree that's only number literals and arithmetic becomes one `Number` node
+/// with the subtree's span.
 ///
-/// Anything that could fail at runtime (`1 + true`) is left alone, so the
-/// error still surfaces, with its span, when the code runs. Folding uses the
-/// same [`arith`] function as the VM, so results are bit-identical.
+/// Anything that could fail at runtime (`1 + true`) gets left alone so the
+/// error still shows up, with its span, when the code runs. Folding uses the
+/// same [`arith`] as the VM, so the results are bit-identical.
 pub fn fold(expr: &Expr) -> Expr {
     stacker::maybe_grow(64 * 1024, 1024 * 1024, || fold_inner(expr))
 }
@@ -28,7 +28,8 @@ fn fold_inner(expr: &Expr) -> Expr {
         | ExprKind::String(_)
         | ExprKind::Name(_)
         | ExprKind::Vararg
-        // Function bodies are folded when they are compiled, statement by statement.
+        // function bodies get folded when they're compiled, statement by
+        // statement
         | ExprKind::Function(_) => expr.clone(),
         ExprKind::Interp(parts) => same(ExprKind::Interp(
             parts
@@ -62,12 +63,12 @@ fn fold_inner(expr: &Expr) -> Expr {
             callee: Box::new(fold(callee)),
             args: args.iter().map(fold).collect(),
         }),
-        // A type assertion is a group at runtime: one value, no type check.
+        // a type assertion is just a group at runtime, one value, no check
         ExprKind::Cast { expr: inner, .. } => same(ExprKind::Group(Box::new(fold(inner)))),
         ExprKind::Group(inner) => {
             let inner = fold(inner);
             match inner.kind {
-                // Parentheses around a number can't truncate anything.
+                // parentheses around a number can't truncate anything
                 ExprKind::Number(n) => number(n),
                 _ => same(ExprKind::Group(Box::new(inner))),
             }
@@ -116,7 +117,8 @@ fn fold_inner(expr: &Expr) -> Expr {
     }
 }
 
-/// Folds `expr` and returns its value if the whole thing is a constant number.
+/// Folds `expr` and gives back its value if the whole thing is a constant
+/// number.
 pub fn fold_number(expr: &Expr) -> Option<f64> {
     match fold(expr).kind {
         ExprKind::Number(n) => Some(n),

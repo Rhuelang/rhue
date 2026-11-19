@@ -149,7 +149,7 @@ fn breakpoints_stack_variables_and_stepping() {
     assert_eq!(bp["body"]["breakpoints"][0]["verified"], json!(true));
     c.request("configurationDone", json!({}));
 
-    // `print` output arrives as output events.
+    // `print` output arrives as output events
     let out = c.event("output");
     assert_eq!(out["body"]["output"], "start\n");
 
@@ -180,7 +180,7 @@ fn breakpoints_stack_variables_and_stepping() {
     let upvalues = c.variables(&scopes[1]["variablesReference"]);
     assert_eq!(upvalues[0].0, "util");
 
-    // Expand the `items` table.
+    // expand the `items` table
     let vars = c.request(
         "variables",
         json!({ "variablesReference": scopes[0]["variablesReference"] }),
@@ -196,7 +196,7 @@ fn breakpoints_stack_variables_and_stepping() {
         ]
     );
 
-    // Evaluate names and fields.
+    // evaluate names and fields
     let ev = c.request("evaluate", json!({ "expression": "sum", "frameId": 1 }));
     assert_eq!(ev["body"]["result"], "0");
     let ev = c.request(
@@ -209,7 +209,7 @@ fn breakpoints_stack_variables_and_stepping() {
             .unwrap()
             .starts_with("function")
     );
-    // Expressions run in the frame (watch and console); hovers only read.
+    // expressions run in the frame (watch and console), hovers only read
     let ev = c.request(
         "evaluate",
         json!({ "expression": "sum + v * 10, #items", "frameId": 1, "context": "watch" }),
@@ -233,7 +233,7 @@ fn breakpoints_stack_variables_and_stepping() {
         "{bad}"
     );
 
-    // Step into `util.double` (in another file).
+    // step into `util.double` (in another file)
     c.request("stepIn", json!({ "threadId": 1 }));
     assert_eq!(c.event("stopped")["body"]["reason"], "step");
     let st = c.request("stackTrace", json!({ "threadId": 1 }));
@@ -248,19 +248,19 @@ fn breakpoints_stack_variables_and_stepping() {
     );
     assert_eq!(top["line"], json!(3));
 
-    // Step out, back into `total`.
+    // step out, back into `total`
     c.request("stepOut", json!({ "threadId": 1 }));
     c.event("stopped");
     let st = c.request("stackTrace", json!({ "threadId": 1 }));
     assert_eq!(st["body"]["stackFrames"][0]["name"], "total");
 
-    // Next stays in `total`: the loop comes back to line 5.
+    // next stays in `total`: the loop comes back to line 5
     c.request("next", json!({ "threadId": 1 }));
     c.event("stopped");
     let st = c.request("stackTrace", json!({ "threadId": 1 }));
     assert_eq!(st["body"]["stackFrames"][0]["name"], "total");
 
-    // Clear the breakpoint and run to the end.
+    // clear the breakpoint and run to the end
     c.request(
         "setBreakpoints",
         json!({ "source": { "path": main }, "breakpoints": [] }),
@@ -289,7 +289,7 @@ fn stop_on_entry_errors_and_terminate() {
     let stopped = c.event("stopped");
     assert_eq!(stopped["body"]["reason"], "entry");
     c.request("continue", json!({ "threadId": 1 }));
-    // The runtime error is reported, and the program ends.
+    // the runtime error is reported, and the program ends
     let out = c.event("output");
     assert_eq!(out["body"]["category"], "stderr");
     assert!(
@@ -302,7 +302,7 @@ fn stop_on_entry_errors_and_terminate() {
     c.request("disconnect", json!({}));
     assert!(c.child.wait().unwrap().success());
 
-    // Disconnecting while stopped ends the script.
+    // disconnecting while stopped ends the script
     let mut c = Client::start();
     c.request("initialize", json!({}));
     c.request("launch", json!({ "program": main, "stopOnEntry": true }));
@@ -378,8 +378,8 @@ print('done', total)
     assert_eq!(verified, [true, true, false]);
     c.request("configurationDone", json!({}));
 
-    // The condition stops at i = 4 and 8; the logpoint prints at its 5th
-    // and 10th hits (i = 5, 10) without stopping.
+    // the condition stops at i = 4 and 8, the logpoint prints at its 5th and
+    // 10th hits (i = 5, 10) without stopping
     let mut stops = Vec::new();
     let mut logs = Vec::new();
     loop {
@@ -400,7 +400,7 @@ print('done', total)
             _ => {}
         }
     }
-    // Events queued while waiting for responses count too.
+    // events queued while waiting for responses count too
     for m in c.events.drain(..) {
         if m["event"] == "output" && m["body"]["category"] == "console" {
             logs.push(m["body"]["output"].as_str().unwrap().to_string());
@@ -438,7 +438,7 @@ fn hit_counts_and_broken_conditions() {
         );
         seen.push(ev["body"]["result"].as_str().unwrap().to_string());
         if seen.len() == 2 {
-            // A condition that errors stops (and says why).
+            // a condition that errors stops (and says why)
             c.request(
                 "setBreakpoints",
                 json!({ "source": { "path": main }, "breakpoints": [{ "line": 2, "condition": "i.x > 1" }] }),
@@ -450,7 +450,7 @@ fn hit_counts_and_broken_conditions() {
     c.event("exited");
     c.request("disconnect", json!({}));
 
-    // A broken condition from the start.
+    // a broken condition from the start
     let mut c = Client::start();
     c.request("initialize", json!({}));
     c.request("launch", json!({ "program": main }));

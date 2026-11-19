@@ -1,29 +1,28 @@
-//! Types written back out as Luau type syntax, for saving: a compiled
+//! Types written back out as Luau type syntax, for saving. A compiled
 //! chunk carries the types of its globals and results this way, and
 //! loading parses them again ([`Env::parse_type`](crate::Env::parse_type)).
 //!
-//! Only *detached* types are expected (what a chunk exports; aliases are
-//! already expanded). What syntax can't say is simplified:
+//! Only *detached* types are expected here (what a chunk exports, aliases
+//! already expanded). Anything the syntax can't say gets simplified:
 //!
 //! - a table with a metatable becomes its fields plus the fields of its
-//!   `__index` table (so a class instance keeps its methods, whose `self`
-//!   parameter becomes `any`: the call supplies it; operator metamethods
-//!   are lost);
-//! - a table that may have unlisted fields (`self` in a method) lists the
-//!   ones it has;
-//! - an alias reference or an error type becomes `any`.
+//!   `__index` table (so a class instance keeps its methods, with `self`
+//!   as `any` since the call supplies it). Operator metamethods get lost
+//! - a table that might have unlisted fields (`self` in a method) lists
+//!   the ones it has
+//! - an alias reference or an error type becomes `any`
 
 use crate::types::{FnType, Meta, Pack, TableType, Type};
 
-/// `t` as type syntax that parses back to (a simplification of) it.
+/// `t` as type syntax that parses back to (a simplified version of) it.
 pub fn portable(t: &Type) -> String {
     let mut out = String::new();
     write_type(&mut out, t, 0);
     out
 }
 
-/// How deep to follow types before giving up with `any` (detached types
-/// are finite, but be safe).
+/// How deep to follow types before giving up with `any` (detached types are
+/// finite, but just in case).
 const MAX_DEPTH: u32 = 32;
 
 fn write_type(out: &mut String, t: &Type, depth: u32) {
@@ -146,11 +145,11 @@ fn write_pack(out: &mut String, p: &Pack, depth: u32) {
     }
 }
 
-/// The fields a table can be read for: its own, then (through a metatable
-/// whose `__index` is a table) the inherited ones, without metamethods.
-/// Inherited methods take `self` as `any`: a detached instance type is
-/// only unrolled a few levels, and `self` (a parameter, so compared the
-/// other way round) would otherwise demand the deeper unrolling.
+/// The fields a table can be read for: its own, then (through a metatable whose
+/// `__index` is a table) the inherited ones, no metamethods. Inherited methods
+/// take `self` as `any`, since a detached instance type only gets unrolled a
+/// few levels and `self` (a parameter, so compared the other way round) would
+/// otherwise demand the deeper unrolling.
 fn fields(tt: &TableType, depth: u32) -> Vec<(String, Type)> {
     let mut out: Vec<(String, Type)> = Vec::new();
     for (n, t) in &tt.props {
@@ -174,8 +173,8 @@ fn fields(tt: &TableType, depth: u32) -> Vec<(String, Type)> {
             for (n, t) in fields(&ix, depth + 1) {
                 if !n.starts_with("__") && !out.iter().any(|(m, _)| *m == n) {
                     let t = match &t {
-                        // A method's `self`: an instance (open, or
-                        // with a metatable).
+                        // a method's `self`, an instance (open, or with a
+                        // metatable)
                         Type::Function(f) if matches!(f.params.first(), Some(Type::Table(p)) if p.open || p.meta.is_some()) =>
                         {
                             let mut f = (**f).clone();
@@ -319,7 +318,7 @@ mod tests {
     #[test]
     fn what_syntax_cant_say_is_simplified() {
         use crate::types::{Meta, TableType, Type};
-        // An instance: its fields, then its class's methods.
+        // an instance, its fields and then its class's methods
         let class = Type::table(TableType {
             props: vec![
                 ("__index".into(), Type::Any),

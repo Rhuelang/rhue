@@ -2,8 +2,8 @@ use crate::ArithOp;
 
 macro_rules! opcodes {
     ($( $(#[$doc:meta])* $name:ident = $mnemonic:literal ),* $(,)?) => {
-        /// Every opcode. The comment on each one gives its operands:
-        /// `R(x)` is register x, `K(x)` is constant x.
+        /// Every opcode. The comment on each one gives its operands, `R(x)` is
+        /// register x and `K(x)` is constant x.
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         #[repr(u8)]
         pub enum Op { $( $(#[$doc])* $name ),* }
@@ -11,9 +11,9 @@ macro_rules! opcodes {
         impl Op {
             pub const ALL: &'static [Op] = &[ $( Op::$name ),* ];
 
-            /// Decodes an opcode byte. Written as a match on each opcode's
-            /// own value so the optimiser sees the identity mapping (a table
-            /// lookup would cost a load per instruction in the VM).
+            /// Decodes an opcode byte. It's a match on each opcode's own value
+            /// so the optimiser sees the identity mapping (a lookup table would
+            /// cost a load per instruction in the VM).
             #[inline]
             pub fn from_u8(byte: u8) -> Option<Op> {
                 #[allow(non_upper_case_globals)]
@@ -83,8 +83,8 @@ opcodes! {
     Lt = "LT",
     /// `if (R(B) <= R(C)) != (A != 0) then pc++`
     Le = "LE",
-    /// `if (R(B) == K(C)) != (A != 0) then pc++` (and likewise below, with
-    /// the constant on the right; `a > b` means `b < a` for errors)
+    /// `if (R(B) == K(C)) != (A != 0) then pc++` (same for the ones below,
+    /// constant on the right. `a > b` means `b < a` for errors)
     EqK = "EQK",
     LtK = "LTK",
     LeK = "LEK",
@@ -98,11 +98,12 @@ opcodes! {
     /// `if R(A) is falsy then pc += sBx`
     JmpIfNot = "JMPIFNOT",
 
-    /// Numeric `for` setup. `R(A)` index, `R(A+1)` limit, `R(A+2)` step
-    /// (all checked to be numbers), `R(A+3)` the visible loop variable.
-    /// If the loop runs zero times, `pc += sBx`; otherwise `R(A+3) := R(A)`.
+    /// Numeric `for` setup. `R(A)` index, `R(A+1)` limit, `R(A+2)` step (all
+    /// checked to be numbers), `R(A+3)` the visible loop variable. Runs zero
+    /// times: `pc += sBx`. Otherwise `R(A+3) := R(A)`.
     ForPrep = "FORPREP",
-    /// `R(A) += R(A+2)`; if still in range, `R(A+3) := R(A)` and `pc += sBx`.
+    /// `R(A) += R(A+2)`, and if it's still in range, `R(A+3) := R(A)` and `pc
+    /// += sBx`.
     ForLoop = "FORLOOP",
 
     /// `R(A) := upvalues[B]`
@@ -112,24 +113,25 @@ opcodes! {
     /// `R(A) := closure(protos[Bx])`, capturing upvalues per the child's
     /// `upvalues` descriptors.
     Closure = "CLOSURE",
-    /// Close every open upvalue pointing at `R(A)` or above.
+    /// Closes every open upvalue pointing at `R(A)` or above.
     Close = "CLOSE",
-    /// `R(A), ..., R(A+C-2) := R(A)(R(A+1), ..., R(A+B-1))`.
-    /// `B = 0`: arguments run up to `top`. `C = 0`: keep every result and
-    /// set `top` past the last one.
+    /// `R(A), ..., R(A+C-2) := R(A)(R(A+1), ..., R(A+B-1))`. `B = 0`: arguments
+    /// go up to `top`. `C = 0`: keep every result and set `top` past the last
+    /// one.
     Call = "CALL",
-    /// `R(A) := tostring(R(B)) .. ... .. tostring(R(B+C-1))`, for
-    /// interpolated strings (`__tostring` applies).
+    /// `R(A) := tostring(R(B)) .. ... .. tostring(R(B+C-1))`, for interpolated
+    /// strings (`__tostring` applies).
     Interp = "INTERP",
-    /// `return R(A)(R(A+1), ..., R(A+B-1))`: a Lua callee replaces the
-    /// current frame (so tail recursion uses no stack); any other callee is
-    /// called like `CALL A B 0`, and the `RETURN A 0 1` that always follows
-    /// returns its results.
+    /// `return R(A)(R(A+1), ..., R(A+B-1))`. A Lua callee replaces the current
+    /// frame (so tail recursion doesn't use stack), anything else gets called
+    /// like `CALL A B 0` and the `RETURN A 0 1` that always follows returns its
+    /// results.
     TailCall = "TAILCALL",
-    /// `R(A), ..., R(A+B-2) := ...`. `B = 0`: copy all varargs and set `top`.
+    /// `R(A), ..., R(A+B-2) := ...`. `B = 0`: copy all the varargs and set
+    /// `top`.
     Vararg = "VARARG",
 
-    /// `R(A) := {}` with room for `B` array and `C` hash entries (hints).
+    /// `R(A) := {}` with room for `B` array and `C` hash entries (just hints).
     NewTable = "NEWTABLE",
     /// `R(A) := R(B)[R(C)]`
     GetTable = "GETTABLE",
@@ -142,21 +144,21 @@ opcodes! {
     /// `R(A+1) := R(B); R(A) := R(B)[K(C)]` (method lookup for `obj:m()`)
     SelfOp = "SELF",
     /// `R(A)[n + i] := R(A + i)` for `i` in `1..=B` (`B = 0`: up to `top`),
-    /// where `n` is the start offset held in the following `DATA` word.
+    /// where `n` is the start offset in the `DATA` word after it.
     SetList = "SETLIST",
-    /// Not executed: an operand word for the instruction before it.
+    /// Never executed, it's an operand word for the instruction before it.
     Data = "DATA",
-    /// Generic-for step: `R(A+3), ..., R(A+2+C) := R(A)(R(A+1), R(A+2))`.
-    /// If `R(A)` is a table, iterate it directly (Luau's generalized
+    /// Generic-for step: `R(A+3), ..., R(A+2+C) := R(A)(R(A+1), R(A+2))`. If
+    /// `R(A)` is a table it gets iterated directly (Luau's generalized
     /// iteration, like `next`).
     TForCall = "TFORCALL",
     /// `if R(A+3) ~= nil then R(A+2) := R(A+3); pc += sBx`
     TForLoop = "TFORLOOP",
 
-    /// `return R(A), ..., R(A+B-1)`; if `C != 0`, return `R(A)` up to `top`.
+    /// `return R(A), ..., R(A+B-1)`, or if `C != 0` return `R(A)` up to `top`.
     Return = "RETURN",
-    /// `R(A) := {}` shaped by `templates[Bx]`: room for its array and hash
-    /// sizes, with its keys already present (nil), so a constructor's
+    /// `R(A) := {}` shaped by `templates[Bx]`. Room for its array and hash
+    /// sizes with its keys already in there (as nil), so a constructor's
     /// `SETFIELD`s fill existing slots through their inline caches.
     DupTable = "DUPTABLE",
 }

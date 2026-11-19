@@ -1,19 +1,19 @@
-//! The engine's state that lives with the VM (so natives can reach it):
-//! the type environment, compile settings, and modules for `require`.
+//! The engine's state that lives with the VM (so natives can reach it): the
+//! type environment, compile settings, and modules for `require`.
 //!
-//! **Modules.** `require("name")` finds a module's source among the ones
-//! the host added ([`Engine::add_module`](crate::Engine::add_module)) or
-//! asks the host's loader ([`Engine::set_module_loader`](crate::Engine::set_module_loader)),
-//! compiles it (type-checking it as its directive asks), runs it once with
-//! its name as `...`, and caches what it returned (`true` if nothing).
-//! A module that requires itself, directly or not, is an error naming the
-//! cycle.
+//! **Modules.** `require("name")` finds a module's source among the ones the
+//! host added ([`Engine::add_module`](crate::Engine::add_module)) or asks the
+//! host's loader
+//! ([`Engine::set_module_loader`](crate::Engine::set_module_loader)), compiles
+//! it (type-checking it as its directive says), runs it once with its name as
+//! `...`, and caches what it returned (`true` if nothing). A module that
+//! requires itself, directly or not, is an error naming the cycle.
 //!
-//! **Typed modules.** When a checked chunk calls `require` with a literal
-//! name, the checker reports the names it has no type for; the engine
-//! checks those modules (compiling them, and keeping the result for the
-//! later `require`) and checks the chunk again, so `local m =
-//! require("m")` has the module's real type.
+//! **Typed modules.** When a checked chunk calls `require` with a literal name,
+//! the checker reports the names it has no type for. The engine checks those
+//! modules (compiling them, and keeping the result for the later `require`) and
+//! checks the chunk again, so `local m = require("m")` gets the module's real
+//! type.
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -26,7 +26,7 @@ use rhue_types::{CheckOutput, Env, Type};
 
 use crate::{Context, Error, ErrorKind, ScriptError, Value};
 
-/// Finds the source of a module by name (`None`: no such module).
+/// Finds a module's source by name (`None` if there's no such module).
 pub(crate) type Loader = Rc<dyn Fn(&str) -> Option<String>>;
 
 pub(crate) struct HostState {
@@ -35,18 +35,18 @@ pub(crate) struct HostState {
     pub default_mode: TypeMode,
     pub sources: HashMap<String, String>,
     pub loader: Option<Loader>,
-    /// Modules compiled ahead of their `require` (while checking a chunk
-    /// that requires them).
+    /// Modules compiled before their `require` (while checking a chunk that
+    /// requires them).
     pub compiled: HashMap<String, Rc<Proto>>,
     /// Modules given as compiled chunks (`add_module_bytes`).
     pub binary: HashMap<String, Rc<Proto>>,
-    /// `require`'s cache: module name → value, in a VM table kept alive by
-    /// the pin.
+    /// `require`'s cache, module name → value, in a VM table the pin keeps
+    /// alive.
     pub loaded: Option<(rhue_vm::TableRef, rhue_vm::Pin)>,
-    /// Modules being run right now, outermost first (to report cycles).
+    /// Modules running right now, outermost first (to report cycles).
     pub loading: Vec<String>,
-    /// Modules being type-checked for another chunk (a cycle there just
-    /// makes the type `any`).
+    /// Modules being type-checked for another chunk (a cycle there just makes
+    /// the type `any`).
     pub checking: HashSet<String>,
 }
 
@@ -84,8 +84,8 @@ pub(crate) fn host(vm: &mut rhue_vm::Vm) -> &mut HostState {
         .expect("set above")
 }
 
-/// Type-checks a resolved chunk in `mode`, first checking any modules it
-/// `require`s that have no type yet.
+/// Type-checks a resolved chunk in `mode`, checking any modules it `require`s
+/// that don't have a type yet first.
 pub(crate) fn check(
     vm: &mut rhue_vm::Vm,
     chunk: &Chunk,
@@ -111,8 +111,8 @@ pub(crate) fn check(
     }
 }
 
-/// Checks (and compiles) module `name` to learn its type; `any` if it
-/// can't be found, doesn't compile, or is already being checked.
+/// Checks (and compiles) module `name` to learn its type. `any` if it can't be
+/// found, doesn't compile, or is already being checked.
 fn module_type(vm: &mut rhue_vm::Vm, name: &str) -> Type {
     let state = host(vm);
     if state.checking.contains(name) {
@@ -133,7 +133,7 @@ fn module_type(vm: &mut rhue_vm::Vm, name: &str) -> Type {
     }
 }
 
-/// Parses, checks and compiles a chunk; also returns its type as a module.
+/// Parses, checks and compiles a chunk, and also returns its type as a module.
 pub(crate) fn compile(
     vm: &mut rhue_vm::Vm,
     name: &str,
@@ -149,7 +149,7 @@ pub(crate) struct Compiled {
     pub returns: Type,
     /// The globals it defines.
     pub globals: Vec<(Rc<str>, Type)>,
-    /// The same as type syntax, with the aliases they need (what's saved).
+    /// The same as type syntax, with the aliases they need (what gets saved).
     pub export: Option<rhue_types::Exported>,
 }
 
@@ -164,8 +164,8 @@ pub(crate) fn compile_typed(
     compile_ast(vm, &chunk, &file)
 }
 
-/// The types saved with a compiled chunk, as type syntax: exported with
-/// aliases when the chunk was checked, simplified otherwise.
+/// The types saved with a compiled chunk, as type syntax: exported with aliases
+/// when the chunk got checked, simplified otherwise.
 pub(crate) fn chunk_types(c: &Compiled) -> rhue_bytecode::ChunkTypes {
     match &c.export {
         Some(x) => rhue_bytecode::ChunkTypes {
@@ -185,9 +185,9 @@ pub(crate) fn chunk_types(c: &Compiled) -> rhue_bytecode::ChunkTypes {
     }
 }
 
-/// Declares what a loaded chunk's saved types say: its globals (unless
-/// the host declared them), and returns its type as a module. A type that
-/// doesn't resolve here (say, a host type this engine lacks) is `any`.
+/// Declares what a loaded chunk's saved types say (its globals, unless the host
+/// declared them) and returns its type as a module. A type that doesn't resolve
+/// here (say a host type this engine doesn't have) is `any`.
 pub(crate) fn declare_chunk_types(vm: &mut rhue_vm::Vm, types: &rhue_bytecode::ChunkTypes) -> Type {
     let env = &mut host(vm).env;
     let exported = rhue_types::Exported {
@@ -201,8 +201,8 @@ pub(crate) fn declare_chunk_types(vm: &mut rhue_vm::Vm, types: &rhue_bytecode::C
         }
         return returns;
     }
-    // Something didn't resolve here: each type on its own, `any` where
-    // that fails too.
+    // something didn't resolve here, so each type on its own, `any` where that
+    // fails too
     for (name, ty) in &types.globals {
         let t = env.parse_type(ty).unwrap_or(Type::Any);
         env.define_script_global(name, t);
@@ -227,8 +227,8 @@ pub(crate) fn compile_ast(
         .map(Rc::new)
         .map_err(|d| Error::new(ErrorKind::Compile, d, file))?;
     let env = &mut host(vm).env;
-    // What the chunk exports, nothing unrolled (recursive types and
-    // classes intact); the detached types if that can't be read back.
+    // what the chunk exports, nothing unrolled (recursive types and classes
+    // intact), or the detached types if that can't be read back
     let checked_mode = mode != TypeMode::NoCheck;
     let imported = checked_mode.then(|| env.import(&checked.export)).flatten();
     let (returns, globals) = imported.unwrap_or((checked.returns, checked.globals));
@@ -247,12 +247,12 @@ pub(crate) fn compile_ast(
 /// [`Engine::analyze`](crate::Engine::analyze)).
 #[derive(Clone, Debug, Default)]
 pub struct Analysis {
-    /// Syntax, name and type errors (types as the chunk's directive, or
-    /// the engine's default mode, asks).
+    /// Syntax, name and type errors (types as the chunk's directive, or the
+    /// engine's default mode, says).
     pub diagnostics: Vec<rhue_common::Diagnostic>,
     /// The type of each expression and declared name, by span.
     pub types: Vec<(rhue_common::Span, String)>,
-    /// What can follow `expr.` / `expr:` for the expression ending at the
+    /// What can come after `expr.` / `expr:` for the expression ending at the
     /// offset asked about, with each member's type.
     pub members: Option<Vec<(String, String)>>,
     /// Each name that refers to a local, and where that local is declared.
@@ -296,7 +296,7 @@ pub(crate) fn analyze(vm: &mut rhue_vm::Vm, source: &str, members_at: Option<u32
         }
     };
     let mode = chunk.mode.map_or(host(vm).default_mode, |(m, _)| m);
-    // Learn the types of required modules first.
+    // learn the types of required modules first
     check(vm, &chunk, &res, mode);
     let (out, an) = rhue_types::analyze_chunk(&chunk, &res, mode, &host(vm).env, members_at);
     let mut globals = globals(vm);

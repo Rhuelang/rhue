@@ -1,19 +1,19 @@
-//! Values as the REPL (and test failures) show them: tables spelled out,
+//! Values the way the REPL (and test failures) show them: tables spelled out,
 //! nested ones too, strings quoted inside them.
 
 use std::fmt::Write as _;
 
 use rhue::{Context, Table, Value};
 
-/// Longest line before a table is spread over several.
+/// Longest a line gets before a table spreads over several.
 const WIDTH: usize = 80;
-/// How deep nested tables are shown.
+/// How deep nested tables get shown.
 const DEPTH: usize = 3;
-/// How many entries of a table are shown.
+/// How many entries of a table get shown.
 const ENTRIES: usize = 50;
 
-/// `v` for display. Top-level strings are shown as they are; strings
-/// inside tables are quoted.
+/// `v` for display. Top-level strings show as-is, strings inside tables get
+/// quoted.
 pub fn show(cx: &mut Context<'_>, v: &Value) -> String {
     match v {
         Value::String(s) => s.to_string(),
@@ -27,7 +27,7 @@ pub fn show(cx: &mut Context<'_>, v: &Value) -> String {
 
 struct Printer<'a, 'b> {
     cx: &'a mut Context<'b>,
-    /// The tables being printed, outermost first (to spot cycles).
+    /// The tables being printed, outermost first (to catch cycles).
     seen: Vec<Table>,
 }
 
@@ -74,7 +74,7 @@ impl Printer<'_, '_> {
     }
 
     fn table(&mut self, t: &Table, depth: usize) -> String {
-        // A `__tostring` says how it wants to be shown.
+        // a `__tostring` says how it wants to look
         if let Ok(s) = self
             .cx
             .call_global::<String>("tostring", Value::Table(t.clone()))
@@ -93,7 +93,7 @@ impl Printer<'_, '_> {
             return "{...}".into();
         }
         let n = self.cx.len(t);
-        // The array part in order, then names sorted, then the rest.
+        // array part in order, then names sorted, then the rest
         let index = |k: &Value| match k {
             Value::Number(x) if x.fract() == 0.0 && *x >= 1.0 && *x <= n as f64 => {
                 Some(*x as usize)
@@ -173,7 +173,7 @@ mod tests {
             shown("return setmetatable({}, { __tostring = function() return 'Point(1, 2)' end })"),
             "Point(1, 2)"
         );
-        // Long ones spread out.
+        // long ones spread out
         let long =
             shown("local t = {} for i = 1, 30 do t['key' .. i] = i end return { inner = t }");
         assert!(

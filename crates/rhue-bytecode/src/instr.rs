@@ -15,7 +15,7 @@ use crate::Op;
 /// +--------------------------------+----------+
 /// ```
 ///
-/// The opcode sits in the low byte (as in Luau), so decoding it is one `as u8`.
+/// The opcode's in the low byte (like Luau), so decoding it is one `as u8`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Instr(pub u32);
 
@@ -40,7 +40,7 @@ impl Instr {
         Instr(op as u32 | ((sax as u32) << 8))
     }
 
-    /// The opcode, or `None` for a corrupt instruction.
+    /// The opcode, or `None` if the instruction's corrupt.
     #[inline]
     pub fn op(self) -> Option<Op> {
         Op::from_u8(self.0 as u8)
@@ -71,7 +71,7 @@ impl Instr {
         self.bx() as i16
     }
 
-    /// Arithmetic shift sign-extends the top 24 bits.
+    /// arithmetic shift sign-extends the top 24 bits
     #[inline]
     pub const fn sax(self) -> i32 {
         (self.0 as i32) >> 8

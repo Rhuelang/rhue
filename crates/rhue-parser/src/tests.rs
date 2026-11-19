@@ -169,7 +169,7 @@ fn continue_is_contextual() {
         panic!()
     };
     assert_eq!(body.stmts[0].kind, StmtKind::Continue);
-    // As a plain variable it's still assignable.
+    // still assignable as a plain variable
     let c = chunk("continue = 1");
     assert!(matches!(c.body.stmts[0].kind, StmtKind::Assign { .. }));
 }
@@ -464,7 +464,7 @@ fn generic_for() {
     assert!(matches!(c.body.stmts[1].kind, StmtKind::GenericFor { .. }));
 }
 
-// --- types (milestone 6) ------------------------------------------------------
+// ─ Types (milestone 6) ───────────────────────────────────────────────────────
 
 /// The annotation on the first `local` in `src`, printed back.
 fn local_type(src: &str) -> String {
@@ -577,7 +577,7 @@ fn annotations_everywhere() {
     assert!(a.exported);
     assert_eq!(a.generics.len(), 2);
 
-    // `::` binds tighter than `+`.
+    // `::` binds tighter than `+`
     let StmtKind::Local { values, .. } = &s[7].kind else {
         panic!()
     };

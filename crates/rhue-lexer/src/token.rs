@@ -46,17 +46,15 @@ impl LexErrorKind {
 
 /// Every token in Rhue's (Luau-shaped) grammar.
 ///
-/// The full token set is lexed from day one even though the parser only
-/// understands expressions so far; later milestones won't need to touch this.
-/// `continue`, `type`, `export`, and `typeof` are contextual keywords in Luau,
-/// so they lex as [`Token::Ident`].
+/// `continue`, `type`, `export` and `typeof` are only keywords in context in
+/// Luau, so they lex as [`Token::Ident`].
 #[derive(Logos, Clone, Copy, Debug, PartialEq)]
 // newer clippy reads two patterns sharing a callback as a duplicate attribute
 #[allow(clippy::duplicated_attributes)]
 #[logos(error = LexErrorKind)]
 #[logos(skip r"[ \t\r\n\f\v]+")]
 pub enum Token {
-    // --- literals --------------------------------------------------------
+    // ─ Literals ──────────────────────────────────────────────────────────────
     #[regex(r"[0-9][0-9_]*(\.[0-9_]*)?([eE][+-]?[0-9_]+)?", decimal)]
     #[regex(r"\.[0-9][0-9_]*([eE][+-]?[0-9_]+)?", decimal)]
     #[regex(r"0[xX][0-9a-fA-F_]+", |lex| radix(lex, 16))]
@@ -77,11 +75,11 @@ pub enum Token {
     #[regex(r"[A-Za-z_][A-Za-z0-9_]*")]
     Ident,
 
-    // --- comments (skipped) ----------------------------------------------
+    // ─ Comments (skipped) ────────────────────────────────────────────────────
     #[token("--", comment)]
     Comment,
 
-    // --- keywords --------------------------------------------------------
+    // ─ Keywords ──────────────────────────────────────────────────────────────
     #[token("and")]
     And,
     #[token("break")]
@@ -125,7 +123,7 @@ pub enum Token {
     #[token("while")]
     While,
 
-    // --- operators & punctuation -----------------------------------------
+    // ─ Operators & Punctuation ───────────────────────────────────────────────
     #[token("+")]
     Plus,
     #[token("-")]
@@ -207,12 +205,12 @@ pub enum Token {
     #[token("&")]
     Amp,
 
-    /// Appended once by [`crate::lex`]; never produced by logos itself.
+    /// Tacked on once by [`crate::lex`], logos never makes one.
     Eof,
 }
 
 impl Token {
-    /// How the token is spelled (or described) in error messages.
+    /// How the token shows up in error messages.
     pub fn describe(self) -> &'static str {
         use Token::*;
         match self {
@@ -310,8 +308,8 @@ fn unterminated_string(_: &mut Lexer<'_, Token>) -> Result<(), LexErrorKind> {
     Err(LexErrorKind::UnterminatedString)
 }
 
-/// Luau rejects numbers glued to identifier characters (`3abc`, `1..2`).
-/// Swallow the whole run so the error covers it.
+/// Luau rejects numbers glued to identifier characters (`3abc`, `1..2`), so
+/// swallow the whole run and the error covers all of it.
 fn reject_trailing(lex: &mut Lexer<'_, Token>) -> Result<(), LexErrorKind> {
     let extra = lex
         .remainder()
@@ -339,14 +337,14 @@ fn radix(lex: &mut Lexer<'_, Token>, radix: u32) -> Result<f64, LexErrorKind> {
     if digits.is_empty() {
         return Err(LexErrorKind::MalformedNumber);
     }
-    // Like Luau, literals are parsed as unsigned 64-bit integers, then widened.
+    // same as Luau, parse literals as u64 then widen
     u64::from_str_radix(&digits, radix)
         .map(|v| v as f64)
         .map_err(|_| LexErrorKind::MalformedNumber)
 }
 
-/// After an opening `[`, `[=`, `[==`, ... count `=` signs and find the matching
-/// close bracket. Returns how many bytes after the opener the close ends at.
+/// After an opening `[`, `[=`, `[==`, ... count the `=`s and find the matching
+/// close bracket. Returns how many bytes past the opener the close ends.
 fn find_long_close(rest: &str, level: usize) -> Option<usize> {
     let bytes = rest.as_bytes();
     let mut i = 0;
@@ -375,7 +373,7 @@ fn long_string(lex: &mut Lexer<'_, Token>) -> Result<(), LexErrorKind> {
 
 fn comment(lex: &mut Lexer<'_, Token>) -> FilterResult<(), LexErrorKind> {
     let rest = lex.remainder();
-    // Block comment: `--[[ ... ]]`, `--[==[ ... ]==]`.
+    // block comment, `--[[ ... ]]` or `--[==[ ... ]==]`
     if let Some(after) = rest.strip_prefix('[') {
         let level = after.bytes().take_while(|&b| b == b'=').count();
         if after.as_bytes().get(level) == Some(&b'[') {
@@ -392,7 +390,7 @@ fn comment(lex: &mut Lexer<'_, Token>) -> FilterResult<(), LexErrorKind> {
             };
         }
     }
-    // Line comment (this also covers `--!strict` style directives for now).
+    // line comment (`--!strict` directives land here too)
     let len = rest.find('\n').unwrap_or(rest.len());
     lex.bump(len);
     FilterResult::Skip

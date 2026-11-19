@@ -1,16 +1,16 @@
-//! Runs the scripts in `bench/` and reports how long each takes.
+//! Runs the scripts in `bench/` and reports how long each one takes.
 //!
 //! ```text
 //! cargo run --release -p rhue --example bench -- [--runs N] [--save FILE] [--baseline FILE] [FILTER]
 //! ```
 //!
-//! Every script starts with `-- expect: <results>`; a run whose results
-//! differ fails, so an optimisation can't quietly change behaviour. Each
-//! script is compiled once and run `N` times (default 5) in a fresh engine;
-//! the report shows the fastest and the median run. `--save` writes the
-//! medians to a file, and `--baseline` compares against such a file.
-//! Every engine has two natives registered from Rust (`add` and `count`),
-//! which `host.rhue` calls.
+//! Every script starts with `-- expect: <results>`, and a run whose results
+//! don't match fails, so an optimisation can't quietly change behaviour.
+//! Each script gets compiled once and run `N` times (default 5) in a fresh
+//! engine, and the report shows the fastest and the median run. `--save`
+//! writes the medians to a file, `--baseline` compares against one of
+//! those. Every engine has two natives registered from Rust (`add` and
+//! `count`) for `host.rhue` to call.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -66,7 +66,7 @@ fn main() {
         let mut times = Vec::with_capacity(runs);
         for _ in 0..runs {
             let mut engine = Engine::new();
-            // For `host.rhue`: natives registered through the typed API.
+            // for `host.rhue`, natives registered through the typed API
             engine.register("add", |a: f64, b: f64| a + b);
             engine.register("count", |n: i64| n + 1);
             let proto = match engine.compile(&name, &source) {

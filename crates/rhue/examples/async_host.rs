@@ -47,8 +47,8 @@ async fn main() -> Result<(), rhue::Error> {
     println!("three lookups in {:?}", started.elapsed());
 
     // a script that never stops on its own. It never yields either, so the
-    // runtime's own thread is stuck in it and the stop has to come from
-    // another thread (the handle is Send for this)
+    // runtime's own thread is stuck in it and the stop has to come from another
+    // thread (the handle is Send for this)
     let handle = engine.interrupt_handle();
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(200));

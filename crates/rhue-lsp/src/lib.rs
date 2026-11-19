@@ -1,14 +1,14 @@
-//! The language server's analysis, independent of the protocol plumbing in
+//! The language server's analysis, kept apart from the protocol plumbing in
 //! `main.rs` (so it can be tested on plain strings).
 //!
 //! Requests analyze the document with [`Engine::analyze`] (parse, resolve,
-//! check, and record expression types, local definitions and references,
-//! and members), which takes a few milliseconds for an ordinary script;
-//! [`Docs`] keeps an engine per document and caches analyses (see there). Modules a document `require`s are
-//! found next to it on disk (`a.b` is `a/b.rhue` or `a/b/init.rhue`),
-//! preferring the text of documents open in the editor.
+//! check, and record expression types, local definitions and references, and
+//! members), which takes a few milliseconds for a normal script. [`Docs`] keeps
+//! an engine per document and caches analyses (see there). Modules a document
+//! `require`s get found next to it on disk (`a.b` is `a/b.rhue` or
+//! `a/b/init.rhue`), preferring the text of documents open in the editor.
 //!
-//! Positions are LSP's: lines and UTF-16 columns.
+//! Positions are LSP's, lines and UTF-16 columns.
 
 use std::cell::{Cell, RefCell, RefMut};
 use std::collections::{HashMap, HashSet};
@@ -76,23 +76,22 @@ impl<'a> LineIndex<'a> {
     }
 }
 
-/// The documents open in the editor, and what's been worked out about
-/// them.
+/// The documents open in the editor, and what's been worked out about them.
 ///
-/// Analysis is incremental at the level of files: each document keeps its
-/// own [`Engine`], which remembers the types of the modules it `require`s,
-/// so typing in a file re-checks only that file. The last analysis of each
-/// document is cached by its text, so the requests an editor sends after a
-/// keystroke (diagnostics, then hover, signature help, ...) share one.
-/// Changing, opening or closing another document, or a file changing on
-/// disk, throws away what could depend on it.
+/// Analysis is incremental per file. Each document keeps its own [`Engine`],
+/// which remembers the types of the modules it `require`s, so typing in a file
+/// only re-checks that file. The last analysis of each document is cached by
+/// its text, so the pile of requests an editor sends after a keystroke
+/// (diagnostics, then hover, signature help, ...) share one. Changing, opening
+/// or closing another document, or a file changing on disk, throws out whatever
+/// could depend on it.
 #[derive(Default)]
 pub struct Docs {
     pub open: HashMap<Url, String>,
     engines: RefCell<HashMap<Url, (Engine, Deps)>>,
     analyses: RefCell<HashMap<Url, (String, Rc<Analysis>)>>,
-    /// Outlines of files (open or on disk), by path, with the text each
-    /// was made from.
+    /// Outlines of files (open or on disk) by path, with the text each one was
+    /// made from.
     outlines: RefCell<HashMap<PathBuf, (String, Rc<Outline>)>>,
     /// The workspace folders, searched for symbols and references.
     pub roots: Vec<PathBuf>,
@@ -102,7 +101,7 @@ pub struct Docs {
 /// The module files an engine has read (directly or not).
 type Deps = Rc<RefCell<HashSet<PathBuf>>>;
 
-/// How much work the server has done (for tests and logging).
+/// How much work the server's done (for tests and logging).
 #[derive(Default, Debug)]
 pub struct Stats {
     /// Documents analyzed (cache misses).
@@ -112,16 +111,16 @@ pub struct Stats {
 }
 
 impl Docs {
-    /// A document was opened, or its whole text replaced. Returns the
-    /// other open documents whose analysis may have changed.
+    /// A document got opened, or its whole text replaced. Returns the other
+    /// open documents whose analysis might have changed.
     pub fn set_text(&mut self, uri: &Url, text: String) -> Vec<Url> {
         self.open.insert(uri.clone(), text);
         self.invalidate(uri)
     }
 
-    /// Applies an editor's change to a document: a range replaced by new
-    /// text, or (no range) the whole text. Returns the other open
-    /// documents whose analysis may have changed (they `require` it).
+    /// Applies an editor's change to a document, either a range swapped for new
+    /// text or (no range) the whole text. Returns the other open documents
+    /// whose analysis might have changed (they `require` it).
     pub fn apply_change(&mut self, uri: &Url, range: Option<Range>, new_text: &str) -> Vec<Url> {
         let Some(text) = self.open.get_mut(uri) else {
             return Vec::new();
@@ -138,7 +137,7 @@ impl Docs {
         self.invalidate(uri)
     }
 
-    /// Closes a document (modules now read its file on disk instead).
+    /// Closes a document (modules read its file on disk from now on).
     pub fn close(&mut self, uri: &Url) -> Vec<Url> {
         self.open.remove(uri);
         self.engines.borrow_mut().remove(uri);
@@ -146,8 +145,8 @@ impl Docs {
         self.invalidate(uri)
     }
 
-    /// Files changed on disk (saved, or changed outside the editor):
-    /// every document that read a module may see new types. Returns them.
+    /// Files changed on disk (saved, or changed outside the editor). Every
+    /// document that read a module might see new types, so those get returned.
     pub fn files_changed(&mut self) -> Vec<Url> {
         let mut affected: Vec<Url> = self
             .engines
@@ -164,9 +163,9 @@ impl Docs {
         affected
     }
 
-    /// `changed` has new text: forget its analysis, and the engines and
-    /// analyses of documents that read it as a module. Its own engine
-    /// stays: the modules *it* requires haven't changed.
+    /// `changed` has new text: forget its analysis, plus the engines and
+    /// analyses of documents that read it as a module. Its own engine stays,
+    /// the modules *it* requires didn't change.
     fn invalidate(&mut self, changed: &Url) -> Vec<Url> {
         self.analyses.borrow_mut().remove(changed);
         let Ok(path) = changed.to_file_path() else {
@@ -206,8 +205,8 @@ impl Docs {
         a
     }
 
-    /// The path of the module `name` as `uri`'s document would `require`
-    /// it, if one exists (open in the editor or on disk).
+    /// The path of the module `name` as `uri`'s document would `require` it, if
+    /// there is one (open in the editor or on disk).
     pub fn module_path(&self, uri: &Url, name: &str) -> Option<PathBuf> {
         let dir = uri.to_file_path().ok()?.parent()?.to_path_buf();
         let rel: PathBuf = name.split('.').collect();
@@ -217,8 +216,8 @@ impl Docs {
             .find(|p| self.text_at(p).is_some())
     }
 
-    /// The outline of the file at `path` (its open text if it's open), and
-    /// that text. Cached by text.
+    /// The outline of the file at `path` (its open text if it's open), and that
+    /// text. Cached by text.
     pub fn outline_at(&self, path: &Path) -> Option<(String, Rc<Outline>)> {
         let text = self.text_at(path)?;
         if let Some((t, o)) = self.outlines.borrow().get(path)
@@ -233,8 +232,8 @@ impl Docs {
         Some((text, o))
     }
 
-    /// Every `.rhue` file in the workspace folders (skipping hidden
-    /// folders, `target` and `node_modules`), and every open document.
+    /// Every `.rhue` file in the workspace folders (skipping hidden folders,
+    /// `target` and `node_modules`), plus every open document.
     pub fn workspace_files(&self) -> Vec<PathBuf> {
         const MAX_FILES: usize = 20_000;
         let mut out: Vec<PathBuf> = self
@@ -275,10 +274,10 @@ impl Docs {
         open.or_else(|| std::fs::read_to_string(path).ok())
     }
 
-    /// The engine that analyzes `uri`: unchecked files are checked
-    /// non-strictly (annotations are checked, nothing else), and modules
-    /// resolve next to the document. Kept until something it may depend
-    /// on changes. Don't hold it across a call to [`analyze`](Self::analyze).
+    /// The engine that analyzes `uri`. Unchecked files get checked non-strictly
+    /// (annotations are checked, nothing else), and modules resolve next to the
+    /// document. It's kept until something it might depend on changes. Don't
+    /// hold onto it across a call to [`analyze`](Self::analyze).
     pub fn engine_for(&self, uri: &Url) -> RefMut<'_, Engine> {
         RefMut::map(self.engines.borrow_mut(), |engines| {
             &mut engines
@@ -309,7 +308,7 @@ impl Docs {
             stats.module_loads.set(stats.module_loads.get() + 1);
             let candidates =
                 [rel.with_extension("rhue"), rel.join("init.rhue")].map(|p| dir.join(p));
-            // Both candidates count: creating the missing one changes things.
+            // both candidates count, creating the missing one changes things
             seen.borrow_mut().extend(candidates.iter().cloned());
             candidates.iter().find_map(|p| {
                 snapshot
@@ -350,7 +349,7 @@ fn to_lsp(idx: &LineIndex<'_>, d: &rhue::Diagnostic) -> Diagnostic {
     }
 }
 
-/// Removes repeated locations, keeping the first of each.
+/// Drops repeated locations, keeping the first of each.
 fn dedup(locations: &mut Vec<Location>) {
     let mut seen = Vec::new();
     locations.retain(|l| {
@@ -373,7 +372,7 @@ fn smallest<T>(items: impl Iterator<Item = (Span, T)>, offset: usize) -> Option<
         .min_by_key(|(s, _)| (s.end - s.start, s.start))
 }
 
-/// The type of what's under the cursor: a name, or the smallest expression.
+/// The type of what's under the cursor, a name or the smallest expression.
 pub fn hover(docs: &Docs, uri: &Url, text: &str, pos: Position) -> Option<Hover> {
     let idx = LineIndex::new(text);
     let offset = idx.offset(pos);
@@ -413,8 +412,8 @@ fn require_at(text: &str, offset: usize) -> Option<String> {
     (!name.contains(['\n', ' '])).then(|| name.to_string())
 }
 
-/// Where the local under the cursor is declared, or the file a
-/// `require("...")` under the cursor loads.
+/// Where the local under the cursor is declared, or the file a `require("...")`
+/// under the cursor loads.
 pub fn definition(docs: &Docs, uri: &Url, text: &str, pos: Position) -> Option<Location> {
     let idx = LineIndex::new(text);
     let offset = idx.offset(pos);
@@ -445,8 +444,8 @@ fn declaration_at(analysis: &rhue::Analysis, offset: usize) -> Option<Span> {
         })
 }
 
-/// Every use of the local under the cursor (and its declaration), or of
-/// the module field under it, across the workspace.
+/// Every use of the local under the cursor (and its declaration), or of the
+/// module field under it, across the workspace.
 pub fn references(docs: &Docs, uri: &Url, text: &str, pos: Position) -> Vec<Location> {
     let idx = LineIndex::new(text);
     let offset = idx.offset(pos);
@@ -455,7 +454,7 @@ pub fn references(docs: &Docs, uri: &Url, text: &str, pos: Position) -> Vec<Loca
     let Some(decl) = declaration_at(&analysis, offset) else {
         return across.unwrap_or_default();
     };
-    // A local a module returns as a field (`return { f = f }`): both.
+    // a local a module returns as a field (`return { f = f }`), so both
     if let Some(mut across) = across {
         for s in analysis
             .refs
@@ -498,8 +497,8 @@ fn kind_of(ty: &str) -> CompletionItemKind {
     }
 }
 
-/// What can go at the cursor: members after `expr.` / `expr:`, otherwise
-/// locals declared above, globals and keywords.
+/// What can go at the cursor: members after `expr.` / `expr:`, otherwise locals
+/// declared above, globals and keywords.
 pub fn completion(docs: &Docs, uri: &Url, text: &str, pos: Position) -> Vec<CompletionItem> {
     let idx = LineIndex::new(text);
     let offset = idx.offset(pos);
@@ -510,9 +509,8 @@ pub fn completion(docs: &Docs, uri: &Url, text: &str, pos: Position) -> Vec<Comp
     let mut engine = docs.engine_for(uri);
     if let Some(sep @ ('.' | ':')) = trigger {
         let dot = word_start - 1;
-        // Make the code parse: a name after the separator, and call
-        // parentheses (a method needs them, and they make `obj.name` a
-        // statement).
+        // make the code parse: a name after the separator, and call parentheses
+        // (a method needs them, and they make `obj.name` a statement)
         let mut patched = String::with_capacity(text.len() + 16);
         patched.push_str(&text[..offset]);
         if word_start == offset {
@@ -543,7 +541,7 @@ pub fn completion(docs: &Docs, uri: &Url, text: &str, pos: Position) -> Vec<Comp
     drop(engine);
     let mut analysis = docs.analyze(uri, text);
     if analysis.locals.is_empty() && !analysis.diagnostics.is_empty() {
-        // Mid-edit code that doesn't parse: try with a name at the cursor.
+        // half-edited code that doesn't parse, try with a name at the cursor
         let patched = format!("{}__complete{}", &text[..offset], &text[offset..]);
         let retry = docs.engine_for(uri).analyze(&patched, None);
         if !retry.locals.is_empty() {
@@ -588,8 +586,8 @@ pub fn completion(docs: &Docs, uri: &Url, text: &str, pos: Position) -> Vec<Comp
     items
 }
 
-/// The whole document, formatted (`None` if it doesn't parse or is
-/// already formatted).
+/// The whole document formatted (`None` if it doesn't parse or is already
+/// formatted).
 pub fn formatting(text: &str, insert_spaces: bool, tab_size: u32) -> Option<Vec<TextEdit>> {
     let options = rhue_fmt::FormatOptions {
         indent: if insert_spaces {
@@ -609,7 +607,7 @@ pub fn formatting(text: &str, insert_spaces: bool, tab_size: u32) -> Option<Vec<
     )])
 }
 
-/// The name a rename at the cursor would change: a local, or nothing.
+/// The name a rename at the cursor would change, a local or nothing.
 pub fn prepare_rename(docs: &Docs, uri: &Url, text: &str, pos: Position) -> Option<Range> {
     let idx = LineIndex::new(text);
     let offset = idx.offset(pos);
@@ -636,10 +634,10 @@ fn is_identifier(name: &str) -> bool {
         && !KEYWORDS.contains(&name)
 }
 
-/// Renames the local under the cursor everywhere it's used. Refused for
-/// globals and fields (which other files may use), for names that aren't
-/// identifiers, and when the new name would change what some name refers
-/// to (shadowing, or being shadowed by, another variable).
+/// Renames the local under the cursor everywhere it's used. Refused for globals
+/// and fields (other files might use them), for names that aren't identifiers,
+/// and when the new name would change what some name points at (shadowing, or
+/// getting shadowed by, another variable).
 pub fn rename(
     docs: &Docs,
     uri: &Url,
@@ -667,7 +665,7 @@ pub fn rename(
     sites.sort_by_key(|s| s.start);
     sites.dedup();
 
-    // Apply the edit and check that every name still means what it did.
+    // apply the edit and make sure every name still means what it did
     let mut renamed = String::with_capacity(text.len());
     let mut last = 0;
     for s in &sites {
@@ -717,14 +715,14 @@ pub fn rename(
     })
 }
 
-/// The innermost unclosed `(` before `offset`, and how many top-level
-/// commas follow it (skipping strings, comments and nested brackets).
+/// The innermost unclosed `(` before `offset`, and how many top-level commas
+/// come after it (skipping strings, comments and nested brackets).
 fn open_call(text: &str, offset: usize) -> Option<(usize, u32)> {
     let b = text.as_bytes();
     let mut stack: Vec<(u8, usize, u32)> = Vec::new();
     let mut i = 0;
     let long_bracket = |i: usize| -> Option<(usize, usize)> {
-        // `[==[` at i: returns (level, length of the opener).
+        // `[==[` at i, returns (level, length of the opener)
         if b.get(i) != Some(&b'[') {
             return None;
         }
@@ -828,8 +826,8 @@ fn split_function_type(ty: &str) -> Option<(Vec<String>, String)> {
 }
 
 /// The parameter names of the function `callee` is defined as in `text`
-/// (`function callee(...)`, `local function callee(...)` or
-/// `callee = function(...)`), if it is.
+/// (`function callee(...)`, `local function callee(...)` or `callee =
+/// function(...)`), if it is one.
 fn parameter_names(text: &str, callee: &str) -> Option<Vec<String>> {
     let defs = [
         format!("function {callee}("),
@@ -854,7 +852,7 @@ fn parameter_names(text: &str, callee: &str) -> Option<Vec<String>> {
     Some(names)
 }
 
-/// The signature of the call the cursor is in, with the argument it's at.
+/// The signature of the call the cursor's in, with the argument it's at.
 pub fn signature_help(docs: &Docs, uri: &Url, text: &str, pos: Position) -> Option<SignatureHelp> {
     let idx = LineIndex::new(text);
     let offset = idx.offset(pos);
@@ -870,7 +868,7 @@ pub fn signature_help(docs: &Docs, uri: &Url, text: &str, pos: Position) -> Opti
     let sep = callee.rfind(['.', ':']).map(|i| callee_start + i);
     let method = sep.is_some_and(|i| text.as_bytes()[i] == b':');
 
-    // Mid-edit calls rarely parse; try a name at the cursor, then a `)`.
+    // half-edited calls rarely parse, try a name at the cursor, then a `)`
     let mut engine = docs.engine_for(uri);
     let candidates = [
         text.to_string(),
@@ -897,7 +895,7 @@ pub fn signature_help(docs: &Docs, uri: &Url, text: &str, pos: Position) -> Opti
     let (mut params, rest) = split_function_type(&ty)?;
     let mut names = parameter_names(text, callee).unwrap_or_default();
     if method {
-        // `obj:m(...)` passes `obj` as the first parameter.
+        // `obj:m(...)` passes `obj` as the first parameter
         if !params.is_empty() {
             params.remove(0);
         }

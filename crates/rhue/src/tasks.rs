@@ -1,14 +1,14 @@
 //! Scripts as tasks the host drives, and the `task` library.
 //!
-//! [`Engine::spawn`] runs a script (or [`Engine::spawn_function`] a
-//! function) as a coroutine until it first yields: from `coroutine.yield`,
-//! from a native returning [`ScriptError::yield_with`], or from `task.wait`.
-//! The host continues it with [`Engine::resume`].
+//! [`Engine::spawn`] runs a script (or [`Engine::spawn_function`] a function)
+//! as a coroutine until it first yields, from `coroutine.yield`, from a native
+//! returning [`ScriptError::yield_with`], or from `task.wait`. The host picks
+//! it back up with [`Engine::resume`].
 //!
-//! [`Engine::open_tasks`] adds Luau's `task` library on top: `task.wait`,
-//! `task.delay`, `task.spawn`, `task.defer` and `task.cancel`, run by a
-//! scheduler whose clock the host advances with [`Engine::step`] (once a
-//! frame, say). Nothing runs on its own: time only passes in `step`.
+//! [`Engine::open_tasks`] adds Luau's `task` library on top (`task.wait`,
+//! `task.delay`, `task.spawn`, `task.defer` and `task.cancel`), run by a
+//! scheduler whose clock the host moves forward with [`Engine::step`] (once a
+//! frame, say). Nothing runs by itself, time only passes in `step`.
 
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
@@ -19,8 +19,8 @@ use crate::{Context, Engine, Error, Function, ScriptError, Thread, Value, Variad
 #[derive(Clone, Debug)]
 pub struct Task {
     thread: Thread,
-    /// Shared with the scheduler, which updates it when it resumes the
-    /// task (from `task.wait`, say).
+    /// Shared with the scheduler, which updates it when it resumes the task
+    /// (from `task.wait`, say).
     state: Rc<RefCell<TaskState>>,
 }
 
@@ -34,18 +34,17 @@ pub enum TaskState {
 }
 
 impl Task {
-    /// Where it stopped last (whoever resumed it: the host or the
-    /// scheduler).
+    /// Where it stopped last (whoever resumed it, the host or the scheduler).
     pub fn state(&self) -> TaskState {
         self.state.borrow().clone()
     }
 
-    /// Whether it has returned or failed (it won't run again).
+    /// Whether it's returned or failed (it won't run again).
     pub fn is_finished(&self) -> bool {
         matches!(*self.state.borrow(), TaskState::Finished(_))
     }
 
-    /// The coroutine it runs in (what `task.cancel` takes, for instance).
+    /// The coroutine it runs in (what `task.cancel` takes, for example).
     pub fn thread(&self) -> &Thread {
         &self.thread
     }
@@ -54,9 +53,9 @@ impl Task {
 /// How a timer resumes its thread.
 #[derive(Debug)]
 enum Wake {
-    /// `task.wait`: with the time that actually passed since it started.
+    /// `task.wait`, with the time that actually passed since it started.
     Elapsed { since: f64 },
-    /// `task.delay`: with the arguments it was given.
+    /// `task.delay`, with the arguments it was given.
     Args(Vec<Value>),
 }
 
@@ -76,8 +75,8 @@ pub(crate) struct Scheduler {
     timers: Vec<Timer>,
     /// `task.defer`red threads and their arguments, in order.
     deferred: Vec<(Thread, Vec<Value>)>,
-    /// Errors from tasks the scheduler (or `task.spawn`) resumed, for the
-    /// next `step` to report.
+    /// Errors from tasks the scheduler (or `task.spawn`) resumed, for the next
+    /// `step` to report.
     errors: Vec<Error>,
     /// The host's [`Task`]s, so resuming one here updates its state.
     tasks: Vec<(Thread, Weak<RefCell<TaskState>>)>,
@@ -127,12 +126,12 @@ impl Scheduler {
     }
 }
 
-/// What `step` will do at most in one call, so a task that keeps
-/// deferring itself can't hang the host.
+/// The most `step` will do in one call, so a task that keeps deferring itself
+/// can't hang the host.
 const MAX_DEFERRED_PER_STEP: usize = 10_000;
 
-/// The thread `task.spawn` and friends run: a thread passed in, or a new
-/// one for a function.
+/// The thread `task.spawn` and friends run, a thread passed in or a new one for
+/// a function.
 fn thread_of(cx: &mut Context<'_>, v: &Value, f: &str) -> Result<Thread, ScriptError> {
     match v {
         Value::Thread(t) => Ok(t.clone()),
@@ -144,8 +143,8 @@ fn thread_of(cx: &mut Context<'_>, v: &Value, f: &str) -> Result<Thread, ScriptE
     }
 }
 
-/// Resumes `t`, recording an error instead of raising it, and updating
-/// the host's [`Task`] for it if there is one.
+/// Resumes `t`, recording an error instead of raising it, and updating the
+/// host's [`Task`] for it if there is one.
 pub(crate) fn run(
     cx: &mut Context<'_>,
     sched: &Rc<RefCell<Scheduler>>,
@@ -195,8 +194,8 @@ const TASK_TYPE: &str = "{
 
 impl Engine {
     /// Compiles `source` and runs it as a task until it first yields or
-    /// finishes. Yielding works anywhere in it, including at the top level
-    /// and inside `pcall`'d functions.
+    /// finishes. Yielding works anywhere in it, including at the top level and
+    /// inside `pcall`'d functions.
     pub fn spawn(&mut self, name: &str, source: &str) -> Result<Task, Error> {
         let proto = self.compile(name, source)?;
         let f = self.vm.load(&proto);
@@ -222,9 +221,9 @@ impl Engine {
         Ok(task)
     }
 
-    /// Continues a suspended task, passing `args` as the results of the
-    /// `yield` (or yielding native) it stopped in. An error inside it comes
-    /// back as `Err` and leaves it dead; so does resuming a finished one.
+    /// Continues a suspended task, passing `args` as the results of the `yield`
+    /// (or yielding native) it stopped in. An error inside it comes back as
+    /// `Err` and leaves it dead, same as resuming a finished one.
     pub fn resume(&mut self, task: &mut Task, args: Vec<Value>) -> Result<(), Error> {
         let mut cx = self.context();
         let result = cx.resume::<Variadic<Value>>(&task.thread, Variadic(args));
@@ -244,9 +243,9 @@ impl Engine {
         Ok(())
     }
 
-    /// Adds the `task` library (`wait`, `delay`, `spawn`, `defer`,
-    /// `cancel`), driven by [`step`](Self::step). Its clock starts at 0 and
-    /// moves only when the host calls `step`.
+    /// Adds the `task` library (`wait`, `delay`, `spawn`, `defer`, `cancel`),
+    /// driven by [`step`](Self::step). Its clock starts at 0 and only moves
+    /// when the host calls `step`.
     pub fn open_tasks(&mut self) {
         if self.tasks.is_some() {
             return;
@@ -361,10 +360,10 @@ impl Engine {
         self.tasks = Some(sched);
     }
 
-    /// Advances the task clock by `dt` seconds, then resumes every task
+    /// Moves the task clock forward by `dt` seconds, then resumes every task
     /// whose `task.wait` or `task.delay` is due (earliest first), then
-    /// everything deferred. Returns the errors tasks raised since the last
-    /// step (a failing task doesn't stop the others). Does nothing without
+    /// everything deferred. Returns the errors tasks raised since the last step
+    /// (one task failing doesn't stop the others). Does nothing without
     /// [`open_tasks`](Self::open_tasks).
     pub fn step(&mut self, dt: f64) -> Vec<Error> {
         let Some(sched) = self.tasks.clone() else {
@@ -393,7 +392,7 @@ impl Engine {
         std::mem::take(&mut sched.borrow_mut().errors)
     }
 
-    /// Runs deferred threads (and what they defer in turn, up to a limit).
+    /// Runs deferred threads (and whatever they defer, up to a limit).
     fn drain_deferred(&mut self) {
         let Some(sched) = self.tasks.clone() else {
             return;
@@ -412,7 +411,7 @@ impl Engine {
         }
     }
 
-    /// The task clock: the total of every `step`'s `dt`.
+    /// The task clock, the total of every `step`'s `dt`.
     pub fn task_clock(&self) -> f64 {
         self.tasks.as_ref().map_or(0.0, |s| s.borrow().now)
     }

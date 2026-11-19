@@ -1,6 +1,6 @@
-//! Semantic tokens: every keyword, literal and name, classified (a local or
-//! a global, a parameter, a function, a field, a type...), for highlighting
-//! that knows what names refer to.
+//! Semantic tokens. Every keyword, literal and name gets classified (a local or
+//! a global, a parameter, a function, a field, a type...), so highlighting
+//! knows what names actually are.
 
 use std::collections::HashSet;
 
@@ -56,8 +56,8 @@ thread_local! {
         .collect();
 }
 
-/// The document's tokens, encoded as LSP wants them: each relative to the
-/// one before, one line at a time (a long string is split per line).
+/// The document's tokens, encoded how LSP wants them: each relative to the one
+/// before, one line at a time (a long string gets split per line).
 pub fn semantic_tokens(text: &str) -> SemanticTokens {
     let idx = LineIndex::new(text);
     let outline = rhue::outline(text);
@@ -73,7 +73,7 @@ pub fn semantic_tokens(text: &str) -> SemanticTokens {
             if t.global && builtins.contains(word) {
                 mods |= 2;
             }
-            // One piece per line.
+            // one piece per line
             let mut start = t.span.start as usize;
             for piece in word.split_inclusive('\n') {
                 let content = piece.trim_end_matches(['\n', '\r']);

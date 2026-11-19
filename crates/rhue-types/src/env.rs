@@ -1,5 +1,5 @@
-//! What scripts can see before they declare anything: the standard
-//! library's types and whatever the host declared.
+//! What scripts can see before they declare anything, the standard library's
+//! types and whatever the host declared.
 
 use crate::{HashMap, HashSet};
 use std::rc::Rc;
@@ -8,7 +8,7 @@ use rhue_common::Diagnostic;
 
 use crate::Exported;
 
-/// A saved chunk's types read back: what it returns, and its globals.
+/// A saved chunk's types read back, what it returns and its globals.
 pub type Imported = (Type, Vec<(Rc<str>, Type)>);
 use crate::check::Checker;
 use crate::types::{AliasDef, ClosedScope, FnType, GenericVar, NamedType, Pack, Type};
@@ -44,17 +44,17 @@ impl ClassType {
 pub struct Env {
     pub(crate) globals: HashMap<Rc<str>, Type>,
     pub(crate) classes: HashMap<Rc<str>, ClassType>,
-    /// Globals the host (or the standard library) declared. Scripts must
-    /// respect their types; globals scripts defined can be redefined.
+    /// Globals the host (or the standard library) declared. Scripts have to
+    /// respect their types, globals scripts defined can be redefined.
     pub(crate) host: HashSet<Rc<str>>,
-    /// The types of modules already checked, for `require("name")`.
+    /// The types of modules that already got checked, for `require("name")`.
     pub(crate) modules: HashMap<Rc<str>, Type>,
-    /// The aliases of imported types (see [`Env::import`]), kept alive
-    /// here: the aliases only point at their scope weakly.
+    /// The aliases of imported types (see [`Env::import`]), kept alive here
+    /// since the aliases only point at their scope weakly.
     pub(crate) imported: Vec<Rc<ClosedScope>>,
 }
 
-/// The standard library, in Luau type syntax. Overloads are intersections.
+/// The standard library in Luau type syntax. Overloads are intersections.
 const BUILTINS: &[(&str, &str)] = &[
     ("print", "(...any) -> ()"),
     ("type", "(any) -> string"),
@@ -71,8 +71,8 @@ const BUILTINS: &[(&str, &str)] = &[
     ("rawget", "(any, any) -> any"),
     ("rawset", "<T>(T, any, any) -> T"),
     ("rawlen", "(any) -> number"),
-    // Calls to these are typed specially (see `meta.rs`); these types are
-    // for the functions used as values.
+    // calls to these get typed specially (see `meta.rs`), these types are for
+    // when the functions get used as values
     ("setmetatable", "<T>(T, any) -> T"),
     ("getmetatable", "(any) -> any"),
     ("unpack", "<T>({T}, number?, number?) -> ...T"),
@@ -180,8 +180,8 @@ const BUILTINS: &[(&str, &str)] = &[
                 & ((thread, number, string) -> ...any),
         }",
     ),
-    // `vector` is a host type whose components are declared in `Env::new`;
-    // its arithmetic is built into the checker.
+    // `vector` is a host type with its components declared in `Env::new`, the
+    // checker has its arithmetic built in
     (
         "vector",
         "{
@@ -196,7 +196,7 @@ const BUILTINS: &[(&str, &str)] = &[
             zero: vector, one: vector,
         }",
     ),
-    // `buffer` is a host type with no members, declared by mentioning it.
+    // `buffer` is a host type with no members, declared just by mentioning it
     (
         "buffer",
         "{
@@ -218,7 +218,7 @@ const BUILTINS: &[(&str, &str)] = &[
             writebits: (buffer, number, number, number) -> (),
         }",
     ),
-    // `thread` is declared as a host type with no members by mentioning it.
+    // same for `thread`
     (
         "coroutine",
         "{
@@ -242,7 +242,7 @@ impl Env {
             env.declare_global(name, ty)
                 .unwrap_or_else(|e| panic!("builtin `{name}`: {}", e[0].message));
         }
-        // `vector`'s components, read-only (Roblox's capitals too).
+        // `vector`'s components, read-only (Roblox's capitals too)
         for c in ["x", "y", "z", "X", "Y", "Z"] {
             env.declare_property("vector", c, "number", false)
                 .expect("a vector component's type");
@@ -255,11 +255,11 @@ impl Env {
         Env::default()
     }
 
-    /// Reads back a chunk's exported types (see [`Exported`]): its aliases
-    /// become aliases that resolve among themselves wherever they're used,
-    /// so recursive types stay recursive and classes keep their methods
-    /// and operators. Returns the chunk's return type and its globals'
-    /// types, or `None` if something doesn't parse or resolve here.
+    /// Reads back a chunk's exported types (see [`Exported`]). Its aliases
+    /// become aliases that resolve among themselves wherever they're used, so
+    /// recursive types stay recursive and classes keep their methods and
+    /// operators. Returns the chunk's return type and its globals' types, or
+    /// `None` if something doesn't parse or resolve here.
     pub fn import(&mut self, ex: &Exported) -> Option<Imported> {
         let scope: Rc<ClosedScope> = Rc::default();
         for def in &ex.aliases {
@@ -283,8 +283,8 @@ impl Env {
         let result = {
             let aliases = scope.borrow().clone();
             let mut c = Checker::for_declarations(self);
-            // Every alias once, so a broken one fails here rather than in
-            // whatever checks code that uses it.
+            // every alias once, so a broken one fails here instead of in
+            // whatever checks code that uses it
             for alias in aliases.values() {
                 let mut args = Vec::new();
                 let mut packs = Vec::new();
@@ -320,18 +320,18 @@ impl Env {
         result
     }
 
-    /// Parses and resolves a type in Luau syntax against what's declared
-    /// (host types, other globals' types aren't in scope); `None` if it
-    /// doesn't parse or names something unknown. For reading back
+    /// Parses and resolves a type in Luau syntax against what's declared (host
+    /// types, other globals' types aren't in scope). `None` if it doesn't parse
+    /// or names something unknown. For reading back
     /// [`portable`](crate::portable) types.
     pub fn parse_type(&self, ty: &str) -> Option<Type> {
         let t = rhue_parser::parse_type(ty).ok()?;
         Checker::for_declarations(self).resolve_declaration(&t).ok()
     }
 
-    /// Resolves a host declaration. Names that aren't known types are
-    /// taken to be host types declared later (a function can mention a
-    /// userdata type before the type itself is set up).
+    /// Resolves a host declaration. Names that aren't known types are assumed
+    /// to be host types declared later (a function can mention a userdata type
+    /// before the type itself is set up).
     fn resolve(&mut self, ty: &str) -> Result<Type, Vec<Diagnostic>> {
         let t = rhue_parser::parse_type(ty)?;
         match Checker::for_declarations(self).resolve_declaration(&t) {
@@ -357,8 +357,8 @@ impl Env {
         }
     }
 
-    /// Adds a field to a global table's type (creating the table type if
-    /// needed), e.g. a userdata type's constructor `Player.new`.
+    /// Adds a field to a global table's type (making the table type if needed),
+    /// like a userdata type's constructor `Player.new`.
     pub fn declare_global_field(
         &mut self,
         table: &str,
@@ -381,7 +381,7 @@ impl Env {
         self.globals.iter()
     }
 
-    /// What `require(name)` gives, if the module has been checked.
+    /// What `require(name)` gives, if the module's been checked.
     pub fn module_type(&self, name: &str) -> Option<&Type> {
         self.modules.get(name)
     }
@@ -411,9 +411,9 @@ impl Env {
         }
     }
 
-    /// Replaces the globals scripts defined with `globals`, returning the
-    /// ones there were (for checking chunks that run in an environment of
-    /// their own, whose globals other chunks don't see).
+    /// Swaps the globals scripts defined for `globals` and returns the old ones
+    /// (for checking chunks that run in their own environment, whose globals
+    /// other chunks can't see).
     pub fn swap_script_globals(&mut self, globals: Vec<(Rc<str>, Type)>) -> Vec<(Rc<str>, Type)> {
         let host = &self.host;
         let mut old: Vec<(Rc<str>, Type)> = self
@@ -441,7 +441,7 @@ impl Env {
         self.globals.get(name)
     }
 
-    /// Declares a host type (idempotent). Its name can then be used in
+    /// Declares a host type (fine to call twice). Its name can then be used in
     /// types: `(Player) -> number`.
     pub fn declare_class(&mut self, name: &str) {
         self.classes.entry(Rc::from(name)).or_default();

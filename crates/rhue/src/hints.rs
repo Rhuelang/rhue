@@ -1,5 +1,5 @@
-//! Inlay hints: the types the checker inferred where the source doesn't
-//! say, for editors to show inline (and offer to write in).
+//! Inlay hints, the types the checker inferred where the source doesn't say,
+//! for editors to show inline (and offer to write in).
 
 use std::collections::HashMap;
 
@@ -11,14 +11,14 @@ use crate::Span;
 /// A type shown after a name or a parameter list.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InlayHint {
-    /// Where it goes: just after the name, or after a function's `)`.
+    /// Where it goes, right after the name or after a function's `)`.
     pub offset: u32,
     /// What's shown: `: number`.
     pub label: String,
     /// Whether it's a variable's type or a function's results.
     pub kind: HintKind,
-    /// The annotation to insert at `offset` to make it explicit, when the
-    /// type can be written as Luau syntax.
+    /// The annotation to insert at `offset` to make it explicit, when the type
+    /// can be written as Luau syntax.
     pub insert: Option<String>,
 }
 
@@ -31,12 +31,12 @@ pub enum HintKind {
     Return,
 }
 
-/// Longest label shown; longer ones are cut (the annotation isn't).
+/// Longest label that gets shown, longer ones get cut (the annotation doesn't).
 const MAX_LABEL: usize = 60;
 
 pub(crate) fn hints(body: &Block, source: &str, types: &[(Span, Type)]) -> Vec<InlayHint> {
-    // The last type recorded for a span is the final one (flow locals are
-    // updated in place; functions are recorded each time they're checked).
+    // the last type recorded for a span is the final one (flow locals get
+    // updated in place, functions get recorded every time they're checked)
     let types: HashMap<Span, &Type> = types.iter().map(|(s, t)| (*s, t)).collect();
     let mut h = Hints {
         source,
@@ -62,7 +62,7 @@ fn uninformative(t: &Type) -> bool {
 
 impl Hints<'_> {
     fn push(&mut self, offset: u32, shown: String, kind: HintKind) {
-        // Results are a pack, which parses as a function type's results.
+        // results are a pack, which parses as a function type's results
         let as_type = match kind {
             HintKind::Type => shown.clone(),
             HintKind::Return => format!("() -> {shown}"),
@@ -210,7 +210,7 @@ impl Hints<'_> {
         self.block(&f.body);
     }
 
-    /// Just after the `)` closing a function's parameters.
+    /// Right after the `)` closing a function's parameters.
     fn params_end(&self, span: Span) -> Option<u32> {
         let text = &self.source[span.start as usize..span.end as usize];
         let mut depth = 0u32;

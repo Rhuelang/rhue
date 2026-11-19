@@ -1,7 +1,7 @@
-//! `debug.traceback` and `debug.info`, as in Luau: the call stack as text,
-//! and facts about a stack level or a function. Level 1 is the function
-//! that called `debug.info`/`debug.traceback`, 2 its caller, and so on;
-//! level 0 is the native itself.
+//! `debug.traceback` and `debug.info`, same as Luau: the call stack as text,
+//! and facts about a stack level or a function. Level 1 is whatever called
+//! `debug.info`/`debug.traceback`, 2 is its caller and so on. Level 0 is the
+//! native itself.
 
 use std::rc::Rc;
 
@@ -13,8 +13,7 @@ use crate::{Frame, NativeCtx, NativeError, Rets, RuntimeError, TraceEntry, Value
 
 type R = Result<Rets, NativeError>;
 
-/// The Lua frames of `thread` (the running one when `None`), innermost
-/// first.
+/// The Lua frames of `thread` (the running one when `None`), innermost first.
 fn frames(vm: &Vm, thread: Option<ThreadRef>) -> Vec<&Frame> {
     let list: &[Frame] = match thread {
         Some(t) if t != vm.current => &vm.heap.thread(t).state.frames,
@@ -40,10 +39,10 @@ fn traceback(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let message = match message {
         Value::Nil => None,
         Value::String(_) | Value::Number(_) => Some(text_arg(ctx, args, i, "traceback")?),
-        // Lua hands anything else back untouched.
+        // Lua hands anything else back untouched
         other => return Ok(smallvec![other]),
     };
-    // Another thread's frames start at its own top (level 0).
+    // another thread's frames start at its own top (level 0)
     let default = if thread.is_some_and(|t| t != ctx.vm.current) {
         0
     } else {
@@ -66,7 +65,7 @@ fn traceback(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
         });
         entries.extend(vm.trail_trace(f));
     }
-    // Level 1 is the innermost Lua frame (0, this native, isn't one).
+    // level 1 is the innermost Lua frame (0, this native, isn't one)
     let skip = (level.max(1) - 1) as usize;
     let entries: Vec<TraceEntry> = entries.into_iter().skip(skip).collect();
     let text = if entries.is_empty() {
@@ -154,7 +153,7 @@ fn info(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
             }
             let vm = ctx.vm();
             if level == 0 && thread.is_none_or(|t| t == vm.current) {
-                // This native.
+                // this native
                 Facts {
                     source: "[C]".into(),
                     line: -1.0,
@@ -167,7 +166,7 @@ fn info(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
                 let own = thread.is_none_or(|t| t == vm.current);
                 let index = if own { level - 1 } else { level } as usize;
                 let Some(f) = frames(vm, thread).get(index).copied() else {
-                    // Past the end of the stack: nothing.
+                    // past the end of the stack, nothing
                     return Ok(SmallVec::new());
                 };
                 let span = Vm::span_of(f, f.pc.saturating_sub(1));

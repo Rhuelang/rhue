@@ -1,7 +1,7 @@
-//! Decoding string literal tokens into their runtime text.
+//! Turns string literal tokens into their runtime text.
 //!
-//! Rhue strings are UTF-8 (`str`), unlike Lua's byte strings. Escapes that
-//! would produce invalid UTF-8 (`"\xff"`) are rejected at compile time.
+//! Rhue strings are UTF-8 (`str`), not byte strings like Lua's. Escapes that
+//! would make invalid UTF-8 (`"\xff"`) get rejected at compile time.
 
 use rhue_common::{Diagnostic, Span};
 
@@ -17,7 +17,7 @@ pub fn decode(raw: &str, span: Span) -> Result<String, Diagnostic> {
 fn decode_long(raw: &str) -> String {
     let level = raw[1..].bytes().take_while(|&b| b == b'=').count();
     let body = &raw[level + 2..raw.len() - level - 2];
-    // A newline right after the opening bracket is skipped.
+    // a newline right after the opening bracket gets skipped
     let body = body
         .strip_prefix("\r\n")
         .or_else(|| body.strip_prefix('\n'))
@@ -30,8 +30,8 @@ fn decode_quoted(raw: &str, span: Span) -> Result<String, Diagnostic> {
     decode_escaped(&raw[1..raw.len() - 1], span.start + 1, false)
 }
 
-/// Decodes a text piece of an interpolated string, which starts at byte
-/// `start` of the source. `` \` ``, `\{` and `\}` are escapes there too.
+/// Decodes a text piece of an interpolated string starting at byte `start` of
+/// the source. `` \` ``, `\{` and `\}` are escapes in there too.
 #[allow(clippy::result_large_err)]
 pub fn decode_interp_text(body: &str, start: u32) -> Result<String, Diagnostic> {
     decode_escaped(body, start, true)

@@ -8,14 +8,15 @@ use crate::context::ScriptError;
 use crate::convert::{Args, FromArg, IntoValues};
 use crate::{Context, Value};
 
-/// What a native may return: any [`IntoValues`] (a value, `()`, a tuple,
-/// a [`Variadic`](crate::Variadic)), or a `Result` of one whose error
-/// converts into [`ScriptError`] (`String` and `&str` do).
+/// What a native can return: any [`IntoValues`] (a value, `()`, a tuple, a
+/// [`Variadic`](crate::Variadic)), or a `Result` of one whose error converts
+/// into [`ScriptError`] (`String` and `&str` do).
 pub trait IntoNativeResult {
-    /// Converts a function's return value into its results, or an error to raise in the script.
+    /// Converts a function's return value into its results, or an error to
+    /// raise in the script.
     fn into_native_result(self, cx: &mut Context<'_>) -> Result<Vec<Value>, ScriptError>;
 
-    /// Like `into_native_result`, appending VM values to `out`.
+    /// Like `into_native_result`, but appends VM values to `out`.
     #[doc(hidden)]
     fn lower_result(self, cx: &mut Context<'_>, out: &mut rhue_vm::Rets) -> Result<(), ScriptError>
     where
@@ -94,13 +95,14 @@ pub(crate) fn fn_signature(params: &[String], result: &str) -> String {
 /// Marks natives whose first parameter is `&mut Context`.
 pub struct WithContext;
 
-/// A Rust function that can be registered as a script function: a closure
-/// or `fn` whose parameters are [`FromArg`] (any [`FromValue`](crate::FromValue)
+/// A Rust function that can be registered as a script function: a closure or
+/// `fn` whose parameters are [`FromArg`] (any [`FromValue`](crate::FromValue)
 /// type, or a trailing [`Variadic`](crate::Variadic)) and whose result is
-/// [`IntoNativeResult`]. It may take `&mut Context` first, to call back into
-/// scripts. `Marker` only tells the impls apart; it's always inferred.
+/// [`IntoNativeResult`]. It can take `&mut Context` first to call back into
+/// scripts. `Marker` just tells the impls apart, it's always inferred.
 pub trait IntoNative<Marker> {
-    /// Wraps the function as a native named `name` (the name appears in argument errors).
+    /// Wraps the function as a native named `name` (the name shows up in
+    /// argument errors).
     fn into_native(self, name: Rc<str>) -> NativeFn;
 
     /// The function's Luau type, for the type checker:
@@ -203,10 +205,10 @@ natives!(A, B, C, D, E, F, G);
 natives!(A, B, C, D, E, F, G, H);
 
 /// An async Rust function that can be registered with
-/// [`Engine::register_async`](crate::Engine::register_async): parameters as
-/// for [`IntoNative`], returning a future whose output is
-/// [`IntoNativeResult`]. The future doesn't borrow the engine, so it takes
-/// its arguments by value (`async move`).
+/// [`Engine::register_async`](crate::Engine::register_async). Parameters work
+/// like [`IntoNative`], and it returns a future whose output is
+/// [`IntoNativeResult`]. The future doesn't borrow the engine, so it takes its
+/// arguments by value (`async move`).
 pub trait IntoAsyncNative<Marker> {
     /// Wraps the function as a native that parks its future in `state`.
     #[doc(hidden)]
@@ -216,8 +218,8 @@ pub trait IntoAsyncNative<Marker> {
         state: Rc<std::cell::RefCell<crate::asyncs::AsyncState>>,
     ) -> NativeFn;
 
-    /// The function's Luau type (what the script sees: the future's
-    /// output, not the future).
+    /// The function's Luau type (what the script sees, the future's output and
+    /// not the future).
     fn signature() -> String
     where
         Self: Sized;

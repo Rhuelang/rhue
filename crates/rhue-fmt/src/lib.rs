@@ -1,30 +1,30 @@
-//! `rhue fmt`: a formatter that keeps your line breaks and comments and
+//! `rhue fmt`, a formatter that keeps your line breaks and comments and
 //! fixes everything else.
 //!
-//! It works on the token stream, not the syntax tree, so nothing a tree
-//! would lose (comments, blank lines, where you broke a long call) is lost.
-//! For each line it decides:
+//! It works on tokens, not a syntax tree, so nothing a tree would lose
+//! (comments, blank lines, where you broke a long call) gets lost. For each
+//! line it works out:
 //!
 //! - **Indentation**, from the blocks and brackets open at its start:
-//!   `function`, `then`, `do`, `repeat`, `(`, `[`, `{`. Several opened on one
-//!   line indent once (`foo(function()` indents its body one level), and a
-//!   line that starts by closing some (`end)`, `})`) goes back to where they
-//!   opened. A line continuing an expression (ending or starting with a
-//!   binary operator, `.`, `:`) gets one more level. Luau's if-expressions
-//!   (`if a then b else c`) don't indent.
+//!   `function`, `then`, `do`, `repeat`, `(`, `[`, `{`. A few opened on one
+//!   line only indent once (`foo(function()` indents its body one level),
+//!   and a line that starts by closing some (`end)`, `})`) goes back to
+//!   where they opened. A line continuing an expression (ending or starting
+//!   with a binary operator, `.`, `:`) gets one extra level. Luau's
+//!   if-expressions (`if a then b else c`) don't indent.
 //! - **Spacing** between tokens: one space around binary operators, `=`,
-//!   `->`, `|`, `&`; after commas and keywords; inside non-empty braces; none
-//!   inside parentheses and brackets, before `(` in calls, around `.`, after
-//!   unary operators. `obj:method(...)` and generics (`f<T>(x)`) stay tight
-//!   while `name: type` and comparisons get spaces; call sugar (`f "x"`,
-//!   `f {..}`) keeps whether you had a space.
-//! - **Blank lines**: at most one in a row, none at the start or end.
+//!   `->`, `|`, `&`, after commas and keywords, and inside non-empty
+//!   braces. None inside parentheses and brackets, before `(` in calls,
+//!   around `.`, or after unary operators. `obj:method(...)` and generics
+//!   (`f<T>(x)`) stay tight while `name: type` and comparisons get spaces,
+//!   and call sugar (`f "x"`, `f {..}`) keeps whatever you had.
+//! - **Blank lines**: one in a row at most, none at the start or end.
 //!
-//! The output is checked: it must lex to exactly the same tokens and
-//! comments as the input, or formatting fails with an internal error rather
-//! than changing what the program means. Formatting is idempotent, and a
-//! property test checks that inputs differing only in spacing and
-//! indentation format identically.
+//! The output gets checked. It has to lex to exactly the same tokens and
+//! comments as the input, or formatting fails with an internal error
+//! instead of changing what the program means. It's idempotent, and a
+//! property test checks that inputs that only differ in spacing and
+//! indentation format the same.
 
 use rhue_common::Diagnostic;
 use rhue_lexer::Token;
@@ -47,9 +47,9 @@ impl Default for FormatOptions {
 /// Why a source couldn't be formatted.
 #[derive(Debug)]
 pub enum FormatError {
-    /// It doesn't parse; formatting only applies to valid code.
+    /// It doesn't parse, formatting only works on valid code.
     Syntax(Vec<Diagnostic>),
-    /// The formatter would have changed the program (a bug).
+    /// The formatter would've changed the program (a bug).
     Internal(String),
 }
 
@@ -66,11 +66,11 @@ struct Item<'a> {
     text: &'a str,
     /// Newlines in the whitespace before it.
     newlines: usize,
-    /// Whether any whitespace came before it.
+    /// Whether there was any whitespace before it.
     space: bool,
 }
 
-/// Formats `source`, or explains why it can't.
+/// Formats `source`, or tells you why it can't.
 pub fn format(source: &str, options: &FormatOptions) -> Result<String, FormatError> {
     let source = source.replace("\r\n", "\n");
     rhue_parser::parse_chunk(&source).map_err(FormatError::Syntax)?;
@@ -104,10 +104,10 @@ fn items(source: &str) -> Vec<Item<'_>> {
     out
 }
 
-/// Whitespace facts between the last thing pushed (ending at `from`) and
-/// `to`, ignoring comments already pushed from that range.
+/// Whitespace info between the last thing pushed (ending at `from`) and `to`,
+/// ignoring comments already pushed from that range.
 fn pending(source: &str, out: &[Item<'_>], from: usize, to: usize) -> (usize, bool) {
-    // The whitespace right before `to`, back to the previous item's end.
+    // the whitespace right before `to`, back to the end of the item before
     let prev_end = out
         .last()
         .map(|i| i.text.as_ptr() as usize - source.as_ptr() as usize + i.text.len())
@@ -126,7 +126,7 @@ fn gap<'a>(source: &'a str, from: usize, to: usize, out: &mut Vec<Item<'a>>) {
             i += 1;
             continue;
         }
-        // A comment: `--[[...]]` (any level) or to the end of the line.
+        // a comment, `--[[...]]` (any level) or to the end of the line
         let start = i;
         let rest = &source[i + 2..to];
         let block_level = rest.strip_prefix('[').and_then(|r| {
@@ -162,7 +162,7 @@ fn gap<'a>(source: &'a str, from: usize, to: usize, out: &mut Vec<Item<'a>>) {
 enum Frame {
     /// A block or bracket, and the line it opened on.
     Open(usize),
-    /// An if-expression (no `end`, no indentation).
+    /// An if-expression (no `end`, no indent).
     IfExpr,
 }
 
@@ -181,7 +181,7 @@ fn is_closer(k: Kind) -> bool {
     )
 }
 
-/// Tokens after which an expression is expected (so `if` there is an
+/// Tokens after which an expression is expected (so an `if` there is an
 /// if-expression, and `-` is unary).
 fn expects_operand(prev: Option<Token>) -> bool {
     use Token::*;
@@ -241,10 +241,10 @@ fn is_binary(t: Token) -> bool {
 struct Indenter {
     stack: Vec<Frame>,
     /// The last token was the `else` of an if-expression (so an `if` right
-    /// after it is one too).
+    /// after is one too).
     after_expr_else: bool,
-    /// Lines whose opened frames were closed at the start of a line (their
-    /// remaining frames no longer add indentation).
+    /// Lines whose opened frames got closed at the start of a line (their
+    /// leftover frames don't add indentation anymore).
     retired: Vec<usize>,
 }
 
@@ -275,7 +275,7 @@ impl Indenter {
         self.stack.last() == Some(&Frame::IfExpr)
     }
 
-    /// Applies one token; returns the line of a frame it closed, if any.
+    /// Applies one token, returns the line of a frame it closed if any.
     fn token(&mut self, t: Token, prev: Option<Token>, line: usize) -> Option<usize> {
         use Token::*;
         let after_expr_else = std::mem::replace(&mut self.after_expr_else, false);
@@ -330,7 +330,7 @@ fn render(items: &[Item<'_>], options: &FormatOptions) -> String {
         after_expr_else: false,
         retired: Vec::new(),
     };
-    // The token before each item (across lines), for unary minus.
+    // the token before each item (across lines), for unary minus
     let mut before: Vec<Option<Token>> = Vec::with_capacity(items.len());
     let mut last = None;
     for it in items {
@@ -346,7 +346,7 @@ fn render(items: &[Item<'_>], options: &FormatOptions) -> String {
     let mut i = 0;
     let mut line_no = 0usize;
     while i < items.len() {
-        // One line: items up to the next one that starts on a new line.
+        // one line: items up to the next one that starts on a new line
         let start = i;
         i += 1;
         while i < items.len() && items[i].newlines == 0 {
@@ -357,7 +357,7 @@ fn render(items: &[Item<'_>], options: &FormatOptions) -> String {
             lines.push(String::new());
         }
         let depth_before = ind.stack.len();
-        // Leading closers decide this line's own indentation.
+        // leading closers decide this line's own indentation
         let mut k = start;
         let mut reopen = false;
         while k < i
@@ -366,8 +366,8 @@ fn render(items: &[Item<'_>], options: &FormatOptions) -> String {
                 && ind.top_is_if_expr())
         {
             if let Kind::Tok(t) = items[k].kind {
-                // A statement `else` closes the block above it and opens
-                // its own, which only indents the lines after it.
+                // a statement `else` closes the block above it and opens its
+                // own, which only indents the lines after it
                 let closed = if t == Token::Else && !ind.top_is_if_expr() {
                     reopen = true;
                     ind.pop_open()
@@ -430,9 +430,9 @@ fn render(items: &[Item<'_>], options: &FormatOptions) -> String {
     out
 }
 
-/// Which `<` / `>` tokens delimit generics (`f<T>(x)`, `type Map<K, V>`,
-/// `Array<number>`) rather than compare: a `<` right after a name whose
-/// matching `>` on the same line encloses only things a type list can hold.
+/// Which `<` / `>` tokens are generics (`f<T>(x)`, `type Map<K, V>`,
+/// `Array<number>`) and not comparisons: a `<` right after a name whose
+/// matching `>` on the same line only wraps things a type list can hold.
 fn generics(items: &[Item<'_>]) -> Vec<bool> {
     use Token::*;
     let mut out = vec![false; items.len()];
@@ -450,7 +450,7 @@ fn generics(items: &[Item<'_>]) -> Vec<bool> {
                 Kind::Tok(Gt) => {
                     depth -= 1;
                     if depth == 0 {
-                        // Mark this pair and any nested ones inside.
+                        // mark this pair and any nested ones inside
                         for k in i..=j {
                             if matches!(items[k].kind, Kind::Tok(Lt | Gt)) {
                                 out[k] = true;
@@ -471,8 +471,8 @@ fn generics(items: &[Item<'_>]) -> Vec<bool> {
     out
 }
 
-/// Whether to put a space between items `a` and `a + 1` (adjacent on one
-/// line); `before_a` is the token before `a`.
+/// Whether to put a space between items `a` and `a + 1` (next to each other on
+/// one line). `before_a` is the token before `a`.
 fn space_between(items: &[Item<'_>], a: usize, before_a: Option<Token>, generic: &[bool]) -> bool {
     use Token::*;
     let (x, y) = (&items[a], &items[a + 1]);
@@ -482,11 +482,11 @@ fn space_between(items: &[Item<'_>], a: usize, before_a: Option<Token>, generic:
         (Kind::LineComment, _) => return true,
         (Kind::Tok(p), Kind::Tok(q)) => (p, q),
     };
-    // Never glue two minuses into a comment.
+    // never glue two minuses into a comment
     if ta == Minus && tb == Minus {
         return true;
     }
-    // Unary minus binds to its operand.
+    // unary minus sticks to its operand
     if ta == Minus && expects_operand(before_a) {
         return false;
     }
@@ -501,7 +501,7 @@ fn space_between(items: &[Item<'_>], a: usize, before_a: Option<Token>, generic:
         (LParen | LBracket | Dot | Hash, _) => false,
         (Comma | Semi, _) => true,
         (_, Colon) => false,
-        // `obj:method(...)` (a name, then call arguments) vs `name: type`.
+        // `obj:method(...)` (a name, then call arguments) vs `name: type`
         (Colon, _) => {
             !(tb == Ident && matches!(tok(a + 2), Some(LParen | String | LBrace | InterpString)))
         }
@@ -514,10 +514,10 @@ fn space_between(items: &[Item<'_>], a: usize, before_a: Option<Token>, generic:
             Ident | RParen | RBracket | RBrace | String | Function | Question
         ),
         (_, LBracket) => !matches!(ta, Ident | RParen | RBracket | String),
-        // A generic type pack, `T...` (a name is never followed by `...`
-        // in an expression).
+        // a generic type pack, `T...` (a name never gets followed by `...` in
+        // an expression)
         (Ident, Ellipsis) => false,
-        // `f "x"` / `f {..}` call sugar: keep the space or its absence.
+        // `f "x"` / `f {..}` call sugar, keep the space or the lack of one
         (Ident | RParen | RBracket, String | LBrace) => y.space,
         _ => true,
     }

@@ -1,8 +1,7 @@
-//! The `utf8` library and the side-effect-free part of `os`: `time`,
-//! `clock`, `date` and `difftime`. Nothing here touches files, processes or
-//! the environment, so it's safe in a sandbox. Dates are UTC (there's no
-//! time zone database), and `os.clock` counts seconds since the VM was
-//! made.
+//! The `utf8` library and the side-effect-free part of `os`: `time`, `clock`,
+//! `date` and `difftime`. Nothing in here touches files, processes or the
+//! environment, so it's safe in a sandbox. Dates are UTC (there's no time zone
+//! database), and `os.clock` counts seconds since the VM was made.
 
 use std::rc::Rc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -54,7 +53,7 @@ fn lib(vm: &mut Vm, entries: Vec<(&str, crate::NativeFn)>) -> Value {
     Value::Table(vm.heap_mut().alloc_table(table))
 }
 
-// --- os ----------------------------------------------------------------------------
+// ─ os ────────────────────────────────────────────────────────────────────────
 
 fn now() -> f64 {
     SystemTime::now()
@@ -95,9 +94,8 @@ fn civil_from_days(z: i64) -> (i64, i64, i64) {
     )
 }
 
-/// `os.time([t])`: now, or the UTC time a date table describes (fields
-/// may be out of range: `{year = 2026, month = 13, day = 1}` is January
-/// 2027).
+/// `os.time([t])`, now or the UTC time a date table describes (fields can be
+/// out of range: `{year = 2026, month = 13, day = 1}` is January 2027).
 fn os_time(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let t = match args.first().copied() {
         None | Some(Value::Nil) => return Ok(smallvec![Value::Number(now())]),
@@ -122,7 +120,7 @@ fn os_time(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let hour = field("hour", Some(12))?;
     let min = field("min", Some(0))?;
     let sec = field("sec", Some(0))?;
-    // Normalize the month so `days_from_civil` sees 1..=12.
+    // normalize the month so `days_from_civil` sees 1..=12
     let (year, month) = (
         year + (month - 1).div_euclid(12),
         (month - 1).rem_euclid(12) + 1,
@@ -155,7 +153,7 @@ fn date_parts(t: i64) -> DateParts {
         hour: rem / 3600,
         min: rem % 3600 / 60,
         sec: rem % 60,
-        // 1970-01-01 was a Thursday (5 with Sunday = 1).
+        // 1970-01-01 was a Thursday (5 with Sunday = 1)
         wday: (days + 4).rem_euclid(7) + 1,
         yday: days - days_from_civil(year, 1, 1) + 1,
     }
@@ -185,9 +183,9 @@ const MONTHS: [&str; 12] = [
     "December",
 ];
 
-/// `os.date([format [, time]])`, always in UTC (a leading `!` is
-/// accepted). `*t` gives a table; otherwise `strftime`-style `%`
-/// directives: `a A b B c d H I j m M p S w x X y Y %`.
+/// `os.date([format [, time]])`, always UTC (a leading `!` is fine). `*t` gives
+/// a table, otherwise `strftime`-style `%` directives: `a A b B c d H I j m M p
+/// S w x X y Y %`.
 fn os_date(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let fmt = match args.first() {
         None | Some(Value::Nil) => "%c".to_string(),
@@ -282,7 +280,7 @@ fn os_difftime(_: &mut NativeCtx<'_>, args: &[Value]) -> R {
     Ok(smallvec![Value::Number(a - b)])
 }
 
-// --- utf8 --------------------------------------------------------------------------
+// ─ utf8 ──────────────────────────────────────────────────────────────────────
 
 fn utf8_char(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let mut out = String::new();
@@ -302,8 +300,8 @@ fn utf8_char(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     Ok(smallvec![ctx.string(&out)])
 }
 
-/// 1-based, negative from the end (Lua's `posrelat`), as a 0-based offset
-/// that may be one past the end or negative.
+/// 1-based, negative from the end (Lua's `posrelat`), as a 0-based offset that
+/// might be one past the end or negative.
 fn rel(i: i64, len: usize) -> i64 {
     if i >= 0 { i - 1 } else { len as i64 + i }
 }
@@ -331,8 +329,8 @@ fn utf8_codepoint(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     Ok(out)
 }
 
-/// `utf8.len(s [, i [, j]])`: characters starting in bytes `i..=j`, or
-/// `nil, position` if `i` is inside a character.
+/// `utf8.len(s [, i [, j]])`, characters starting in bytes `i..=j`, or `nil,
+/// position` if `i` is inside a character.
 fn utf8_len(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let s = text_arg(ctx, args, 0, "len")?;
     let i0 = rel(opt_int(args, 1, "len", 1)?, s.len());
@@ -357,8 +355,8 @@ fn utf8_len(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     Ok(smallvec![Value::Number(n as f64)])
 }
 
-/// `utf8.offset(s, n [, i])`: the byte position where the `n`-th
-/// character (counting from the one at `i`) starts.
+/// `utf8.offset(s, n [, i])`, the byte position where the `n`-th character
+/// (counting from the one at `i`) starts.
 fn utf8_offset(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let s = text_arg(ctx, args, 0, "offset")?;
     let b = s.as_bytes();
@@ -415,7 +413,7 @@ fn utf8_codes(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
         Rc::new(|ctx: &mut NativeCtx<'_>, args: &[Value]| -> R {
             let s = text_arg(ctx, args, 0, "codes")?;
             let pos = crate::stdlib::int(args, 1, "codes")?;
-            // Skip the character at `pos` (1-based), then report the next.
+            // skip the character at `pos` (1-based), then report the next
             let mut k = pos.max(0) as usize;
             if pos > 0 {
                 let Some(c) = s.get(k - 1..).and_then(|r| r.chars().next()) else {

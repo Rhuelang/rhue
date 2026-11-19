@@ -49,7 +49,7 @@ fn at(loc: &Location) -> String {
     )
 }
 
-// --- inlay hints ----------------------------------------------------------------------
+// ─ Inlay Hints ───────────────────────────────────────────────────────────────
 
 fn hints(text: &str) -> Vec<(String, String, bool)> {
     let u = uri(&std::env::temp_dir().join("rhue-m17-hints.rhue"));
@@ -98,7 +98,7 @@ local t = total(xs)
     assert!(has("v", ": number"), "{h:?}");
     assert!(has("best", ": number?"), "a flow local's final type: {h:?}");
     assert!(has("t", ": number"), "{h:?}");
-    // Not for what's obvious, written, or thrown away.
+    // not for what's obvious, written, or thrown away
     assert!(
         !h.iter()
             .any(|(b, _, _)| b == "sum" || b == "items" || b == "_"),
@@ -121,7 +121,7 @@ local v = V.new()
     assert!(!v.2, "a type with a metatable has no syntax: {h:?}");
 }
 
-// --- code actions ---------------------------------------------------------------------
+// ─ Code Actions ──────────────────────────────────────────────────────────────
 
 /// Code actions for the range of the `n`th `needle`, with the text each
 /// would produce.
@@ -164,7 +164,7 @@ fn quick_fixes_for_misspellings() {
     let a = actions(src, "uppr");
     assert!(a[0].1.contains("s:upper()"), "{a:?}");
 
-    // Methods of a class, through its metatable.
+    // methods of a class, through its metatable
     let src = "--!strict
 local C = {}
 C.__index = C
@@ -175,7 +175,7 @@ C.new():incremnet()
     let a = actions(src, "incremnet");
     assert!(a[0].1.contains("C.new():increment()"), "{a:?}");
 
-    // Nothing close: no fix.
+    // nothing close: no fix
     let src = "--!strict\nlocal p = { name = 'a' }\nprint(p.zzzzz)\n";
     assert!(actions(src, "zzzzz").is_empty());
 }
@@ -193,7 +193,7 @@ local n: number = find().v
         fixed.contains("local n: number = assert(find()).v"),
         "{fixed}"
     );
-    // The fix works: `assert` returns its argument without the nil.
+    // the fix works: `assert` returns its argument without the nil
     let check = rhue::Engine::new().check("t.rhue", fixed);
     assert!(check.is_ok(), "{:?}", check.err().map(|e| e.render(false)));
 }
@@ -210,7 +210,7 @@ fn actions_write_in_inferred_types() {
         a[0].1
             .contains("local function count(): number return #xs end")
     );
-    // Each written type checks.
+    // each written type checks
     for (_, fixed) in actions(src, src.trim()) {
         assert!(
             rhue::Engine::new().check("t.rhue", &fixed).is_ok(),
@@ -219,7 +219,7 @@ fn actions_write_in_inferred_types() {
     }
 }
 
-// --- symbols --------------------------------------------------------------------------
+// ─ Symbols ───────────────────────────────────────────────────────────────────
 
 fn tree(symbols: &[DocumentSymbol], depth: usize, out: &mut Vec<String>) {
     for s in symbols {
@@ -273,7 +273,7 @@ fn document_symbols_nest() {
     ] {
         assert!(s.contains(line), "{line} in\n{s}");
     }
-    // Ranges hold their names.
+    // ranges hold their names
     fn check(s: &[DocumentSymbol]) {
         for x in s {
             assert!(
@@ -320,11 +320,11 @@ fn workspace_symbols_search_every_file() {
             .any(|n| n.0 == "newThing" || n.0 == "newHidden"),
         "{names:?}"
     );
-    // Fuzzy: in order, any case.
+    // fuzzy: in order, any case
     let found = rhue_lsp::workspace_symbols(&docs, "nwrg");
     assert_eq!(found.len(), 1);
     assert_eq!(at(&found[0].location), "shapes.rhue:newRing");
-    // A file open in the editor counts with its unsaved text.
+    // a file open in the editor counts with its unsaved text
     let open = uri(&dir.join("counter.rhue"));
     docs.set_text(&open, "local function brandNew() end\n".into());
     assert!(rhue_lsp::workspace_symbols(&docs, "brandNew").len() == 1);
@@ -332,7 +332,7 @@ fn workspace_symbols_search_every_file() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-// --- semantic tokens ------------------------------------------------------------------
+// ─ Semantic Tokens ───────────────────────────────────────────────────────────
 
 /// The tokens decoded back into (text, type, modifiers).
 fn tokens(text: &str) -> Vec<(String, String, Vec<String>)> {
@@ -419,21 +419,21 @@ lines]]
     assert_eq!(find("print"), ["function+defaultLibrary"]);
     assert_eq!(find("size"), ["property"]);
     assert_eq!(find("type"), ["keyword"]);
-    // Interpolation: the text around the holes is string, the holes aren't.
+    // interpolation: the text around the holes is string, the holes aren't
     assert_eq!(find("`{"), ["string"]);
     assert_eq!(find("} and \"{"), ["string"]);
     assert_eq!(find("}\"`"), ["string"]);
-    // A long string is split per line; comments are left to the grammar.
+    // a long string is split per line, comments are left to the grammar
     assert_eq!(find("[[two"), ["string"]);
     assert_eq!(find("lines]]"), ["string"]);
     assert!(find("comment ]]").is_empty());
-    // A file that doesn't parse still gets keywords and literals.
+    // a file that doesn't parse still gets keywords and literals
     let t = tokens("local x = (1 +\nprint('a')");
     assert!(t.iter().any(|(w, ty, _)| w == "local" && ty == "keyword"));
     assert!(t.iter().any(|(w, ty, _)| w == "'a'" && ty == "string"));
 }
 
-// --- across modules -------------------------------------------------------------------
+// ─ Across Modules ────────────────────────────────────────────────────────────
 
 const SHAPES: &str = "local M = {}
 function M.area(w: number, h: number) return w * h end
@@ -465,10 +465,10 @@ fn definitions_cross_modules() {
         def(0, "perimeter").as_deref(),
         Some("shapes.rhue:perimeter")
     );
-    // The local itself still goes to its declaration.
+    // the local itself still goes to its declaration
     let l = rhue_lsp::definition(&docs, &main, MAIN, pos_of(MAIN, "shapes.area", 0, 1)).unwrap();
     assert_eq!(l.uri, main);
-    // Inside the module: uses of its own fields.
+    // inside the module: uses of its own fields
     let shapes = uri(&dir.join("geo/shapes.rhue"));
     let l = rhue_lsp::definition(&docs, &shapes, SHAPES, pos_of(SHAPES, "M.area(s", 0, 3));
     assert_eq!(l.map(|l| at(&l)).as_deref(), Some("shapes.rhue:area"));
@@ -503,8 +503,8 @@ fn references_cross_modules() {
         r.sort();
         r
     };
-    // From a use in another file. `deep/user.rhue` requires 'geo.shapes'
-    // relative to itself, which doesn't exist: not a use.
+    // from a use in another file. `deep/user.rhue` requires 'geo.shapes'
+    // relative to itself, which doesn't exist: not a use
     let from_use = refs(&main, MAIN, pos_of(MAIN, "area", 0, 1));
     assert_eq!(
         from_use,
@@ -516,16 +516,16 @@ fn references_cross_modules() {
             "shapes.rhue:area@5",
         ]
     );
-    // From the definition: the same.
+    // from the definition: the same
     let shapes = uri(&dir.join("geo/shapes.rhue"));
     assert_eq!(
         refs(&shapes, SHAPES, pos_of(SHAPES, "area", 0, 1)),
         from_use
     );
-    // A field defined by assigning a local: the field's uses and the local's.
+    // a field defined by assigning a local: the field's uses and the local's
     let r = refs(&main, MAIN, pos_of(MAIN, "perimeter", 0, 1));
     assert_eq!(r, ["main.rhue:perimeter@3", "shapes.rhue:perimeter@4"]);
-    // Plain locals are unchanged.
+    // plain locals are unchanged
     let r = refs(&main, MAIN, pos_of(MAIN, "shapes", 0, 1));
     assert_eq!(r.len(), 4, "{r:?}");
     let _ = std::fs::remove_dir_all(dir);

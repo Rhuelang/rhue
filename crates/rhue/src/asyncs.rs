@@ -2,12 +2,12 @@
 //!
 //! An async native (registered with [`Engine::register_async`]) starts its
 //! future, parks it against the thread that called it, and yields. A driver
-//! ([`Engine::eval_async`], [`Engine::call_async`],
-//! [`Engine::run_until_idle`]) polls every parked future, and when one
-//! finishes it resumes that thread with the result. The same driver runs the
-//! `task` library on real time, using the sleep function the host gives
-//! [`Engine::set_sleep`]. Rhue doesn't pick a runtime; the futures are
-//! `!Send`, so on tokio they go on a `LocalSet` or a current-thread runtime.
+//! ([`Engine::eval_async`], [`Engine::call_async`], [`Engine::run_until_idle`])
+//! polls every parked future, and when one finishes it resumes that thread with
+//! the result. The same driver runs the `task` library on real time, using the
+//! sleep function the host hands [`Engine::set_sleep`]. Rhue doesn't pick a
+//! runtime for you. The futures are `!Send`, so on tokio they go on a
+//! `LocalSet` or a current-thread runtime.
 
 use std::cell::RefCell;
 use std::fmt;
@@ -26,7 +26,7 @@ use crate::{
 
 type BoxFuture<T> = Pin<Box<dyn Future<Output = T>>>;
 
-/// Turns a finished future's output into the values the script gets.
+/// Turns a finished future's output into what the script gets.
 pub(crate) type Finish = Box<dyn FnOnce(&mut Context<'_>) -> Result<Vec<Value>, ScriptError>>;
 
 struct Pending {
@@ -40,7 +40,7 @@ struct Pending {
 pub struct AsyncState {
     pending: Vec<Pending>,
     sleep: Option<Rc<dyn Fn(Duration) -> BoxFuture<()>>>,
-    /// Errors from threads nobody is waiting on, for `run_until_idle`.
+    /// Errors from threads nobody's waiting on, for `run_until_idle`.
     errors: Vec<Error>,
 }
 
@@ -63,8 +63,8 @@ impl fmt::Debug for AsyncState {
     }
 }
 
-/// What an async native does when called: parks `future` against the
-/// calling thread and yields. Called from the code `register_async` makes.
+/// What an async native does when it's called: parks `future` against the
+/// calling thread and yields. Called from the code `register_async` generates.
 pub(crate) fn suspend(
     cx: &mut Context<'_>,
     name: &str,
@@ -85,8 +85,8 @@ pub(crate) fn suspend(
     Err(ScriptError::yield_with(Vec::new()))
 }
 
-/// Lua side of every async native: the raw native yields, gets resumed with
-/// `true, results...` or `false, error`, and this turns the second into an
+/// The Lua side of every async native. The raw native yields, gets resumed with
+/// `true, results...` or `false, error`, and this turns the second one into an
 /// error raised where the script called it.
 const WRAPPER: &str = "local raw, pack, unpack, raise = ...
 return function(...)
@@ -97,16 +97,16 @@ return function(...)
     raise(r[2], 2)
 end";
 
-/// Stops a script from another task or thread. Cloning is cheap and the
-/// handle is `Send + Sync`.
+/// Stops a script from another task or thread. Cheap to clone, and it's `Send +
+/// Sync`.
 ///
-/// A running script stops the next time it loops or calls something (the
-/// check costs nothing until then), with an error `pcall` can't catch; a
-/// script waiting in [`Engine::eval_async`] stops right away. If nothing is
-/// running, the next script run on the engine is the one stopped.
+/// A running script stops the next time it loops or calls something (checking
+/// costs nothing until then), with an error `pcall` can't catch. A script
+/// waiting in [`Engine::eval_async`] stops right away. If nothing's running,
+/// the next script run on the engine is the one that gets stopped.
 ///
-/// A script that's busy computing holds the thread it runs on, so on a
-/// single-threaded runtime the call has to come from another thread.
+/// A script that's busy computing is hogging the thread it runs on, so on a
+/// single-threaded runtime this has to get called from another thread.
 #[derive(Clone, Debug)]
 pub struct InterruptHandle(Arc<rhue_vm::Interrupt>);
 
@@ -127,8 +127,8 @@ enum Turn {
     NoSleep,
 }
 
-/// Cleans up after a driver's task if the driver is dropped before it
-/// finishes (an async timeout, say): its futures are dropped and its timers
+/// Cleans up after a driver's task if the driver gets dropped before it
+/// finishes (an async timeout, say). Its futures get dropped and its timers
 /// forgotten, so nothing resumes it.
 struct Abandon {
     asyncs: Rc<RefCell<AsyncState>>,
@@ -224,8 +224,8 @@ impl Engine {
         InterruptHandle(self.vm.interrupt_handle())
     }
 
-    /// [`eval`](Self::eval) for scripts that call async functions or wait
-    /// on the `task` clock. Dropping the future stops the script.
+    /// [`eval`](Self::eval) for scripts that call async functions or wait on
+    /// the `task` clock. Dropping the future stops the script.
     pub async fn eval_async(&mut self, source: &str) -> Result<Vec<Value>, Error> {
         let mut task = self.spawn("<eval>", source)?;
         self.finish_task(&mut task).await
@@ -250,10 +250,10 @@ impl Engine {
         })
     }
 
-    /// Drives everything waiting (async calls, `task` timers, deferred
-    /// tasks) until nothing is left, and returns the errors scripts raised
-    /// along the way. Tasks started with [`spawn`](Self::spawn) or
-    /// `task.spawn` that call async functions finish here.
+    /// Drives everything waiting (async calls, `task` timers, deferred tasks)
+    /// until nothing's left, and returns the errors scripts raised along the
+    /// way. Tasks started with [`spawn`](Self::spawn) or `task.spawn` that call
+    /// async functions finish here.
     pub async fn run_until_idle(&mut self) -> Vec<Error> {
         if let Err(e) = self.drive(None).await {
             self.asyncs.borrow_mut().errors.push(e);
@@ -288,18 +288,18 @@ impl Engine {
             && self.tasks.as_ref().is_none_or(|s| s.borrow().is_idle())
     }
 
-    /// The driver: runs until `main` finishes (or, without one, until
-    /// nothing is waiting). Errors from `main` come back; others are kept
-    /// for `run_until_idle`.
+    /// The driver. Runs until `main` finishes (or without one, until nothing's
+    /// waiting). Errors from `main` come back, others get kept for
+    /// `run_until_idle`.
     async fn drive(&mut self, mut main: Option<&mut Task>) -> Result<(), Error> {
         let interrupt = self.vm.interrupt_handle();
         let asyncs = self.asyncs.clone();
         let tasks = self.tasks.clone();
         let mut clock = Instant::now();
         let mut sleeping: Option<(Instant, BoxFuture<()>)> = None;
-        // A deadline the host's sleep said has passed. The host's clock is
-        // the one that counts (it may be a test's paused clock), so time is
-        // at least this far along even if `Instant::now` disagrees.
+        // a deadline the host's sleep said has passed. the host's clock is the
+        // one that counts (it might be a test's paused clock), so time is at
+        // least this far along even if `Instant::now` disagrees
         let mut reached: Option<Instant> = None;
         let mut yielded_to_host = false;
         loop {
@@ -309,8 +309,8 @@ impl Engine {
                 _ => {}
             }
             let main_thread = main.as_ref().map(|t| t.thread().clone());
-            // Suspended but not waiting on anything: a plain `coroutine.yield`
-            // at the top, which hands control back to the host's executor.
+            // suspended but not waiting on anything, a plain `coroutine.yield`
+            // at the top, which hands control back to the host's executor
             let main_yielded = main_thread.as_ref().is_some_and(|t| !self.is_waiting(t));
 
             let turn = poll_fn(|cx| {
@@ -363,7 +363,7 @@ impl Engine {
                     }
                 }
                 if main_yielded && !yielded_to_host {
-                    // Let the executor run something else first.
+                    // let the executor run something else first
                     yielded_to_host = true;
                     cx.waker().wake_by_ref();
                     return Poll::Pending;
@@ -413,7 +413,7 @@ impl Engine {
             {
                 self.resume(t, Vec::new())?;
             }
-            // The task clock follows real time while a driver runs.
+            // the task clock follows real time while a driver runs
             let now = Instant::now().max(reached.take().unwrap_or(clock));
             let dt = (now - clock).as_secs_f64();
             clock = now;
@@ -455,8 +455,8 @@ impl Engine {
     }
 }
 
-/// What a failed async call raises in the script: the error's value if it
-/// has one, otherwise its message.
+/// What a failed async call raises in the script, the error's value if it has
+/// one, otherwise its message.
 fn error_value(e: ScriptError) -> Value {
     match e.0 {
         Repr::Value(v) => v,

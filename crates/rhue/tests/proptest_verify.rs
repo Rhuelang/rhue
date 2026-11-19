@@ -1,6 +1,6 @@
-//! The verifier is the VM's contract: bytecode it accepts must run without
-//! panicking (a script error is fine). Real programs are compiled, their
-//! bytecode is damaged at random, and whatever still verifies is run.
+//! The verifier is the VM's contract: bytecode it accepts has to run without
+//! panicking (a script error is fine). Real programs get compiled, their
+//! bytecode gets damaged at random, and whatever still verifies gets run.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
@@ -102,9 +102,9 @@ proptest! {
             let path = which.get(&all).clone();
             apply(at_path(&mut p, &path), *at, d);
         }
-        // Damage can turn `s = s .. x` into `s = s .. s` in a loop, which
+        // damage can turn `s = s .. x` into `s = s .. s` in a loop, which
         // doubles a string until memory runs out: a script can do that on
-        // purpose too (Rhue has no memory limit), so it isn't a VM bug.
+        // purpose too (Rhue has no memory limit), so it isn't a VM bug
         if verify(&p).is_ok() && !uses_concat(&p) {
             e.set_instruction_limit(Some(20_000));
             let p = Rc::new(p);
@@ -116,8 +116,8 @@ proptest! {
     }
 }
 
-/// The property above must not be vacuous: a fair share of damaged
-/// programs still verifies (and so actually runs).
+/// The property above can't be vacuous, a fair chunk of damaged programs still
+/// verifies (and so actually runs).
 #[test]
 fn damage_often_still_verifies() {
     let mut e = Engine::new();

@@ -1,8 +1,8 @@
-//! Property test: random arithmetic trees are rendered to source, run through
+//! Property test: random arithmetic trees get rendered to source, run through
 //! the whole pipeline (folded and unfolded), and compared with a reference
-//! evaluator that works directly on the generated tree. This checks the parser
-//! (precedence via full parenthesisation), the compiler's register allocation,
-//! K-forms and folding, and the VM, all against one oracle.
+//! evaluator that works right on the generated tree. That checks the parser
+//! (precedence through full parenthesisation), the compiler's register
+//! allocation, K-forms and folding, and the VM, all against one oracle.
 
 use proptest::prelude::*;
 use rhue::{CompileOptions, Engine, Value};

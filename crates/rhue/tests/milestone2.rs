@@ -163,7 +163,8 @@ fn comparison_errors() {
         "attempt to compare number < string"
     );
     assert_eq!(err("return nil <= 1").1, "attempt to compare nil <= number");
-    // `a > b` is evaluated as `b < a`, so the operands appear swapped, as in Lua.
+    // `a > b` is evaluated as `b < a`, so the operands appear swapped, as in
+    // Lua
     assert_eq!(err("return 1 > nil").1, "attempt to compare nil < number");
     assert_eq!(err("return {} < {}").1, "attempt to compare table < table");
 }
@@ -217,12 +218,12 @@ fn while_and_repeat() {
         one("local i = 0 repeat i += 1 until i == 4 return i"),
         n(4.0)
     );
-    // `until` sees the body's locals.
+    // `until` sees the body's locals
     assert_eq!(
         one("local n = 0 repeat local done = n >= 3 n += 1 until done return n"),
         n(4.0)
     );
-    // A repeat body always runs at least once.
+    // a repeat body always runs at least once
     assert_eq!(one("local n = 0 repeat n += 1 until true return n"), n(1.0));
 }
 
@@ -242,7 +243,7 @@ fn continue_and_break() {
         one("local n = 0 repeat n += 1 if n < 5 then continue end until n >= 5 return n"),
         n(5.0)
     );
-    // `break` leaves only the innermost loop.
+    // `break` leaves only the innermost loop
     assert_eq!(
         one(
             "local c = 0 for i = 1, 3 do for j = 1, 3 do if j == 2 then break end c += 1 end end return c"
@@ -269,17 +270,17 @@ fn numeric_for() {
         one("local c = 0 for i = 5, 1 do c += 1 end return c"),
         n(0.0)
     );
-    // The loop variable is a copy: assigning it doesn't change iteration.
+    // the loop variable is a copy: assigning it doesn't change iteration
     assert_eq!(
         one("local c = 0 for i = 1, 3 do c += 1 i = 100 end return c"),
         n(3.0)
     );
-    // Start, limit and step are evaluated once.
+    // start, limit and step are evaluated once
     assert_eq!(
         one("local lim = 3 local c = 0 for i = 1, lim do lim = 100 c += 1 end return c"),
         n(3.0)
     );
-    // The loop variable isn't visible afterwards.
+    // the loop variable isn't visible afterwards
     assert_eq!(one("for i = 1, 2 do end return i"), Value::Nil);
 }
 
@@ -349,11 +350,11 @@ fn globals() {
         s("hi x3")
     );
 
-    // Locals don't leak into the next chunk.
+    // locals don't leak into the next chunk
     e.eval("local temp = 1").unwrap();
     assert_eq!(e.eval_expr("temp").unwrap(), Value::Nil);
 
-    // Assigning nil removes a global.
+    // assigning nil removes a global
     e.eval("counter = nil").unwrap();
     assert_eq!(e.global("counter"), Value::Nil);
 }
@@ -376,7 +377,7 @@ fn instruction_limit() {
         err.to_string(),
         "script exceeded its instruction limit (10000)"
     );
-    // A normal script fits.
+    // a normal script fits
     assert_eq!(
         e.eval("local s = 0 for i = 1, 100 do s += i end return s")
             .unwrap(),

@@ -1,6 +1,6 @@
-//! Milestone 17: what the editor features are built from. Outlines
-//! (symbols, classified tokens, module fields used and defined), inlay
-//! hints, and the fixes the checker attaches to its errors.
+//! Milestone 17: the stuff editor features are built from. Outlines (symbols,
+//! classified tokens, module fields used and defined), inlay hints, and the
+//! fixes the checker attaches to its errors.
 
 use rhue::{Base, Engine, HintKind, SymbolKind, TokenKind};
 
@@ -66,7 +66,7 @@ fn misspellings_get_fixes() {
         assert!(out.contains(fixed), "{body} -> {out}");
         assert!(errors(&out).is_empty(), "{out}: {:?}", errors(&out));
     }
-    // `t["x"]` isn't a name to replace; nothing close is no suggestion.
+    // `t["x"]` isn't a name to replace, nothing close is no suggestion
     for body in [
         "local p = { name = 'a' }\nprint(p['nmae'])",
         "print(zzzqqq)",
@@ -77,7 +77,7 @@ fn misspellings_get_fixes() {
             "{body}"
         );
     }
-    // The CLI shows the help.
+    // the CLI shows the help
     let err = Engine::new()
         .check("t.rhue", "--!strict\npirnt(1)")
         .unwrap_err();
@@ -124,7 +124,7 @@ fn assert_returns_its_argument_without_nil() {
     ok("local function f(): number? return 1 end\nlocal n: number = assert(f(), 'no number')")
         .unwrap();
     assert!(ok("local function f(): number? return 1 end\nlocal s: string = assert(f())").is_err());
-    // A local named `assert` is just a function.
+    // a local named `assert` is just a function
     assert!(ok("local function assert<T>(x: T): T return x end\nlocal function f(): number? return 1 end\nlocal n: number = assert(f())").is_err());
 }
 
@@ -174,7 +174,7 @@ local named = { label = 'x' }
     }
     assert!(!shown.iter().any(|s| s.0 == "_"), "{shown:?}");
     assert!(shown.iter().all(|s| s.3));
-    // Inserting every hint's annotation still checks.
+    // inserting every hint's annotation still checks
     let mut out = src.to_string();
     for h in a.hints.iter().rev() {
         out.insert_str(h.offset as usize, h.insert.as_ref().unwrap());
@@ -284,7 +284,7 @@ return M
         .collect();
     assert_eq!(fields, [("a", "a"), ("b", "b"), ("c", "c"), ("d", "d")]);
 
-    // A returned table literal: a local's field points at the local.
+    // a returned table literal: a local's field points at the local
     let src = "local function ring() end\nreturn { ring = ring, size = 3 }\n";
     let o = rhue::outline(src);
     let fields: Vec<(&str, rhue::Span)> = o

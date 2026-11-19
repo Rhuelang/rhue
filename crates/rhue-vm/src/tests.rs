@@ -157,12 +157,12 @@ fn builtins_get_fast_paths() {
     let floor = vm.heap.intern("floor");
     let f = vm.heap.table(math).get_str(floor);
     assert!(fastcall::has_fast_path(&vm, f));
-    // Natives the host registers, and the rest of the library, don't.
+    // natives the host registers, and the rest of the library, don't
     let print = vm.global("print");
     assert!(!fastcall::has_fast_path(&vm, print));
     let user = vm.native("mine", Rc::new(|_, _| Ok(Rets::new())));
     assert!(!fastcall::has_fast_path(&vm, user));
-    // `ipairs` hands out an iterator that has one.
+    // `ipairs` hands out an iterator that has one
     let p = proto(
         vec![
             Instr::abx(Op::GetGlobal, 0, 0),

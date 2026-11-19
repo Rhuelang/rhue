@@ -1,4 +1,4 @@
-//! A small game-scripting host: Rust owns the world, a script drives it.
+//! A small game-scripting host. Rust owns the world, a script drives it.
 //!
 //! Run with `cargo run -p rhue --example embed`.
 
@@ -16,7 +16,7 @@ fn main() -> Result<(), rhue::Error> {
     let mut engine = Engine::new();
     engine.set_instruction_limit(Some(1_000_000));
 
-    // Methods and a constructor for the Player type.
+    // methods and a constructor for the Player type
     engine
         .register_type::<Player>()
         .function("new", |name: String| Player {
@@ -30,7 +30,7 @@ fn main() -> Result<(), rhue::Error> {
         })
         .method("level_up", |p: &mut Player| p.level += 1);
 
-    // A host function with a typed signature, and one that calls back.
+    // a host function with a typed signature, and one that calls back
     engine.register("log", |msg: String| println!("[script] {msg}"));
     engine.register(
         "repeat_n",
@@ -59,7 +59,7 @@ fn main() -> Result<(), rhue::Error> {
         "#,
     )?;
 
-    // Rust drives the script's callback each "frame".
+    // Rust drives the script's callback each "frame"
     for _ in 0..3 {
         let hp: f64 = engine.call_global("on_tick", 0.5)?;
         println!("tick -> {hp} hp");

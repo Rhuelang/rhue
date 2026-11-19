@@ -1,6 +1,6 @@
 //! # Rhue
 //!
-//! An embeddable, Luau-flavoured scripting language for Rust.
+//! Luau-flavoured scripting you can embed in Rust.
 //!
 //! ```
 //! use rhue::{Engine, Value};
@@ -28,15 +28,15 @@
 //! use rhue::{Context, Engine, Function, Variadic};
 //!
 //! let mut engine = Engine::new();
-//! // Parameters and results convert automatically; a wrong type is a
+//! // parameters and results convert on their own, a wrong type is a
 //! // script error ("invalid argument #1 to 'add' (number expected, got string)").
 //! engine.register("add", |a: f64, b: f64| a + b);
 //! engine.register("sum", |xs: Variadic<f64>| xs.iter().sum::<f64>());
-//! // Returning Err raises an error in the script.
+//! // returning Err raises an error in the script
 //! engine.register("half", |n: i64| -> Result<i64, String> {
 //!     if n % 2 == 0 { Ok(n / 2) } else { Err(format!("{n} is odd")) }
 //! });
-//! // Take `&mut Context` first to call back into scripts.
+//! // take `&mut Context` first to call back into scripts
 //! engine.register("twice", |cx: &mut Context, f: Function, x: f64| -> Result<f64, rhue::ScriptError> {
 //!     let once: f64 = cx.call(&f, x)?;
 //!     cx.call(&f, once)
@@ -50,13 +50,13 @@
 //! assert_eq!(greeting, "hi Zae");
 //! ```
 //!
-//! Rust types become script objects with [`UserData`] (usually derived).
+//! Rust types turn into script objects with [`UserData`] (usually derived).
 //!
 //! ## Types
 //!
 //! Scripts opt into Luau-style type checking with `--!strict` (or
-//! `--!nonstrict`). Registered functions are declared with types derived
-//! from their Rust signatures; a chunk with type errors doesn't run.
+//! `--!nonstrict`). Registered functions get declared with types from
+//! their Rust signatures, and a chunk with type errors doesn't run.
 //!
 //! ```
 //! use rhue::{Engine, ErrorKind};
@@ -75,9 +75,9 @@
 //!
 //! ## Running untrusted scripts
 //!
-//! An engine can cap how many instructions a call may run and how much
-//! memory scripts may hold; going over either is an ordinary error, and the
-//! engine stays usable. Each script can also get its own globals.
+//! An engine can cap how many instructions a call can run and how much
+//! memory scripts can hold. Going over either is a normal error and the
+//! engine's still usable after. Each script can get its own globals too.
 //!
 //! ```
 //! use rhue::Engine;
@@ -91,7 +91,7 @@
 //! let err = engine.eval("local t = {} for i = 1, 1e7 do t[i] = i end").unwrap_err();
 //! assert!(err.to_string().contains("memory"));
 //!
-//! // Plugins in separate environments don't see each other's globals.
+//! // plugins in separate environments can't see each other's globals
 //! let a = engine.create_environment();
 //! let b = engine.create_environment();
 //! engine.eval_in(&a, "secret = 42").unwrap();
@@ -100,9 +100,9 @@
 //!
 //! ## Modules and compiled chunks
 //!
-//! `require` finds modules the host provides, from source or compiled ahead
-//! of time. Compiled chunks load without parsing or type-checking, are
-//! checked by the bytecode verifier, and keep their types.
+//! `require` finds modules the host gives it, from source or compiled ahead
+//! of time. Compiled chunks load without parsing or type-checking, go
+//! through the bytecode verifier, and keep their types.
 //!
 //! ```
 //! use rhue::Engine;
@@ -118,15 +118,15 @@
 //! let n: f64 = engine.eval_as("return require('geometry').area(3, 4) + require('stats').mean(2, 4)").unwrap();
 //! assert_eq!(n, 15.0);
 //!
-//! // The module's types reach scripts that require it.
+//! // the module's types reach scripts that require it
 //! assert!(engine.check("main.rhue", "--!strict\nlocal s: string = require('geometry').area(1, 2)").is_err());
 //! ```
 //!
 //! ## Scripts that wait
 //!
 //! [`Engine::spawn`] runs a script as a task the host resumes, and
-//! [`Engine::open_tasks`] adds Luau's `task` library, driven by the clock
-//! the host advances with [`Engine::step`].
+//! [`Engine::open_tasks`] adds Luau's `task` library, driven by a clock
+//! the host moves forward with [`Engine::step`].
 //!
 //! ```
 //! use rhue::{Engine, TaskState, Value};
@@ -203,19 +203,19 @@ pub enum ErrorKind {
     Syntax,
     /// The source parsed but couldn't be compiled.
     Compile,
-    /// Type checking (`--!strict` or `--!nonstrict`) found errors. The
+    /// Type checking (`--!strict` or `--!nonstrict`) found errors, so the
     /// script didn't run.
     Type,
     /// The script raised an error while running.
     Runtime,
-    /// Bytes given to [`Engine::load`] aren't a compiled chunk this
-    /// version can run (wrong format, damaged, or rejected by the verifier).
+    /// Bytes given to [`Engine::load`] aren't a compiled chunk this version can
+    /// run (wrong format, damaged, or the verifier rejected it).
     Load,
 }
 
-/// An error from compiling or running a script. It keeps a copy of the
-/// source its spans refer to, so it can render itself with [`Error::render`]
-/// and can be sent across threads.
+/// An error from compiling or running a script. It keeps a copy of the source
+/// its spans point into, so it can render itself with [`Error::render`] and can
+/// be sent across threads.
 #[derive(Clone, Debug)]
 pub struct Error {
     /// What went wrong: syntax, names, types, or a runtime error.
@@ -252,8 +252,7 @@ impl Error {
         Error::new(ErrorKind::Runtime, vec![e.to_diagnostic()], &e.source)
     }
 
-    /// Whether the script was stopped through an
-    /// [`InterruptHandle`].
+    /// Whether the script got stopped through an [`InterruptHandle`].
     pub fn is_interrupted(&self) -> bool {
         self.kind == ErrorKind::Runtime
             && self
@@ -279,9 +278,9 @@ impl Error {
         &self.diagnostics[0]
     }
 
-    /// The name of the source file the error points into. For a runtime
-    /// error inside a function defined by an earlier `eval`, that's the
-    /// earlier source, not the one being run.
+    /// The name of the source file the error points into. For a runtime error
+    /// inside a function defined by an earlier `eval`, that's the earlier
+    /// source, not the one being run.
     pub fn source_name(&self) -> &str {
         &self.source_name
     }
@@ -289,7 +288,7 @@ impl Error {
     /// Pretty-prints every diagnostic against the original source.
     pub fn render(&self, color: bool) -> String {
         if self.kind == ErrorKind::Load {
-            // There's no source to point into.
+            // there's no source to point into
             return format!("error: {}\n", self.diagnostic().message);
         }
         self.diagnostics
@@ -309,9 +308,9 @@ impl std::error::Error for Error {}
 
 /// The entry point for embedding Rhue.
 ///
-/// Globals (including functions) persist across calls, so a sequence of
-/// `eval`s behaves like one session (the REPL relies on this). Locals don't:
-/// each chunk has its own scope.
+/// Globals (functions included) stick around between calls, so a bunch of
+/// `eval`s act like one session (the REPL relies on this). Locals don't, each
+/// chunk gets its own scope.
 pub struct Engine {
     vm: rhue_vm::Vm,
     /// The `task` library's scheduler, once [`Engine::open_tasks`] adds it.
@@ -333,9 +332,9 @@ impl Default for Engine {
 }
 
 impl Engine {
-    /// An engine with the standard library: base functions (`print`,
-    /// `type`, `tostring`, `tonumber`, `pairs`, `ipairs`, `pcall`, `error`,
-    /// ...) and the `table`, `string` and `math` libraries.
+    /// An engine with the standard library: base functions (`print`, `type`,
+    /// `tostring`, `tonumber`, `pairs`, `ipairs`, `pcall`, `error`, ...) and
+    /// the `table`, `string` and `math` libraries.
     pub fn new() -> Self {
         let mut vm = rhue_vm::Vm::new();
         *vm.host_data() = Some(Box::new(modules::HostState::new(rhue_types::Env::new())));
@@ -360,22 +359,23 @@ impl Engine {
     }
 
     /// How chunks without a `--!strict` / `--!nonstrict` / `--!nocheck`
-    /// directive are type-checked. The default is [`TypeMode::NoCheck`], so
-    /// scripts opt in; [`TypeMode::Strict`] makes checking opt-out.
+    /// directive get type-checked. The default is [`TypeMode::NoCheck`] so
+    /// scripts opt in, [`TypeMode::Strict`] makes it opt-out.
     pub fn set_default_type_mode(&mut self, mode: TypeMode) {
         modules::host(&mut self.vm).default_mode = mode;
     }
 
-    /// What the type checker believes a global's type is, in Luau syntax
-    /// (`None` if it knows nothing about it): handy for checking what a
-    /// registered function was declared as.
+    /// What the type checker thinks a global's type is, in Luau syntax (`None`
+    /// if it doesn't know anything about it). Handy for checking what a
+    /// registered function got declared as.
     pub fn global_type(&mut self, name: &str) -> Option<String> {
         type_env(&mut self.vm).global(name).map(|t| t.to_string())
     }
 
-    /// Tells the type checker a global's type (in Luau syntax), for globals
-    /// the host sets without [`register`](Self::register) or
-    /// [`set_global`](Self::set_global): `engine.declare("config", "{ debug: boolean }")`.
+    /// Tells the type checker a global's type (in Luau syntax), for globals the
+    /// host sets without [`register`](Self::register) or
+    /// [`set_global`](Self::set_global): `engine.declare("config", "{ debug:
+    /// boolean }")`.
     pub fn declare(&mut self, name: &str, ty: &str) -> Result<(), Error> {
         type_env(&mut self.vm)
             .declare_global(name, ty)
@@ -389,14 +389,13 @@ impl Engine {
         engine
     }
 
-    /// The options new compiles use, to change after creation.
+    /// The options new compiles use, to change after it's made.
     pub fn options_mut(&mut self) -> &mut CompileOptions {
         &mut modules::host(&mut self.vm).options
     }
 
-    /// Makes a module available to `require(name)`, from source. Modules
-    /// added here are found before the [loader](Self::set_module_loader)
-    /// is asked.
+    /// Makes a module available to `require(name)`, from source. Modules added
+    /// here get found before the [loader](Self::set_module_loader) is asked.
     pub fn add_module(&mut self, name: &str, source: &str) {
         let state = modules::host(&mut self.vm);
         state.sources.insert(name.to_string(), source.to_string());
@@ -404,42 +403,43 @@ impl Engine {
         state.binary.remove(name);
     }
 
-    /// Sets how `require` finds modules it hasn't been given: `loader`
-    /// maps a module name to its source, or `None` if there's no such
-    /// module. Rhue never touches the file system itself, so this is where
-    /// a host decides what `require("a.b")` means (a file under a scripts
-    /// folder, an asset bundle entry, ...).
+    /// Sets how `require` finds modules it hasn't been given. `loader` maps a
+    /// module name to its source, or `None` if there's no such module. Rhue
+    /// never touches the file system itself, so this is where a host decides
+    /// what `require("a.b")` means (a file under a scripts folder, an asset
+    /// bundle entry, ...).
     pub fn set_module_loader(&mut self, loader: impl Fn(&str) -> Option<String> + 'static) {
         modules::host(&mut self.vm).loader = Some(Rc::new(loader));
     }
 
-    /// Caps how many VM instructions a single run may execute; exceeding it
-    /// is a runtime error scripts can't catch. Use it to stop runaway
-    /// scripts. `None` = unlimited. The count is approximate: loops are
-    /// charged their body's length per iteration and calls one each, so
-    /// every loop and recursion is stopped but straight-line code is free.
+    /// Caps how many VM instructions one run can execute. Going over is a
+    /// runtime error scripts can't catch, it's for stopping runaway scripts.
+    /// `None` means no limit. The count's approximate: loops get charged their
+    /// body's length per iteration and calls one each, so every loop and
+    /// recursion gets stopped but straight-line code is free.
     pub fn set_instruction_limit(&mut self, limit: Option<u64>) {
         self.vm.set_instruction_limit(limit);
     }
 
-    /// Caps how much memory scripts may keep allocated, in bytes as the
-    /// collector counts them (an approximation of the real heap). Reaching
-    /// it stops the script with `not enough memory`, which `pcall` can't
-    /// catch: a collection runs first, and strings or tables that wouldn't
-    /// fit are refused before they're built. `None` = unlimited.
+    /// Caps how much memory scripts can keep allocated, in bytes as the
+    /// collector counts them (an approximation of the real heap). Hitting it
+    /// stops the script with `not enough memory`, which `pcall` can't catch. A
+    /// collection runs first, and strings or tables that wouldn't fit get
+    /// refused before they're built. `None` means no limit.
     pub fn set_memory_limit(&mut self, limit: Option<usize>) {
         self.vm.set_memory_limit(limit);
     }
 
-    /// How much memory scripts hold right now, as the collector counts it.
+    /// How much memory scripts are holding right now, as the collector counts
+    /// it.
     pub fn memory_used(&self) -> usize {
         self.vm.memory_used()
     }
 
-    /// Calls `hook` on the debug events in `mask` (see [`Debugger`]): a
-    /// new line, entering or leaving a script function. Returning `Err`
-    /// stops the script with that message (scripts can't catch it).
-    /// Replaces any hook set before.
+    /// Calls `hook` on the debug events in `mask` (see [`Debugger`]): a new
+    /// line, entering or leaving a script function. Returning `Err` stops the
+    /// script with that message (scripts can't catch it). Replaces any hook set
+    /// before.
     pub fn set_debug_hook(
         &mut self,
         mask: HookMask,
@@ -458,15 +458,15 @@ impl Engine {
         self.vm.set_debug_hook(HookMask::default(), None);
     }
 
-    /// Runs a full garbage collection now. (Scripts also collect
-    /// automatically as they allocate.)
+    /// Runs a full garbage collection now. (Scripts also collect on their own
+    /// as they allocate.)
     pub fn gc(&mut self) {
         self.vm.collect_garbage();
     }
 
-    /// Testing aid: collect garbage before every instruction. Very slow, but
-    /// any object the collector fails to see as live is freed immediately,
-    /// so such bugs show up at once.
+    /// Testing aid: collect garbage before every instruction. Really slow, but
+    /// any object the collector fails to see as live gets freed immediately, so
+    /// those bugs show up right away.
     #[doc(hidden)]
     pub fn set_gc_stress(&mut self, on: bool) {
         self.vm.heap_mut().set_stress(on);
@@ -482,8 +482,7 @@ impl Engine {
         self.vm.set_output(output);
     }
 
-    /// A [`Context`] for working with tables, functions and userdata
-    /// directly.
+    /// A [`Context`] for working with tables, functions and userdata directly.
     pub fn context(&mut self) -> Context<'_> {
         Context::new(&mut self.vm)
     }
@@ -512,10 +511,10 @@ impl Engine {
     ///
     /// Parameters can be any [`FromValue`] type (`f64`, integers, `String`,
     /// `bool`, `Option<T>`, `Vec<T>`, `Table`, `Function`, `Value`, userdata
-    /// types, ...), with a [`Variadic<T>`] last to take the rest. The
-    /// result can be any [`IntoValues`] (a value, `()`, a tuple for several
-    /// results) or a `Result` of one, whose `Err` raises a script error.
-    /// A first parameter `&mut Context` gives access to the VM.
+    /// types, ...), with a [`Variadic<T>`] last to take the rest. The result
+    /// can be any [`IntoValues`] (a value, `()`, a tuple for several results)
+    /// or a `Result` of one, whose `Err` raises a script error. A first
+    /// parameter of `&mut Context` gives access to the VM.
     pub fn register<M, F: IntoNative<M>>(&mut self, name: &str, f: F) {
         F::declare_types(&mut self.vm);
         let sig = F::signature();
@@ -524,8 +523,8 @@ impl Engine {
         self.vm.register_native(name, native);
     }
 
-    /// Sets up userdata type `T` (running [`UserData::register`] if it
-    /// hasn't run yet) and returns a builder to add methods and properties.
+    /// Sets up userdata type `T` (running [`UserData::register`] if it hasn't
+    /// yet) and returns a builder for adding methods and properties.
     pub fn register_type<T: UserData>(&mut self) -> TypeBuilder<'_, T> {
         let ty = userdata::type_id_of::<T>(&mut self.vm);
         TypeBuilder {
@@ -536,8 +535,8 @@ impl Engine {
     }
 
     /// Calls a script (or native) function with `args` and converts its
-    /// results: `let n: f64 = engine.call(&f, (1, 2))?`. Each call gets
-    /// the full instruction budget.
+    /// results: `let n: f64 = engine.call(&f, (1, 2))?`. Each call gets the
+    /// full instruction budget.
     pub fn call<R: FromValues>(
         &mut self,
         func: &Function,
@@ -568,9 +567,9 @@ impl Engine {
             .map_err(Error::from_script)
     }
 
-    /// Compiles a chunk without running it (e.g. to inspect or cache it).
-    /// Type-checks it first if its directive (or the default mode) asks.
-    /// The globals it defines become known to chunks checked later.
+    /// Compiles a chunk without running it (to inspect or cache it, say).
+    /// Type-checks it first if its directive (or the default mode) says to. The
+    /// globals it defines become known to chunks checked later.
     pub fn compile(&mut self, name: &str, source: &str) -> Result<Rc<Proto>, Error> {
         let file = SourceFile::new(name, source);
         let chunk = rhue_parser::parse_chunk(source)
@@ -594,23 +593,21 @@ impl Engine {
         modules::compile_ast(&mut self.vm, chunk, file).map(|c| c.proto)
     }
 
-    /// Analyzes a chunk for editor tooling without compiling or running
-    /// it: its errors, the type of every expression, where each local is
-    /// declared and used, and (with `members_at`, a byte offset) what can
-    /// follow `expr.` for the expression ending there. Types are inferred
-    /// as `--!strict` would, whatever the chunk's mode; errors are the ones
-    /// its mode reports. Modules it `require`s are checked (not run) to learn their
-    /// types.
+    /// Analyzes a chunk for editor tooling without compiling or running it: its
+    /// errors, the type of every expression, where each local is declared and
+    /// used, and (with `members_at`, a byte offset) what can come after `expr.`
+    /// for the expression ending there. Types are inferred like `--!strict`
+    /// would whatever the chunk's mode, errors are whatever its mode reports.
+    /// Modules it `require`s get checked (not run) to learn their types.
     pub fn analyze(&mut self, source: &str, members_at: Option<u32>) -> Analysis {
         modules::analyze(&mut self.vm, source, members_at)
     }
 
-    /// The type the checker gives an expression, as text (`number`,
-    /// `{ name: string }`...), checked strictly against the engine's
-    /// globals, as a REPL's `:type` shows it. A type error in the
-    /// expression is an `Err`.
+    /// The type the checker gives an expression, as text (`number`, `{ name:
+    /// string }`...), checked strictly against the engine's globals, like a
+    /// REPL's `:type` shows it. A type error in the expression is an `Err`.
     pub fn expression_type(&mut self, expr: &str) -> Result<String, Error> {
-        // Bound to a local, whose recorded type is the expression's.
+        // bound to a local, whose recorded type is the expression's
         const PREFIX: &str = "--!strict\nlocal __type = (";
         let source = format!("{PREFIX}{expr}\n)");
         let file = SourceFile::new("<expression>", source.as_str());
@@ -629,8 +626,8 @@ impl Engine {
     }
 
     /// Type-checks a chunk without running it, as `--!strict` (or its own
-    /// directive) asks, and returns every type error. Unlike
-    /// [`compile`](Self::compile), a chunk with no directive is checked in
+    /// directive) says, and returns every type error. Unlike
+    /// [`compile`](Self::compile), a chunk with no directive gets checked in
     /// strict mode.
     pub fn check(&mut self, name: &str, source: &str) -> Result<(), Error> {
         let file = SourceFile::new(name, source);
@@ -648,10 +645,10 @@ impl Engine {
     }
 
     /// Loads a chunk saved with [`Proto::to_bytes`] (see also
-    /// [`compile_to_bytes`](Self::compile_to_bytes)), without parsing or
-    /// type-checking it. The bytes are checked by the bytecode verifier, so
-    /// damaged or hand-made chunks are refused ([`ErrorKind::Load`]) rather
-    /// than run; the result can be [`run`](Self::run) any number of times.
+    /// [`compile_to_bytes`](Self::compile_to_bytes)) without parsing or
+    /// type-checking it. The bytes go through the bytecode verifier, so damaged
+    /// or hand-made chunks get refused ([`ErrorKind::Load`]) instead of run.
+    /// The result can be [`run`](Self::run) as many times as you want.
     pub fn load(&mut self, bytes: &[u8]) -> Result<Rc<Proto>, Error> {
         let (proto, types) = self.read_chunk(bytes)?;
         if let Some(types) = &types {
@@ -683,10 +680,10 @@ impl Engine {
         Ok((proto, types))
     }
 
-    /// Compiles a chunk (type-checking it as [`compile`](Self::compile)
-    /// does) and serializes it for [`load`](Self::load). The bytes carry
-    /// the types of what it returns and the globals it defines, so code
-    /// checked after loading it (or `require`ing it, see
+    /// Compiles a chunk (type-checking it like [`compile`](Self::compile) does)
+    /// and serializes it for [`load`](Self::load). The bytes carry the types of
+    /// what it returns and the globals it defines, so code checked after
+    /// loading it (or `require`ing it, see
     /// [`add_module_bytes`](Self::add_module_bytes)) still sees them.
     pub fn compile_to_bytes(&mut self, name: &str, source: &str) -> Result<Vec<u8>, Error> {
         let compiled = modules::compile_typed(&mut self.vm, name, source)?;
@@ -694,10 +691,10 @@ impl Engine {
         Ok(rhue_bytecode::write_chunk(&compiled.proto, Some(&types)))
     }
 
-    /// Makes a compiled module available to `require(name)`: bytes from
-    /// [`compile_to_bytes`](Self::compile_to_bytes) (verified here). Its
-    /// saved type is what checked chunks that require it see, and the
-    /// globals it defines are declared.
+    /// Makes a compiled module available to `require(name)`, from bytes made by
+    /// [`compile_to_bytes`](Self::compile_to_bytes) (verified here). Its saved
+    /// type is what checked chunks that require it see, and the globals it
+    /// defines get declared.
     pub fn add_module_bytes(&mut self, name: &str, bytes: &[u8]) -> Result<(), Error> {
         let (proto, types) = self.read_chunk(bytes)?;
         let ty = types
@@ -715,9 +712,9 @@ impl Engine {
 
     /// Runs a compiled chunk and returns what it returned.
     ///
-    /// A prototype that didn't come from [`compile`](Self::compile) is
-    /// verified first (once), and rejected with [`ErrorKind::Compile`] if
-    /// its bytecode is malformed.
+    /// A prototype that didn't come from [`compile`](Self::compile) gets
+    /// verified first (once), and rejected with [`ErrorKind::Compile`] if its
+    /// bytecode is malformed.
     pub fn run(&mut self, proto: &Rc<Proto>) -> Result<Vec<Value>, Error> {
         self.verify(proto)?;
         let values = self
@@ -750,7 +747,7 @@ impl Engine {
         })
     }
 
-    /// Evaluates a single expression and returns its (first) value.
+    /// Evaluates one expression and returns its (first) value.
     pub fn eval_expr(&mut self, source: &str) -> Result<Value, Error> {
         let proto = self.compile_expr("<expr>", source)?;
         let mut values = self.run(&proto)?;

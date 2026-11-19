@@ -1,5 +1,5 @@
-//! `bit32`, as in Luau: bitwise operations on numbers taken as unsigned
-//! 32-bit integers (truncated toward zero, then wrapped modulo 2^32).
+//! `bit32`, same as Luau: bitwise ops on numbers treated as unsigned 32-bit
+//! integers (truncated toward zero, then wrapped mod 2^32).
 
 use std::rc::Rc;
 
@@ -12,8 +12,8 @@ type R = Result<Rets, NativeError>;
 
 /// A number as `bit32` sees it.
 pub(crate) fn to_u32(n: f64) -> u32 {
-    // Rust's float-to-int casts saturate (NaN is 0); wrapping through i64
-    // matches Luau for everything an integer can hold.
+    // rust's float-to-int casts saturate (NaN is 0), wrapping through i64
+    // matches Luau for everything an integer can hold
     (n.trunc() as i64) as u32
 }
 
@@ -33,7 +33,7 @@ fn fold(args: &[Value], f: &str, init: u32, op: fn(u32, u32) -> u32) -> Result<u
     Ok(acc)
 }
 
-/// Shifts left by `d` (right when negative), 0 past 31 bits.
+/// Shifts left by `d` (right when it's negative), 0 past 31 bits.
 fn shift(x: u32, d: i64) -> u32 {
     match d {
         0 => x,
@@ -43,7 +43,7 @@ fn shift(x: u32, d: i64) -> u32 {
     }
 }
 
-/// `field` and `width` checked as Luau does.
+/// `field` and `width` checked the way Luau does.
 fn field(args: &[Value], fi: usize, f: &str) -> Result<(u32, u32), NativeError> {
     let fld = num(args, fi, f)?.trunc() as i64;
     let width = match args.get(fi + 1) {
@@ -113,7 +113,7 @@ pub(crate) fn install(vm: &mut Vm) {
                 if d < 0 || x & 0x8000_0000 == 0 {
                     return ret(shift(x, -d));
                 }
-                // Negative: shift in ones.
+                // negative, shift in ones
                 ret(if d >= 32 {
                     u32::MAX
                 } else {

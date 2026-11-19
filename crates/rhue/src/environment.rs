@@ -1,13 +1,13 @@
 //! Separate sets of globals for scripts sharing an engine.
 //!
 //! A script run in an [`Environment`] reads and writes globals in the
-//! environment's own table. A read that finds nothing there falls back to
-//! the engine's globals, so the standard library and everything the host
-//! registered are visible, but every global the script assigns stays in
-//! its environment. Functions it defines keep using that environment
-//! wherever they're called from. Type checking follows suit: a chunk is
-//! checked against the engine's globals plus the ones its own environment
-//! has defined, not those of other environments.
+//! environment's own table. A read that finds nothing there falls back to the
+//! engine's globals, so the standard library and everything the host registered
+//! are still visible, but every global the script assigns stays in its
+//! environment. Functions it defines keep using that environment wherever they
+//! get called from. Type checking does the same, a chunk gets checked against
+//! the engine's globals plus the ones its own environment defined, not anyone
+//! else's.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -15,11 +15,11 @@ use std::rc::Rc;
 use crate::modules;
 use crate::{Engine, Error, Table, Task, Value};
 
-/// The globals chunks run in an environment have defined, as the checker
-/// sees them.
+/// The globals chunks run in an environment have defined, as the checker sees
+/// them.
 type Defined = Rc<RefCell<Vec<(Rc<str>, rhue_types::Type)>>>;
 
-/// A separate set of globals (see the module docs). Cheap to clone; clones
+/// A separate set of globals (see the module docs). Cheap to clone, and clones
 /// share the same globals.
 #[derive(Clone, Debug)]
 pub struct Environment {
@@ -30,8 +30,8 @@ pub struct Environment {
 
 impl Environment {
     /// The table holding the environment's own globals. Set entries in it
-    /// (through a [`Context`](crate::Context)) to give scripts run here
-    /// globals that others don't see.
+    /// (through a [`Context`](crate::Context)) to give scripts run here globals
+    /// nobody else sees.
     pub fn globals(&self) -> &Table {
         &self.table
     }
@@ -46,7 +46,7 @@ impl Engine {
         }
     }
 
-    /// Compiles a chunk to run in `env`: type-checked against the engine's
+    /// Compiles a chunk to run in `env`, type-checked against the engine's
     /// globals and `env`'s own (see [`run_in`](Self::run_in)).
     pub fn compile_in(
         &mut self,
@@ -54,9 +54,9 @@ impl Engine {
         name: &str,
         source: &str,
     ) -> Result<Rc<crate::Proto>, Error> {
-        // The checker sees the engine's script globals with this
-        // environment's on top (reads fall back to the engine's), and what
-        // the chunk defines is recorded as this environment's only.
+        // the checker sees the engine's script globals with this environment's
+        // on top (reads fall back to the engine's), and whatever the chunk
+        // defines gets recorded as this environment's only
         let own = env.types.borrow().clone();
         let shared = crate::type_env(&mut self.vm).swap_script_globals(Vec::new());
         let layered = shared.iter().cloned().chain(own).collect();

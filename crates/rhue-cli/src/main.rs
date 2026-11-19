@@ -1,4 +1,4 @@
-//! `rhue` — run Rhue scripts and expressions.
+//! `rhue`, runs Rhue scripts and expressions.
 //!
 //! ```text
 //! rhue                     start a REPL (`:help` there for its commands)
@@ -308,8 +308,8 @@ fn main() -> ExitCode {
     }
 }
 
-/// Compiles and runs `src`. In expression mode (REPL, `-e`), a lone expression
-/// is accepted as if prefixed with `return`, like the Luau REPL does.
+/// Compiles and runs `src`. In expression mode (REPL, `-e`) a lone expression
+/// works as if it had `return` in front, same as the Luau REPL.
 pub(crate) fn run(
     engine: &mut Engine,
     name: &str,
@@ -320,11 +320,11 @@ pub(crate) fn run(
     let proto: Rc<Proto> = if expr_mode {
         match engine.compile_expr(name, src) {
             Ok(p) => p,
-            // Report whichever reading the user most likely meant.
+            // report whichever reading the user most likely meant
             Err(expr_err) => match engine.compile(name, src) {
                 Ok(p) => p,
-                // An expression followed by more (`x = )`): a statement
-                // was meant, so its error is the one to show.
+                // an expression followed by more (`x = )`), they meant a
+                // statement, so show that error
                 Err(chunk_err)
                     if expr_err
                         .diagnostic()
@@ -333,7 +333,7 @@ pub(crate) fn run(
                 {
                     return Err(chunk_err);
                 }
-                // It parsed as a chunk, so its error is the real one.
+                // it parsed as a chunk, so its error's the real one
                 Err(chunk_err) if chunk_err.kind != ErrorKind::Syntax => return Err(chunk_err),
                 Err(chunk_err) if starts_with_statement(src) => return Err(chunk_err),
                 Err(_) => return Err(expr_err),

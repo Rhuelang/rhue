@@ -17,11 +17,11 @@ pub struct Label {
     pub message: String,
 }
 
-/// A single error or warning, independent of how it is rendered.
+/// One error or warning, before it's rendered.
 ///
-/// Every phase (lexer, parser, compiler, VM) reports through this type so the
-/// embedder sees one uniform error shape, and the CLI can pretty-print any of
-/// them with [`Diagnostic::render`].
+/// Every phase (lexer, parser, compiler, VM) reports through this, so embedders
+/// only ever deal with one error shape and the CLI can print any of them with
+/// [`Diagnostic::render`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Diagnostic {
     pub severity: Severity,
@@ -30,15 +30,14 @@ pub struct Diagnostic {
     pub secondary: Vec<Label>,
     pub notes: Vec<String>,
     pub help: Option<String>,
-    /// Edits that would fix it, for editors to offer (the CLI shows only
-    /// `help`).
+    /// Edits that would fix it, for editors (the CLI only shows `help`).
     pub fixes: Vec<Fix>,
 }
 
-/// A suggested change to the source: replacing each span with its text.
+/// A suggested change: swap each span for its text.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Fix {
-    /// What it does, as a command: "Change to 'name'".
+    /// What it does, worded as a command: "Change to 'name'".
     pub title: String,
     /// Non-overlapping replacements (an empty span inserts).
     pub edits: Vec<(Span, String)>,
@@ -96,9 +95,9 @@ impl Diagnostic {
         self.primary.span
     }
 
-    /// Renders this diagnostic with ariadne, underlining the source.
+    /// Renders it with ariadne, source underlined.
     ///
-    /// `color` should be `false` when the output is not a terminal (and in tests).
+    /// Pass `color: false` when it's not going to a terminal (and in tests).
     pub fn render(&self, source_name: &str, source: &str, color: bool) -> String {
         let kind = match self.severity {
             Severity::Error => ReportKind::Error,

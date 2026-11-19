@@ -1,9 +1,9 @@
-//! `rhue test`: runs `*_test.rhue` (and `*.test.rhue`) files.
+//! `rhue test`, runs `*_test.rhue` (and `*.test.rhue`) files.
 //!
-//! A test file calls `test(name, fn)` (inside `describe(name, fn)` blocks
-//! if it likes) and checks things with `expect(value)`. Each file runs in
-//! its own engine; each test is a function call, and a test fails when it
-//! raises an error, from a failed expectation or otherwise.
+//! A test file calls `test(name, fn)` (inside `describe(name, fn)` blocks if it
+//! wants) and checks stuff with `expect(value)`. Each file gets its own engine
+//! and each test is a function call. A test fails when it raises an error, from
+//! a failed expectation or anything else.
 
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -19,13 +19,13 @@ const MATCHERS: &str = "toBe: (any) -> (), toEqual: (any) -> (), toBeNil: () -> 
     toBeGreaterThan: (number) -> (), toBeLessThan: (number) -> (),
     toHaveLength: (number) -> (), toContain: (any) -> (), toThrow: (string?) -> ()";
 
-/// What the prelude's frames are called in tracebacks (and left out of
+/// What the prelude's frames are called in tracebacks (and they're left out of
 /// failure reports).
 const PRELUDE_NAME: &str = "<rhue test>";
 
-/// An error as a failure report shows it: the prelude's own frames (an
-/// `expect` matcher's internals) left out of its traceback, and the
-/// traceback dropped when all that's left is the test itself.
+/// An error the way a failure report shows it. The prelude's own frames (an
+/// `expect` matcher's insides) get cut from its traceback, and the traceback's
+/// dropped completely when all that's left is the test itself.
 fn failure(e: &rhue::Error, color: bool) -> String {
     let text = e.render(color);
     let lines: Vec<&str> = text
@@ -42,7 +42,7 @@ fn failure(e: &rhue::Error, color: bool) -> String {
                 .take_while(|f| f.trim_start().starts_with("in ") || f.contains("called from"))
                 .count();
             if frames <= 1 {
-                // Drop the note, its frame, and the spacer line before it.
+                // drop the note, its frame, and the spacer line before it
                 if out.last().is_some_and(|p| p.trim() == "|") {
                     out.pop();
                 }
@@ -58,7 +58,7 @@ fn failure(e: &rhue::Error, color: bool) -> String {
 
 const USAGE: &str = "usage: rhue test [--filter TEXT] [PATH...]";
 
-/// Test files under `path` (or `path` itself, if it's a file).
+/// Test files under `path` (or `path` itself if it's a file).
 fn find(path: &Path, out: &mut Vec<PathBuf>) {
     if path.is_file() {
         out.push(path.to_path_buf());
@@ -120,9 +120,9 @@ fn indent(text: &str, by: &str) -> String {
         .join("\n")
 }
 
-/// A fresh engine with `test`, `describe` and `expect`, loading modules
-/// next to `file` or else from the current folder (so `tests/x_test.rhue`
-/// can `require("lib.x")`); and the list the tests are collected in.
+/// A fresh engine with `test`, `describe` and `expect`, loading modules next to
+/// `file` or from the current folder (so `tests/x_test.rhue` can
+/// `require("lib.x")`), plus the list tests get collected into.
 fn engine_for(file: &Path) -> Result<(Engine, Table), rhue::Error> {
     let mut engine = Engine::new();
     let bases = [
@@ -155,7 +155,7 @@ struct Tally {
     files_failed: usize,
 }
 
-/// Runs one file's tests (those whose names contain `filter`).
+/// Runs one file's tests (the ones whose names contain `filter`).
 fn run_file(path: &Path, filter: Option<&str>, paint: &Paint, color: bool, tally: &mut Tally) {
     println!("{}", path.display());
     let fail_file = |tally: &mut Tally, e: &rhue::Error| {

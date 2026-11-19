@@ -12,17 +12,17 @@
 //! function Account:deposit(n: number) self.balance += n end
 //! ```
 //!
-//! An instance's type remembers its metatable by the *local* that holds it
-//! ([`Meta::Local`]), so methods added to the class after the instance was
-//! made are still found. `T.__index = T` marks the class as its own
+//! An instance's type remembers its metatable by the *local* holding it
+//! ([`Meta::Local`]), so methods added to the class after the instance got
+//! made still get found. `T.__index = T` marks the class as its own
 //! `__index` ([`TableType::index_self`]).
 //!
 //! Inside a `:` method of a class, `self` is an instance: the fields the
 //! class's constructors give it (any function on the class that returns a
 //! table with the class as its metatable, checked earlier in the chunk),
-//! the class's methods through `__index`, and, since a method can't know
+//! the class's methods through `__index`, and since a method can't know
 //! every field other methods add, any other field as `any`
-//! ([`TableType::open`]). Before any constructor is seen, `self` is `any`.
+//! ([`TableType::open`]). Before any constructor shows up, `self` is `any`.
 
 use std::rc::Rc;
 
@@ -34,12 +34,12 @@ use rhue_compiler::resolve::LocalId;
 use crate::check::Checker;
 use crate::types::{Meta, Pack, TableType, Type};
 
-/// How many `__index` tables a lookup follows.
+/// How many `__index` tables a lookup will follow.
 const MAX_DEPTH: u32 = 8;
 
 impl Checker<'_> {
     /// The table type of `t`'s metatable, if it has one the checker can see.
-    /// `Err(())` when it has one that can't be resolved (treat as `any`).
+    /// `Err(())` when it has one that can't be resolved (treat it as `any`).
     fn meta_table(&mut self, t: &TableType) -> Result<Option<Rc<TableType>>, ()> {
         let meta = match &t.meta {
             None => return Ok(None),
@@ -56,7 +56,7 @@ impl Checker<'_> {
     }
 
     /// `t.name` found through `t`'s metatable (`__index` tables, chains of
-    /// them, or an `__index` function's result). `None`: not there.
+    /// them, or an `__index` function's result). `None` if it's not there.
     pub fn lookup_meta(&mut self, t: &TableType, name: &str) -> Option<Type> {
         self.lookup_meta_at(t, name, 0)
     }
@@ -100,7 +100,7 @@ impl Checker<'_> {
         }
     }
 
-    /// The result of an operator defined by a metamethod on either operand.
+    /// The result of an operator defined by a metamethod on either side.
     pub fn meta_operator(&mut self, l: &Type, r: &Type, event: &str) -> Option<Type> {
         let mm = self
             .metamethod(l, event)
@@ -120,8 +120,8 @@ impl Checker<'_> {
         }
     }
 
-    /// `setmetatable(t, mt)` (the built-in, not shadowed): `t`'s type with
-    /// `mt` as its metatable.
+    /// `setmetatable(t, mt)` (the built-in, not shadowed), `t`'s type with `mt`
+    /// as its metatable.
     pub fn setmetatable_call(&mut self, args: &[Expr], span: Span) -> Pack {
         let (Some(t), Some(mt)) = (args.first(), args.get(1)) else {
             for a in args {
@@ -170,7 +170,7 @@ impl Checker<'_> {
         }
     }
 
-    /// `T.__index = T` on a local holding a table literal's type: marks the
+    /// `T.__index = T` on a local holding a table literal's type marks the
     /// table as a class. Returns `true` when it handled the assignment.
     pub fn class_index(&mut self, target: &Expr, value: &Expr) -> bool {
         let ExprKind::Index { object, key } = &target.kind else {
@@ -218,8 +218,8 @@ impl Checker<'_> {
         }
     }
 
-    /// Remembers what a function on class `class` returned, if it is an
-    /// instance of the class (a table whose metatable is that local).
+    /// Remembers what a function on class `class` returned, if it's an instance
+    /// of the class (a table whose metatable is that local).
     pub fn note_instance(&mut self, class: LocalId, ret: &Type) {
         let Type::Table(t) = self.expand(ret) else {
             return;
@@ -229,7 +229,7 @@ impl Checker<'_> {
             _ => return,
         }
         let merged = match self.instances.get(&class) {
-            // Another constructor: fields either one gives.
+            // another constructor, fields either one gives
             Some(known) => {
                 let mut m = (**known).clone();
                 for (n, p) in &t.props {
@@ -263,9 +263,9 @@ impl Checker<'_> {
         }
     }
 
-    /// What `value.` / `value:` can name on a value of type `t`: its
-    /// fields, then what its metatable's `__index` adds (classes, chains),
-    /// a host type's members, or the string library for strings.
+    /// What `value.` / `value:` can name on a value of type `t`: its fields,
+    /// then what its metatable's `__index` adds (classes, chains), a host
+    /// type's members, or the string library for strings.
     pub fn members_of(&mut self, t: &Type) -> Vec<(Rc<str>, Type)> {
         let mut out: Vec<(Rc<str>, Type)> = Vec::new();
         let add = |out: &mut Vec<(Rc<str>, Type)>, n: &Rc<str>, t: &Type| {

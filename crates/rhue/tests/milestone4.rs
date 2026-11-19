@@ -1,9 +1,9 @@
-//! Milestone 4: tables, indexing, methods, generic `for`, `pcall`/`error`,
-//! the standard library and the garbage collector.
+//! Milestone 4: tables, indexing, methods, generic `for`, `pcall`/`error`, the
+//! standard library and the garbage collector.
 //!
-//! Every program runs three ways: folded, unfolded, and with the GC
-//! collecting before every instruction (so any object the collector fails
-//! to see as live gets freed immediately and breaks the test).
+//! Every program runs three ways: folded, unfolded, and with the GC collecting
+//! before every instruction (so any object the collector fails to see as live
+//! gets freed right away and breaks the test).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -24,7 +24,7 @@ fn engines() -> [Engine; 3] {
     ]
 }
 
-/// Results rendered as text, so tables/functions compare by shape.
+/// Results rendered as text, so tables and functions compare by shape.
 fn render(vals: &[Value]) -> Vec<String> {
     vals.iter()
         .map(|v| match v {
@@ -90,7 +90,7 @@ fn constructors_and_indexing() {
         "\"deep\""
     );
     assert_eq!(one("local t = {} return t.missing"), "nil");
-    // Number keys are normalised: 1 and 1.0 are the same key, -0 and 0 too.
+    // number keys are normalised: 1 and 1.0 are the same key, -0 and 0 too
     assert_eq!(
         one("local t = {} t[1.0] = 'a' t[-0] = 'z' return t[1] .. t[0]"),
         "\"az\""
@@ -148,19 +148,19 @@ fn assignment_to_fields() {
         run("local t = {} t.x, t.y = 1, 2 return t.x, t.y"),
         ["1", "2"]
     );
-    // `i, t[i] = i + 1, 20` indexes with the old `i` (Lua manual §3.3.3).
+    // `i, t[i] = i + 1, 20` indexes with the old `i` (Lua manual §3.3.3)
     assert_eq!(
         run("local t = {} local i = 3 i, t[i] = i + 1, 20 return i, t[3], t[4]"),
         ["4", "20", "nil"]
     );
-    // `t[f()] += 1` evaluates f once.
+    // `t[f()] += 1` evaluates f once
     assert_eq!(
         run(
             "local calls = 0 local t = {0, 0} local function k() calls += 1 return 2 end t[k()] += 5 return calls, t[2]"
         ),
         ["1", "5"]
     );
-    // Globals holding tables.
+    // globals holding tables
     assert_eq!(
         one("config = {} config.debug = true return config.debug"),
         "true"
@@ -252,28 +252,28 @@ fn generic_for() {
         one("local n = 0 for k, v in pairs({a = 1, b = 2, 3}) do n += v end return n"),
         "6"
     );
-    // Luau's generalized iteration: iterate a table directly.
+    // luau's generalized iteration: iterate a table directly
     assert_eq!(
         one("local n = 0 for k, v in {x = 5, y = 6} do n += v end return n"),
         "11"
     );
-    // Insertion order is preserved for the hash part, array part first.
+    // insertion order is preserved for the hash part, array part first
     assert_eq!(
         one("local out = '' for k in {1, 2, z = 0, a = 0} do out ..= tostring(k) end return out"),
         "\"12za\""
     );
-    // ipairs stops at the first nil.
+    // ipairs stops at the first nil
     assert_eq!(
         one("local c = 0 for _ in ipairs({1, 2, nil, 4}) do c += 1 end return c"),
         "2"
     );
-    // A custom iterator function.
+    // a custom iterator function
     assert_eq!(
         one("local function range(n) local i = 0 return function() i += 1 if i <= n then return i end end end
              local s = 0 for i in range(5) do s += i end return s"),
         "15"
     );
-    // Stateless iterator with explicit state and control.
+    // stateless iterator with explicit state and control
     assert_eq!(
         one(
             "local function iter(t, i) i += 1 if t[i] then return i, t[i] end end
@@ -414,19 +414,19 @@ fn pcall_and_error() {
             "\"<eval>:1: attempt to perform arithmetic (add) on nil\""
         ]
     );
-    // Non-string error values pass through untouched.
+    // non-string error values pass through untouched
     assert_eq!(
         run("local ok, e = pcall(error, {code = 42}) return e.code"),
         ["42"]
     );
     assert_eq!(run("return pcall(error)"), ["false", "nil"]);
-    // pcall a native directly.
+    // pcall a native directly
     assert_eq!(run("return pcall(tonumber, '12')"), ["true", "12"]);
     assert_eq!(
         run("return pcall(nil)"),
         ["false", "\"attempt to call a nil value\""]
     );
-    // Errors unwind through several frames and close their upvalues.
+    // errors unwind through several frames and close their upvalues
     assert_eq!(
         run("local get
              local ok = pcall(function()
@@ -438,14 +438,14 @@ fn pcall_and_error() {
              return ok, get()"),
         ["false", "\"kept\""]
     );
-    // Execution continues normally after a caught error.
+    // execution continues normally after a caught error
     assert_eq!(
         one(
             "local n = 0 for i = 1, 5 do local ok = pcall(function() if i % 2 == 0 then error('even') end end) if ok then n += 1 end end return n"
         ),
         "3"
     );
-    // Nested pcalls.
+    // nested pcalls
     assert_eq!(
         run(
             "return pcall(function() local ok, e = pcall(error, 'inner', 0) error(e .. '+outer', 0) end)"
@@ -549,7 +549,7 @@ fn tables_compare_by_identity_and_print_as_addresses() {
     assert!(out.borrow()[0].starts_with("table: 0x"));
 }
 
-// --- garbage collection ------------------------------------------------------
+// ─ Garbage Collection ────────────────────────────────────────────────────────
 
 #[test]
 fn garbage_is_collected_and_memory_stays_bounded() {
@@ -633,7 +633,7 @@ fn values_held_by_the_host_survive_collection() {
         e.eval_expr("double(t.answer)").unwrap(),
         Value::Number(84.0)
     );
-    // Once the host drops them (and the globals are cleared), they can go.
+    // once the host drops them (and the globals are cleared), they can go
     e.set_global("t", Value::Nil);
     e.set_global("double", Value::Nil);
     drop((t, f));

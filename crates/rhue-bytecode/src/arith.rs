@@ -1,7 +1,7 @@
-//! Arithmetic semantics, in one place.
+//! Arithmetic, all in one place.
 //!
-//! The constant folder and the VM both call [`arith`], so a folded expression
-//! and an executed one give bit-for-bit identical results.
+//! The constant folder and the VM both go through [`arith`], so a folded
+//! expression and a run one come out bit-for-bit the same.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ArithOp {
@@ -15,7 +15,8 @@ pub enum ArithOp {
 }
 
 impl ArithOp {
-    /// The name Luau uses in "attempt to perform arithmetic (add) on ..." errors.
+    /// The name Luau puts in "attempt to perform arithmetic (add) on ..."
+    /// errors.
     pub fn name(self) -> &'static str {
         match self {
             ArithOp::Add => "add",
@@ -29,11 +30,11 @@ impl ArithOp {
     }
 }
 
-/// Luau number semantics: IEEE-754 doubles throughout.
+/// Luau's number semantics, IEEE-754 doubles all the way.
 ///
 /// - `a // b` is `floor(a / b)`.
 /// - `a % b` is `a - floor(a / b) * b`, so the result takes the divisor's sign.
-/// - Division by zero gives ±inf or NaN; it is not an error.
+/// - Dividing by zero gives ±inf or NaN, it's not an error.
 #[inline]
 pub fn arith(op: ArithOp, a: f64, b: f64) -> f64 {
     match op {
@@ -47,27 +48,27 @@ pub fn arith(op: ArithOp, a: f64, b: f64) -> f64 {
     }
 }
 
-/// `x.floor()`, without the libm call that baseline x86-64 (no SSE4.1)
-/// compiles `f64::floor` to. Exactly equal to `f64::floor` for every input,
-/// signed zeros, infinities and NaN included.
+/// `x.floor()` without the libm call baseline x86-64 (no SSE4.1) turns
+/// `f64::floor` into. Matches `f64::floor` exactly for every input, signed
+/// zeros, infinities and NaN included.
 #[inline]
 pub fn floor(x: f64) -> f64 {
-    // At 2^52 and beyond every double is already an integer (and the cast
-    // below would saturate), so only smaller magnitudes need work.
+    // from 2^52 up every double is already an integer (and the cast below would
+    // saturate), so only smaller ones need work
     if x.abs() < 4_503_599_627_370_496.0 {
         let t = x as i64 as f64;
-        // Truncation rounds toward zero; negative non-integers need one less.
-        // The only zero result of a negative input is floor(-0.0) = -0.0,
-        // which `copysign` restores (the cast lost the sign).
+        // truncation rounds toward zero, so negative non-integers need one
+        // less. the only zero result from a negative input is floor(-0.0) =
+        // -0.0, and `copysign` puts back the sign the cast lost
         (if t > x { t - 1.0 } else { t }).copysign(x)
     } else {
         x
     }
 }
 
-/// Formats a number the way Luau's `tostring` does: integral values print
-/// without a fraction (`3`), others use the shortest round-trip form (`0.1`),
-/// and very large or small magnitudes use an exponent (`1e+20`).
+/// Formats a number like Luau's `tostring`: whole numbers print without a
+/// fraction (`3`), others use the shortest form that round-trips (`0.1`), and
+/// really big or small ones get an exponent (`1e+20`).
 pub fn format_number(n: f64) -> String {
     if n.is_nan() {
         return if n.is_sign_negative() {
@@ -90,7 +91,7 @@ pub fn format_number(n: f64) -> String {
     if (1e-5..1e16).contains(&abs) {
         return format!("{n}");
     }
-    // `{:e}` gives "1e20" / "1.5e-7"; Luau writes "1e+20" / "1.5e-07".
+    // `{:e}` gives "1e20" / "1.5e-7", Luau writes "1e+20" / "1.5e-07"
     let s = format!("{n:e}");
     let (mantissa, exp) = s.split_once('e').expect("`{:e}` always has an exponent");
     let (sign, digits) = match exp.strip_prefix('-') {
@@ -132,7 +133,7 @@ mod tests {
             0.9999999999999999,
             -0.9999999999999999,
         ];
-        // A deterministic spread over many magnitudes.
+        // a deterministic spread over lots of magnitudes
         let mut seed = 0x9e37_79b9_7f4a_7c15u64;
         for _ in 0..200_000 {
             seed ^= seed << 13;

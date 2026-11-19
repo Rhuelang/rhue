@@ -1,11 +1,11 @@
 //! Rhue's lexer, built on [`logos`].
 //!
-//! Part of [Rhue](https://docs.rs/rhue)'s implementation. To embed Rhue, use
-//! the `rhue` crate: its API is the one kept stable.
+//! This is part of [Rhue](https://docs.rs/rhue)'s guts. If you're embedding
+//! Rhue, use the `rhue` crate, that's the API that stays stable.
 //!
-//! Tokens carry no payload except numbers: identifiers and strings are sliced
-//! out of the source by span when the parser needs them. That keeps [`Token`]
-//! `Copy` and lifetime-free.
+//! Tokens don't carry anything except numbers. Identifiers and strings get
+//! sliced out of the source by span when the parser wants them, which keeps
+//! [`Token`] `Copy` and lifetime-free.
 
 pub mod interp;
 mod token;
@@ -15,23 +15,23 @@ pub use token::{LexErrorKind, Token};
 use logos::Logos;
 use rhue_common::{Diagnostic, Span};
 
-/// A token together with where it came from.
+/// A token and where it came from.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Spanned {
     pub token: Token,
     pub span: Span,
 }
 
-/// The result of lexing a whole source file.
+/// Everything from lexing one source file.
 #[derive(Debug, Default)]
 pub struct Lexed {
-    /// Every token, always terminated by a single [`Token::Eof`].
+    /// Every token, always ending in exactly one [`Token::Eof`].
     pub tokens: Vec<Spanned>,
     pub errors: Vec<Diagnostic>,
 }
 
-/// Lexes `source` completely. Errors don't stop lexing: the bad characters are
-/// skipped and reported, so the parser still sees the rest of the file.
+/// Lexes all of `source`. Errors don't stop it, bad characters get skipped and
+/// reported so the parser still sees the rest of the file.
 pub fn lex(source: &str) -> Lexed {
     let mut out = Lexed::default();
     if source.len() > u32::MAX as usize {

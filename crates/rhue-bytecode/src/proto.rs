@@ -13,34 +13,34 @@ pub enum Constant {
     String(Rc<str>),
 }
 
-/// A local variable, for debuggers: which register holds it, and where.
+/// A local variable, for debuggers: which register holds it, and when.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LocalVar {
     pub name: Rc<str>,
     pub reg: u8,
-    /// The instructions it's in scope for: `start_pc..end_pc`.
+    /// The instructions it's in scope for, `start_pc..end_pc`.
     pub start_pc: u32,
     pub end_pc: u32,
 }
 
-/// How a closure finds one of its upvalues when it is created.
+/// How a closure finds one of its upvalues when it gets created.
 #[derive(Clone, Debug, PartialEq)]
 pub struct UpvalDesc {
-    /// `true`: capture the enclosing function's register `index`.
-    /// `false`: share the enclosing function's own upvalue `index`.
+    /// `true`: capture the enclosing function's register `index`. `false`:
+    /// share the enclosing function's own upvalue `index`.
     pub in_stack: bool,
     pub index: u8,
     /// The variable's name, for disassembly and debugging.
     pub name: Rc<str>,
 }
 
-/// Per-instruction slots the VM uses as *inline caches*: for a field or
-/// global access it remembers where in the table's hash part the key was
-/// found last time, so the next lookup can check that one entry instead of
-/// hashing (the key is compared, so a stale hint only costs a normal lookup).
+/// Per-instruction slots the VM uses as *inline caches*. For a field or global
+/// access it remembers where in the table's hash part the key was last time, so
+/// the next lookup can check that one entry instead of hashing (the key still
+/// gets compared, so a stale hint just costs a normal lookup).
 ///
-/// Created on first use, one slot per instruction. It is runtime state, not
-/// part of the program: clones start empty and it never affects equality.
+/// Made on first use, one slot per instruction. It's runtime state, not part of
+/// the program, so clones start empty and it never affects equality.
 #[derive(Default)]
 pub struct InlineCache(OnceCell<Box<[Cell<u32>]>>);
 
@@ -72,8 +72,8 @@ impl fmt::Debug for InlineCache {
     }
 }
 
-/// Remembers that a prototype passed [`verify`](crate::verify), so a chunk
-/// run many times is checked once. Like [`InlineCache`], clones start
+/// Remembers that a prototype passed [`verify`](crate::verify), so a chunk that
+/// runs a lot only gets checked once. Same as [`InlineCache`], clones start
 /// unmarked and it never affects equality.
 #[derive(Default)]
 pub struct Verified(Cell<bool>);
@@ -106,42 +106,43 @@ impl fmt::Debug for Verified {
     }
 }
 
-/// The shape of the tables a constructor makes (`DUPTABLE`): sizes to
-/// reserve and the constant string keys it stores first, in order. Keys
-/// start out nil, which tables treat as tombstones, so a template is
-/// invisible to the program except that it saves the constructor from
-/// growing the table and searching for each key.
+/// The shape of the tables a constructor makes (`DUPTABLE`): sizes to reserve
+/// and the constant string keys it stores first, in order. Keys start out nil,
+/// which tables treat as tombstones, so the program can't tell a template's
+/// there except the constructor doesn't have to grow the table and search for
+/// each key.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TableTemplate {
     /// Array slots to reserve (the constructor's positional values).
     pub array: u32,
     /// Hash slots to reserve (all its keyed fields).
     pub hash: u32,
-    /// Constant indices of the keys, each a distinct string.
+    /// Constant indices of the keys, each a different string.
     pub keys: Vec<u32>,
 }
 
-/// A compiled function prototype: the unit the VM executes.
+/// A compiled function prototype, what the VM actually runs.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Proto {
-    /// `None` for the main chunk; otherwise the declared name, if any.
+    /// `None` for the main chunk, otherwise the declared name if there is one.
     pub name: Option<Rc<str>>,
     pub code: Vec<Instr>,
     pub constants: Vec<Constant>,
-    /// One source span per instruction, for runtime error messages.
+    /// One source span per instruction, for runtime errors.
     pub spans: Vec<Span>,
-    /// Number of registers the VM must reserve for one call.
+    /// How many registers the VM needs to reserve for one call.
     pub max_stack: u8,
     pub num_params: u8,
     pub is_vararg: bool,
-    /// Prototypes of functions defined inside this one (`CLOSURE` operands).
+    /// Prototypes of the functions defined inside this one (`CLOSURE`
+    /// operands).
     pub protos: Vec<Rc<Proto>>,
     pub upvalues: Vec<UpvalDesc>,
-    /// Debug information: each local's register and live range.
+    /// Debug info, each local's register and live range.
     pub locals: Vec<LocalVar>,
     /// Where the function is defined in the source.
     pub span: Span,
-    /// The source every span in this prototype refers to.
+    /// The source every span in here points into.
     pub source: Rc<SourceFile>,
     /// Shapes for `DUPTABLE`, one per table constructor with constant keys.
     pub templates: Vec<TableTemplate>,
@@ -157,8 +158,8 @@ impl Proto {
         self.name.as_deref().unwrap_or("<anonymous>")
     }
 
-    /// A human-readable listing, used by `rhue --dump` and snapshot tests.
-    /// Nested functions are listed after their parent.
+    /// A readable listing, used by `rhue --dump` and the snapshot tests. Nested
+    /// functions come after their parent.
     pub fn disassemble(&self) -> String {
         let mut out = String::new();
         self.disassemble_into(&mut out, true);
@@ -312,7 +313,7 @@ impl Proto {
         }
     }
 
-    /// `{x, y}`: the template's keys.
+    /// `{x, y}`, the template's keys
     fn template_comment(&self, t: usize) -> String {
         let Some(t) = self.templates.get(t) else {
             return "<missing template>".into();

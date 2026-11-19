@@ -1,17 +1,17 @@
 //! Property test for milestone 2: random expressions over locals of mixed
 //! types (numbers, booleans, nil, strings), using arithmetic, comparisons,
-//! `and`/`or`/`not`, `..` and if-expressions. Each one is checked against a
-//! reference evaluator written directly from Luau's semantics, in three
-//! positions that exercise different codegen paths:
+//! `and`/`or`/`not`, `..` and if-expressions. Each one gets checked against
+//! a reference evaluator written straight from Luau's semantics, in five
+//! positions that hit different codegen paths:
 //!
 //! 1. as a returned value (`return e`),
 //! 2. assigned to an existing local (`v0 = e; return v0`),
-//! 3. as an `if` condition (jump lists, no booleans materialised),
+//! 3. as an `if` condition (jump lists, no booleans made),
 //! 4. inside a function, with the variables passed as parameters,
 //! 5. inside a closure, with the variables captured as upvalues and the
 //!    result assigned back to one of them through the closure.
 //!
-//! Errors must match too: if the reference raises, the VM must raise.
+//! Errors have to match too, if the reference raises the VM has to raise.
 
 use proptest::prelude::*;
 use rhue::{CompileOptions, Engine, Value};
@@ -94,7 +94,7 @@ impl E {
                     "==" => a == b && !matches!((&a, &b), (V::Num(x), _) if x.is_nan()),
                     "~=" => !(a == b && !matches!((&a, &b), (V::Num(x), _) if x.is_nan())),
                     _ => {
-                        // `a > b` is `b < a`, `a >= b` is `b <= a`.
+                        // `a > b` is `b < a`, `a >= b` is `b <= a`
                         let (x, y, strict) = match *op {
                             "<" => (&a, &b, true),
                             "<=" => (&a, &b, false),
@@ -295,7 +295,7 @@ proptest! {
 
     #[test]
     fn assigned_to_a_live_local(env in prop::collection::vec(value(), VARS), e in expr()) {
-        // Assigning into v0 while `e` may read v0 is where register reuse bites.
+        // assigning into v0 while `e` may read v0 is where register reuse bites
         let src = format!("{}v0 = {}\nreturn v0", prelude(&env), e.source());
         let expected = e.eval(&env);
         check(&src, &expected, true)?;
@@ -325,8 +325,8 @@ proptest! {
 
     #[test]
     fn inside_a_closure_over_upvalues(env in prop::collection::vec(value(), VARS), e in expr()) {
-        // v0..v3 are upvalues of the inner closure; it writes the result into
-        // v0 (SETUPVAL), and the outer function reads v0 back from its register.
+        // v0..v3 are upvalues of the inner closure, it writes the result into
+        // v0 (SETUPVAL), and the outer function reads v0 back from its register
         let src = format!(
             "{}local function outer()\n  local set = function() v0 = {} end\n  set()\n  return v0\nend\nreturn outer()",
             prelude(&env),
@@ -335,8 +335,8 @@ proptest! {
         let expected = e.eval(&env);
         check(&src, &expected, true)?;
         check(&src, &expected, false)?;
-        // Collect before every instruction: strings built by `..` and the
-        // closure itself must survive.
+        // collect before every instruction: strings built by `..` and the
+        // closure itself must survive
         check_with(&src, &expected, true, true)?;
     }
 }

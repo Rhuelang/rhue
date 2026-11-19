@@ -11,15 +11,15 @@ use crate::relate::Subst;
 use crate::types::*;
 
 impl Checker<'_> {
-    /// The type of one value of `e` (the first, for calls and `...`).
+    /// The type of one value of `e` (the first one, for calls and `...`).
     pub fn expr(&mut self, e: &Expr) -> Type {
         let t = stacker::maybe_grow(64 * 1024, 1024 * 1024, || self.expr_inner(e, None));
         self.record(e.span, &t);
         t
     }
 
-    /// Like [`Self::expr`], with the type the context expects: table and
-    /// function literals are typed to fit it (fields keep literal types, a
+    /// Like [`Self::expr`], but with the type the context expects. Table and
+    /// function literals get typed to fit it (fields keep literal types, a
     /// callback's parameters come from the expected function type).
     pub fn expr_hinted(&mut self, e: &Expr, hint: Option<&Type>) -> Type {
         let t = stacker::maybe_grow(64 * 1024, 1024 * 1024, || self.expr_inner(e, hint));
@@ -33,7 +33,7 @@ impl Checker<'_> {
             ExprKind::Bool(b) => Type::BoolLit(*b),
             ExprKind::Number(_) => Type::Number,
             ExprKind::String(s) => Type::StrLit(s.clone()),
-            // Any value can go in a hole (it goes through `tostring`).
+            // any value can go in a hole (it goes through `tostring`)
             ExprKind::Interp(parts) => {
                 for part in parts {
                     if let InterpPart::Expr(x) = part {
@@ -161,7 +161,7 @@ impl Checker<'_> {
         }
     }
 
-    /// All the values of `e`: calls and `...` give several.
+    /// All the values of `e`, calls and `...` give several.
     pub fn expr_pack(&mut self, e: &Expr) -> Pack {
         let p = self.expr_pack_inner(e);
         if self.types.is_some()
@@ -177,8 +177,8 @@ impl Checker<'_> {
             ExprKind::Call { callee, args } if self.is_builtin(callee, "setmetatable") => {
                 self.setmetatable_call(args, e.span)
             }
-            // `require("name")`: the module's type, once the engine has
-            // checked it (it asks for the names it doesn't know yet).
+            // `require("name")`, the module's type once the engine has checked
+            // it (it asks for the names it doesn't know yet)
             ExprKind::Call { callee, args }
                 if args.len() == 1
                     && matches!(args[0].kind, ExprKind::String(_))
@@ -203,7 +203,7 @@ impl Checker<'_> {
                 let from = self.errors.len();
                 let mut p = self.call(&ct, None, args, e.span, name.as_deref());
                 self.suggest_assert(from, e.span, callee.span);
-                // `assert(x)` returns `x`, which can't be nil if it returned.
+                // `assert(x)` returns `x`, which can't be nil if it returned
                 if !p.types.is_empty() && self.is_builtin(callee, "assert") {
                     p.types[0] = p.types[0].strip_nil();
                 }
@@ -233,8 +233,8 @@ impl Checker<'_> {
         }
     }
 
-    /// An expression list: every value but the last is one value; the last
-    /// expands. `hints[i]` is the expected type of value `i`, if any.
+    /// An expression list. Every value but the last is one value, the last one
+    /// expands. `hints[i]` is the expected type of value `i`, if there is one.
     pub fn exprs_pack(&mut self, exprs: &[Expr], hints: &[Option<Type>]) -> Pack {
         let mut pack = Pack::default();
         for (i, e) in exprs.iter().enumerate() {
@@ -250,7 +250,7 @@ impl Checker<'_> {
         pack
     }
 
-    // --- operators -------------------------------------------------------------------
+    // ─ Operators ─────────────────────────────────────────────────────────────
 
     pub fn binary_type(
         &mut self,
@@ -325,7 +325,7 @@ impl Checker<'_> {
         matches!(self.expand(t), Type::Class(c) if &*c == "vector")
     }
 
-    /// Arithmetic involving a vector, as Luau allows it: `+ - * / //`
+    /// Arithmetic involving a vector, the way Luau allows it: `+ - * / //`
     /// between vectors, and `v * n`, `n * v`, `v / n`, `n / v`, `v // n`.
     /// `None` when neither side is a vector.
     fn vector_arith(&mut self, op: BinOp, l: &Type, r: &Type, span: Span) -> Option<Type> {
@@ -354,10 +354,10 @@ impl Checker<'_> {
         Some(Type::Class(Rc::from("vector")))
     }
 
-    // --- calls ---------------------------------------------------------------------------
+    // ─ Calls ─────────────────────────────────────────────────────────────────
 
-    /// Calls a value of type `callee` (with `self_ty` as the first argument
-    /// for a method call) and returns the results.
+    /// Calls a value of type `callee` (with `self_ty` as the first argument for
+    /// a method call) and returns the results.
     pub fn call(
         &mut self,
         callee: &Type,
@@ -400,7 +400,8 @@ impl Checker<'_> {
                 self.call(&e.strip_nil(), self_ty, args, span, name)
             }
             Type::Union(members) => {
-                // Any member might be the one called: check against each.
+                // any member could be the one getting called, check against
+                // each
                 let tys = self.arg_types(self_ty, args, span);
                 let mut results = Vec::new();
                 for m in members.iter() {
@@ -439,7 +440,7 @@ impl Checker<'_> {
                 Pack::one(Type::Never)
             }
             other => {
-                // A table with `__call` is called with itself first.
+                // a table with `__call` gets called with itself first
                 if let Some(call) = self.metamethod(&other, "__call") {
                     return match (self.expand(&call), self_ty) {
                         (Type::Function(f), None) => {
@@ -458,8 +459,8 @@ impl Checker<'_> {
         }
     }
 
-    /// Argument types without expectations (for overloads and unions):
-    /// the fixed values with their spans, then any variadic tail.
+    /// Argument types without expectations (for overloads and unions): the
+    /// fixed values with their spans, then any variadic tail.
     fn arg_types(&mut self, self_ty: Option<Type>, args: &[Expr], span: Span) -> ArgTypes {
         let mut tys: Vec<(Type, Span)> = self_ty.into_iter().map(|t| (t, span)).collect();
         let mut tail = None;
@@ -487,8 +488,8 @@ impl Checker<'_> {
         let mut subst = Subst::new(&f.generics);
         let mut tys: Vec<(Type, Span)> = self_ty.into_iter().map(|t| (t, span)).collect();
         let mut tail = None;
-        // Literals wait until other arguments have fixed the generics, so a
-        // callback can be typed by, say, the table it's sorting.
+        // literals wait until other arguments have pinned down the generics, so
+        // a callback can be typed by say the table it's sorting
         let mut deferred = Vec::new();
         for (i, a) in args.iter().enumerate() {
             if i + 1 == args.len() && a.kind.is_multi() {
@@ -518,8 +519,8 @@ impl Checker<'_> {
         self.check_args(f, &mut subst, &ArgTypes(tys, tail), span, name)
     }
 
-    /// Checks argument types against `f`'s parameters and returns its
-    /// results with generics substituted.
+    /// Checks argument types against `f`'s parameters, returns its results with
+    /// generics substituted.
     fn check_args(
         &mut self,
         f: &FnType,
@@ -535,8 +536,8 @@ impl Checker<'_> {
         }
         let shown = name.map_or(String::new(), |n| format!(" '{n}'"));
         let fixed = f.params.len();
-        // `...: T...`: the extra arguments are the pack (unless something
-        // else, like a callback's parameters, already fixed it).
+        // `...: T...`, the extra arguments are the pack (unless something else,
+        // like a callback's parameters, already pinned it)
         if let Some(g) = f.variadic.as_ref().and_then(Type::pack_var) {
             let extra: Vec<Type> = tys.iter().skip(fixed).map(|(t, _)| t.clone()).collect();
             subst.bind_pack_once(
@@ -547,7 +548,7 @@ impl Checker<'_> {
                 },
             );
             if let Some(bound) = subst.pack(g.id) {
-                // Check the extras (and their tail) against what it is.
+                // check the extras (and their tail) against what it is
                 let args = ArgTypes(tys.iter().skip(fixed).cloned().collect(), tail.clone());
                 let as_fn = FnType {
                     generics: Vec::new(),
@@ -640,7 +641,7 @@ impl Checker<'_> {
         }
     }
 
-    // --- indexing ----------------------------------------------------------------------
+    // ─ Indexing ──────────────────────────────────────────────────────────────
 
     pub fn index_name(&mut self, ot: &Type, name: &str, span: Span) -> Type {
         match self.expand(ot) {
@@ -661,8 +662,8 @@ impl Checker<'_> {
                 if let Some(found) = self.lookup_meta(&t, name) {
                     return found;
                 }
-                // A field some method (or other code) added to instances
-                // of this class since this instance type was taken.
+                // a field some method (or other code) added to instances of
+                // this class since this instance type was taken
                 if let Some(found) = self.added_field(&t, name) {
                     return found;
                 }
@@ -764,10 +765,10 @@ impl Checker<'_> {
         }
     }
 
-    /// Records that instances of `t`'s class (if it's an instance) can
-    /// have field `name`, holding `value`'s type or what it held before.
-    /// Optional: code may read it before whatever assigns it has run.
-    /// Whether `t` was an instance.
+    /// Records that instances of `t`'s class (if it's an instance) can have
+    /// field `name`, holding `value`'s type or what it held before. It's
+    /// optional, code might read it before whatever assigns it has run. Returns
+    /// whether `t` was an instance.
     fn add_field(&mut self, t: &TableType, name: &str, value: &Type, before: Option<Type>) -> bool {
         let Some(Meta::Local { id, .. }) = &t.meta else {
             return false;
@@ -777,7 +778,7 @@ impl Checker<'_> {
         };
         let value = value.widen();
         if matches!(value, Type::Nil) && before.is_none() {
-            // `self.x = nil` says nothing about what `x` will hold.
+            // `self.x = nil` doesn't say anything about what `x` will hold
             return false;
         }
         let mut grown = (**known).clone();
@@ -802,8 +803,8 @@ impl Checker<'_> {
                     _ => false,
                 };
                 if added {
-                    // A field added by assignment. Methods (`self`, open)
-                    // grow it; other code has to fit what they put there.
+                    // a field added by assignment. methods (`self`, open) grow
+                    // it, other code has to fit what they put there
                     let before = self.added_field(&t, name);
                     if t.open {
                         self.add_field(&t, name, value, before);
@@ -829,7 +830,7 @@ impl Checker<'_> {
                     grown.props.push((Rc::from(name), value.widen()));
                     self.grow_table(object, Type::table(grown), &t, span, name);
                 } else if let Some(field) = self.added_field(&t, name) {
-                    // Added before (see `add_field`).
+                    // added before (see `add_field`)
                     if t.open {
                         self.add_field(&t, name, value, Some(field));
                     } else {
@@ -837,9 +838,9 @@ impl Checker<'_> {
                     }
                 } else if t.open && !self.has_newindex(&t) && self.add_field(&t, name, value, None)
                 {
-                    // A new field on an instance (`self.cache = {}`).
+                    // a new field on an instance (`self.cache = {}`)
                 } else if t.open || self.has_newindex(&t) {
-                    // Unknown to the checker, or `__newindex` decides.
+                    // unknown to the checker, or `__newindex` decides
                 } else {
                     self.error(span, format!("Cannot add property '{name}' to table '{t}'"));
                 }
@@ -916,8 +917,8 @@ impl Checker<'_> {
         }
     }
 
-    /// A table literal's type gains a field: only through the local (or
-    /// global) that holds it.
+    /// A table literal's type gains a field, only through the local (or global)
+    /// holding it.
     fn grow_table(&mut self, object: &Expr, grown: Type, was: &TableType, span: Span, what: &str) {
         if let ExprKind::Name(n) = &object.kind {
             match self.local_id(n) {
@@ -945,7 +946,7 @@ impl Checker<'_> {
         );
     }
 
-    // --- literals --------------------------------------------------------------------------
+    // ─ Literals ──────────────────────────────────────────────────────────────
 
     pub fn table_literal(&mut self, items: &[TableItem], hint: Option<&Type>) -> Type {
         let hint = hint.and_then(|h| {
@@ -999,7 +1000,7 @@ impl Checker<'_> {
             }
         }
         let indexer = if keys.is_empty() {
-            // `{}` where a `{T}` or `{[K]: V}` is expected is an empty one.
+            // `{}` where a `{T}` or `{[K]: V}` is expected is an empty one
             hint.as_ref().and_then(|h| h.indexer.clone())
         } else {
             Some((union(keys), union(values)))
@@ -1012,7 +1013,7 @@ impl Checker<'_> {
         })
     }
 
-    /// The type a function declaration has before its body is checked:
+    /// The type a function declaration has before its body gets checked:
     /// annotations, with `any` for the rest.
     pub fn signature(&mut self, func: &FunctionBody) -> FnType {
         let generics = self.open_generics(&func.generics);
@@ -1039,9 +1040,9 @@ impl Checker<'_> {
         }
     }
 
-    /// Checks a function body and returns the function's type. `hint`
-    /// types unannotated parameters (a callback passed where a function
-    /// type is expected); `self_ty` is the object of a `function a:m()`.
+    /// Checks a function body and returns the function's type. `hint` types
+    /// unannotated parameters (a callback passed where a function type is
+    /// expected), `self_ty` is the object of a `function a:m()`.
     pub fn function(
         &mut self,
         func: &FunctionBody,
@@ -1104,7 +1105,7 @@ impl Checker<'_> {
             rets,
         };
         if self.types.is_some() {
-            // For tooling: return-type hints read it here.
+            // for tooling, return-type hints read it here
             self.record(func.span, &Type::function(f.clone()));
         }
         f
@@ -1124,15 +1125,15 @@ impl Checker<'_> {
         vars
     }
 
-    // --- conditions -------------------------------------------------------------------------
+    // ─ Conditions ────────────────────────────────────────────────────────────
 
-    /// Types `e` as a condition and returns how it narrows locals when true
-    /// and when false.
+    /// Types `e` as a condition and returns how it narrows locals when it's
+    /// true and when it's false.
     pub fn condition(&mut self, e: &Expr) -> Refine {
         self.cond(e, None).1
     }
 
-    /// A condition's type and narrowings together, so `a and b and c`
+    /// A condition's type and narrowings together, so `a and b and c` only
     /// visits each operand once.
     fn cond(&mut self, e: &Expr, hint: Option<&Type>) -> (Type, Refine) {
         stacker::maybe_grow(64 * 1024, 1024 * 1024, || self.cond_inner(e, hint))
@@ -1188,7 +1189,7 @@ impl Checker<'_> {
                 ..
             } => {
                 let (at, a) = self.cond(lhs, None);
-                // `t or {}`: the fallback table is shaped like `t`.
+                // `t or {}`, the fallback table is shaped like `t`
                 let left = at.truthy();
                 let hint = match (&rhs.kind, hint) {
                     (ExprKind::Table(_), None) if !left.is_any() => Some(&left),
@@ -1225,8 +1226,8 @@ impl Checker<'_> {
         }
     }
 
-    /// Like [`Self::condition`] but without reporting errors (the
-    /// expression was already checked).
+    /// Like [`Self::condition`] but without reporting errors (the expression's
+    /// already been checked).
     pub fn condition_quiet(&mut self, e: &Expr) -> Refine {
         let before = self.errors.len();
         let r = self.condition(e);
@@ -1234,8 +1235,8 @@ impl Checker<'_> {
         r
     }
 
-    /// `x == nil`, `type(x) == "string"`, `typeof(x) == "Player"`, either
-    /// way round.
+    /// `x == nil`, `type(x) == "string"`, `typeof(x) == "Player"`, either way
+    /// round.
     fn equality_refinement(&mut self, lhs: &Expr, rhs: &Expr) -> Option<Refine> {
         let (subject, other) = match (&lhs.kind, &rhs.kind) {
             (_, ExprKind::Nil | ExprKind::String(_)) => (lhs, rhs),
@@ -1310,18 +1311,19 @@ impl Checker<'_> {
                 .into_iter()
                 .filter(|m| match tag_of(m, is_typeof) {
                     Some(mt) => (mt == tag) == keep,
-                    // Generics and the like might be anything: keep both ways.
+                    // generics and stuff like that could be anything, keep both
+                    // ways
                     None => true,
                 })
                 .collect::<Vec<_>>(),
         )
     }
 
-    // --- iteration ----------------------------------------------------------------------------
+    // ─ Iteration ─────────────────────────────────────────────────────────────
 
     /// The types of the variables of `for a, b in exprs`.
     pub fn iteration_types(&mut self, exprs: &[Expr], n: usize, span: Span) -> Vec<Type> {
-        // `pairs(t)` / `ipairs(t)`: straight from the table's type.
+        // `pairs(t)` / `ipairs(t)`, straight from the table's type
         if let [
             Expr {
                 kind: ExprKind::Call { callee, args },
@@ -1345,7 +1347,7 @@ impl Checker<'_> {
                 let (k, v) = self.table_kv(&first, span, false);
                 pad(vec![k, v], n)
             }
-            // `a or b` where both are tables: either one's keys and values.
+            // `a or b` where both are tables, either one's keys and values
             u @ Type::Union(_) if self.all_tables(&u) => {
                 let (k, v) = self.table_kv(&u, span, false);
                 pad(vec![k, v], n)
@@ -1358,7 +1360,7 @@ impl Checker<'_> {
                 }
                 let rets = subst.apply_pack(&f.rets);
                 let mut vars: Vec<Type> = (0..n).map(|i| rets.get(i)).collect();
-                // The loop stops when the first value is nil.
+                // the loop stops when the first value is nil
                 if let Some(v) = vars.first_mut() {
                     *v = v.strip_nil();
                 }
@@ -1442,9 +1444,9 @@ impl Checker<'_> {
 /// Argument types (with spans) and the variadic tail of a final call.
 pub(crate) struct ArgTypes(Vec<(Type, Span)>, Option<Type>);
 
-/// The type of parameter `i` (`any` past the end: extra arguments are
-/// ignored only when the function is variadic; otherwise the caller reports
-/// the count).
+/// The type of parameter `i`. `any` past the end, since extra arguments are
+/// only ignored when the function's variadic and otherwise the caller reports
+/// the count.
 pub(crate) fn param_type(f: &FnType, i: usize) -> Type {
     f.params
         .get(i)
@@ -1459,8 +1461,8 @@ fn pad(mut v: Vec<Type>, n: usize) -> Vec<Type> {
     v
 }
 
-/// The result types of a function without annotations: each position is the
-/// union of what its `return`s give (and `nil` if it can fall off the end).
+/// The result types of a function without annotations. Each position is the
+/// union of what its `return`s give (plus `nil` if it can fall off the end).
 fn merge_returns(returns: Vec<Pack>, falls_off: bool) -> Pack {
     if returns.is_empty() {
         return Pack::empty();

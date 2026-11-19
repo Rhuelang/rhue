@@ -128,7 +128,7 @@ fn a_session() {
         "```luau\ngreeting: string\n```"
     );
 
-    // Fix it; the diagnostics clear.
+    // fix it, the diagnostics clear
     let fixed = "--!strict\nlocal greeting = 'hi'\nlocal n: number = #greeting\nprint(greeting)\n";
     c.notify(
         "textDocument/didChange",
@@ -146,7 +146,7 @@ fn a_session() {
         json!({ "line": 1, "character": 6 })
     );
 
-    // Mid-edit (`greeting:` doesn't parse yet), completion still works.
+    // mid-edit (`greeting:` doesn't parse yet), completion still works
     let typing =
         "--!strict\nlocal greeting = 'hi'\nlocal n: number = #greeting\nprint(greeting:)\n";
     c.notify(
@@ -183,7 +183,7 @@ fn a_session() {
         "local x = 1\nif x then\n  print(x)\nend\n"
     );
 
-    // Rename `x` (from its use on line 2), and a refused rename.
+    // rename `x` (from its use on line 2), and a refused rename
     let edit = c.request(
         "textDocument/rename",
         json!({ "textDocument": { "uri": uri }, "position": { "line": 2, "character": 6 }, "newName": "flag" }),
@@ -205,14 +205,14 @@ fn a_session() {
         json!({ "line": 0, "character": 6 })
     );
 
-    // Signature help inside `print(`.
+    // signature help inside `print(`
     let help = c.request(
         "textDocument/signatureHelp",
         json!({ "textDocument": { "uri": uri }, "position": { "line": 2, "character": 6 } }),
     );
     assert_eq!(help["result"]["signatures"][0]["label"], "print(...any)");
 
-    // Incremental edits, and a module edit republishing its dependents.
+    // incremental edits, and a module edit republishing its dependents
     let lib = "file:///tmp/rhue-lsp-protocol/lib.rhue";
     let app = "file:///tmp/rhue-lsp-protocol/app.rhue";
     c.notify(
@@ -339,7 +339,7 @@ fn editor_features_over_the_wire() {
     );
     let data = tokens["result"]["data"].as_array().unwrap();
     assert_eq!(data.len() % 5, 0);
-    // The first token: `local` (keyword) on line 1 (the directive is a comment).
+    // the first token: `local` (keyword) on line 1 (the directive is a comment)
     assert_eq!(
         &data[..5],
         &[json!(1), json!(0), json!(5), json!(0), json!(0)]

@@ -1,5 +1,5 @@
 //! `#[derive(UserData)]` for Rhue. Use it through the `rhue` crate, which
-//! re-exports it; see `rhue::UserData` for what it generates.
+//! re-exports it. `rhue::UserData` has what it generates.
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as Tokens;
@@ -61,8 +61,8 @@ fn expand(input: DeriveInput) -> syn::Result<Tokens> {
     let fields = match &input.data {
         Data::Struct(s) => match &s.fields {
             Fields::Named(named) => named.named.iter().collect(),
-            // Tuple and unit structs have no named fields to expose; their
-            // methods are added with `register_type`.
+            // tuple and unit structs don't have named fields to expose, their
+            // methods come from `register_type`
             Fields::Unnamed(_) | Fields::Unit => Vec::new(),
         },
         Data::Enum(_) | Data::Union(_) => {

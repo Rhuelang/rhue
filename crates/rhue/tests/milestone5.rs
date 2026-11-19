@@ -1,6 +1,6 @@
 //! Milestone 5: the embedding API. Rust functions registered with typed
-//! signatures, scripts called from Rust, natives that call back into
-//! scripts, and userdata.
+//! signatures, scripts called from Rust, natives that call back into scripts,
+//! and userdata.
 
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -11,8 +11,8 @@ use rhue::{
     Variadic,
 };
 
-/// Every engine-level test runs twice: normally and with the collector
-/// running before every instruction, which frees anything not rooted.
+/// Every engine-level test runs twice, normally and with the collector running
+/// before every instruction, which frees anything that isn't rooted.
 fn engines() -> [Engine; 2] {
     let mut stressed = Engine::new();
     stressed.set_gc_stress(true);
@@ -29,7 +29,7 @@ fn eval_err(e: &mut Engine, src: &str) -> String {
     e.eval(src).expect_err("expected an error").to_string()
 }
 
-// --- registering functions -----------------------------------------------------
+// ─ Registering Functions ─────────────────────────────────────────────────────
 
 #[test]
 fn typed_parameters_and_results() {
@@ -71,7 +71,7 @@ fn typed_parameters_and_results() {
             ("x".to_string(), 3.0)
         );
         assert_eq!(e.eval_as::<String>("return echo('same')").unwrap(), "same");
-        // Tables and functions pass through unchanged (same identity).
+        // tables and functions pass through unchanged (same identity)
         assert!(
             e.eval_as::<bool>("local t = {} return echo(t) == t")
                 .unwrap()
@@ -162,7 +162,7 @@ fn argument_errors_name_the_function_and_position() {
         eval_err(&mut e, "sum(1, 2, true)"),
         "invalid argument #3 to 'sum' (number expected, got boolean)"
     );
-    // Scripts can catch them like any error, with a position prefix.
+    // scripts can catch them like any error, with a position prefix
     let caught: String = e
         .eval_as("local ok, m = pcall(add, 1, {}) return m")
         .unwrap();
@@ -205,7 +205,7 @@ fn natives_raise_errors_by_returning_err() {
             .unwrap(),
         "<eval>:1: 3 is odd"
     );
-    // A raised value reaches pcall untouched.
+    // a raised value reaches pcall untouched
     assert_eq!(
         e.eval_as::<f64>("local ok, t = pcall(fail_with_table) return t.code")
             .unwrap(),
@@ -213,7 +213,7 @@ fn natives_raise_errors_by_returning_err() {
     );
 }
 
-// --- calling scripts from Rust ---------------------------------------------------
+// ─ Calling Scripts from Rust ─────────────────────────────────────────────────
 
 #[test]
 fn rust_calls_script_functions() {
@@ -234,8 +234,8 @@ fn rust_calls_script_functions() {
         let all: Variadic<f64> = e.call_global("stats", (1, 2, 3)).unwrap();
         assert_eq!(*all, [3.0, 1.0, 2.0, 3.0]);
 
-        // A function handle keeps working (and keeps its upvalues alive)
-        // after the global is gone and the heap is collected.
+        // a function handle keeps working (and keeps its upvalues alive) after
+        // the global is gone and the heap is collected
         let counter: Function = e.get("counter").unwrap();
         e.set_global("counter", Value::Nil);
         e.gc();
@@ -259,7 +259,7 @@ fn errors_from_called_scripts_come_back_to_rust() {
     assert_eq!(err.to_string(), "too big: 5");
     assert_eq!(err.source_name(), "lib.rhue");
 
-    // Results that don't fit the requested types are errors too.
+    // results that don't fit the requested types are errors too
     let err = e.call_global::<String>("boom", 1).unwrap_err();
     assert_eq!(
         err.to_string(),
@@ -267,7 +267,7 @@ fn errors_from_called_scripts_come_back_to_rust() {
     );
     let err = e.call_global::<f64>("nope", ()).unwrap_err();
     assert_eq!(err.to_string(), "global 'nope' is not a function");
-    // The engine is still usable.
+    // the engine is still usable
     assert_eq!(e.call_global::<f64>("boom", 1).unwrap(), 1.0);
 }
 
@@ -308,7 +308,7 @@ fn typed_globals_and_eval_as() {
     );
 }
 
-// --- natives that call back into scripts ---------------------------------------------
+// ─ Natives That Call Back Into Scripts ───────────────────────────────────────
 
 #[test]
 fn natives_call_back_into_scripts() {
@@ -341,7 +341,7 @@ fn natives_call_back_into_scripts() {
                 .unwrap(),
             1024.0
         );
-        // Recursion through a native: script -> map -> script -> map ...
+        // recursion through a native: script -> map -> script -> map ...
         assert_eq!(
             e.eval_as::<f64>(
                 "local function depth(n)
@@ -363,13 +363,13 @@ fn errors_pass_through_natives_unchanged() {
         "call_it",
         |cx: &mut Context, f: Function| -> Result<Value, ScriptError> { cx.call(&f, ()) },
     );
-    // The error value (a table here) and pcall semantics survive the trip
-    // through Rust.
+    // the error value (a table here) and pcall semantics survive the trip
+    // through Rust
     let code: f64 = e
         .eval_as("local ok, err = pcall(call_it, function() error({code = 7}) end) return err.code")
         .unwrap();
     assert_eq!(code, 7.0);
-    // Uncaught, the traceback runs through the native into the script.
+    // uncaught, the traceback runs through the native into the script
     let src = "local function inner()\n  error('deep')\nend\ncall_it(inner)";
     let err = e.eval_named("tb.rhue", src).unwrap_err();
     assert_eq!(err.to_string(), "deep");
@@ -380,7 +380,7 @@ fn errors_pass_through_natives_unchanged() {
         rendered.contains("called from <main> (tb.rhue:4"),
         "{rendered}"
     );
-    // A native can also handle the error itself.
+    // a native can also handle the error itself
     e.register("safely", |cx: &mut Context, f: Function| {
         match cx.call::<Value>(&f, ()) {
             Ok(_) => "ok".to_string(),
@@ -403,8 +403,8 @@ fn the_instruction_limit_cannot_be_caught_through_a_native() {
         |cx: &mut Context, f: Function| -> Result<bool, ScriptError> {
             match cx.call::<()>(&f, ()) {
                 Ok(()) => Ok(true),
-                // Swallowing it here would let a script escape the budget, so
-                // natives can't: is_catchable() is false and it must propagate.
+                // swallowing it here would let a script escape the budget, so
+                // natives can't: is_catchable() is false and it must propagate
                 Err(err) if !err.is_catchable() => Err(err),
                 Err(_) => Ok(false),
             }
@@ -414,7 +414,7 @@ fn the_instruction_limit_cannot_be_caught_through_a_native() {
         .eval("pcall(safely, function() while true do end end) return 'escaped'")
         .unwrap_err();
     assert!(err.to_string().contains("instruction limit"), "{err}");
-    // The engine recovers for the next run.
+    // the engine recovers for the next run
     assert_eq!(e.eval_as::<f64>("return 1 + 1").unwrap(), 2.0);
 }
 
@@ -434,9 +434,9 @@ fn natives_can_return_functions() {
 
 #[test]
 fn native_nesting_is_bounded() {
-    // Each script -> native -> script round trip uses Rust stack. A limit
-    // turns runaway nesting into an error well before the (2 MB) test
-    // thread's stack would overflow.
+    // each script -> native -> script round trip uses Rust stack. A limit turns
+    // runaway nesting into an error well before the (2 MB) test thread's stack
+    // would overflow
     let mut e = Engine::new();
     e.register(
         "call_it",
@@ -455,7 +455,7 @@ fn native_nesting_is_bounded() {
     assert_eq!(deep, 150.0);
 }
 
-// --- standard library pieces that call back -----------------------------------------------
+// ─ Standard Library Pieces That Call Back ────────────────────────────────────
 
 #[test]
 fn sort_with_a_comparator_xpcall_and_nested_pcall() {
@@ -470,7 +470,7 @@ fn sort_with_a_comparator_xpcall_and_nested_pcall() {
             .unwrap(),
             "39 38 37 36 35"
         );
-        // Stable for equal keys; tables are moved, not copied.
+        // stable for equal keys, tables are moved, not copied
         assert_eq!(
             e.eval_as::<String>(
                 "local t = {{k = 2, n = 'a'}, {k = 1, n = 'b'}, {k = 2, n = 'c'}, {k = 1, n = 'd'}}
@@ -481,7 +481,7 @@ fn sort_with_a_comparator_xpcall_and_nested_pcall() {
             .unwrap(),
             "bdac"
         );
-        // An inconsistent comparator mixes up the order but loses nothing.
+        // an inconsistent comparator mixes up the order but loses nothing
         assert_eq!(
             e.eval_as::<f64>(
                 "local t = {} for i = 1, 100 do t[i] = i end
@@ -518,7 +518,7 @@ fn sort_with_a_comparator_xpcall_and_nested_pcall() {
     });
 }
 
-// --- userdata -----------------------------------------------------------------------
+// ─ Userdata ──────────────────────────────────────────────────────────────────
 
 #[derive(UserData, Clone, Debug, PartialEq)]
 struct Player {
@@ -589,7 +589,7 @@ fn derived_fields_and_methods() {
                 .starts_with("Player: 0x")
         );
 
-        // Static functions live in a global table named after the type.
+        // static functions live in a global table named after the type
         assert_eq!(
             e.eval_as::<String>("return Player.new('Zae').name")
                 .unwrap(),
@@ -599,7 +599,7 @@ fn derived_fields_and_methods() {
         let copy: Player = e.get("p").unwrap();
         assert_eq!(copy.name, "Aalto!");
         assert_eq!(copy.secret, "hidden");
-        // ...or a handle to the object itself.
+        // ...or a handle to the object itself
         let handle: Ud<Player> = e.get("p").unwrap();
         handle.borrow_mut().hp = 42.0;
         assert_eq!(e.eval_as::<f64>("return p.hp").unwrap(), 42.0);
@@ -634,7 +634,7 @@ fn userdata_member_errors() {
         eval_err(&mut e, "return p[1]"),
         "attempt to index Player with 1"
     );
-    // `.` instead of `:` passes the wrong receiver.
+    // `.` instead of `:` passes the wrong receiver
     assert_eq!(
         eval_err(&mut e, "p.heal(10)"),
         "invalid argument #1 to 'heal' (Player expected, got number)"
@@ -667,7 +667,7 @@ fn userdata_identity_and_equality() {
         assert_eq!(back, p);
         let other: Ud<Player> = e.get("q").unwrap();
         assert_ne!(other, p);
-        // AnyUserData downcasts only to the right type.
+        // anyUserData downcasts only to the right type
         let any: AnyUserData = e.get("p").unwrap();
         assert_eq!(any.type_name(), "Player");
         assert!(any.is::<Player>());
@@ -733,8 +733,8 @@ fn methods_can_call_back_and_reentry_is_an_error() {
             .unwrap(),
         100.0
     );
-    // While a method runs, the object is mutably borrowed: touching it from
-    // the callback is an error, not a panic.
+    // while a method runs, the object is mutably borrowed: touching it from the
+    // callback is an error, not a panic
     let err = eval_err(&mut e, "p:each_hp(function() return p.hp end)");
     assert_eq!(
         err,
@@ -766,7 +766,7 @@ fn unreachable_userdata_is_collected_and_dropped() {
     e.gc();
     assert_eq!(drops.get(), 100);
     assert_eq!(e.heap_stats().userdata, 1);
-    // A Rust handle keeps it alive after the script lets go.
+    // a Rust handle keeps it alive after the script lets go
     let held: Ud<Tracked> = e.get("keep").unwrap();
     e.eval("keep = nil").unwrap();
     e.gc();
@@ -799,7 +799,7 @@ fn userdata_from_another_engine_panics() {
     b.set_global("p", p);
 }
 
-// --- tables from Rust ------------------------------------------------------------------
+// ─ Tables from Rust ──────────────────────────────────────────────────────────
 
 #[test]
 fn reading_and_writing_tables_from_rust() {
@@ -833,7 +833,7 @@ fn reading_and_writing_tables_from_rust() {
     });
 }
 
-// --- rooting across callbacks (most useful under GC stress) ---------------------------
+// ─ Rooting Across Callbacks ((Most Useful Under GC Stress)) ────────────────────
 
 #[test]
 fn sort_keeps_items_alive_when_the_comparator_empties_the_table() {
