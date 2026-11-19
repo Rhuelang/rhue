@@ -1,15 +1,27 @@
 # Changelog
 
-All notable changes to Rhue. The project was built in milestones; until the
-first release they're all part of 0.1.0. [`docs/DESIGN.md`](docs/DESIGN.md)
-explains the decisions behind each one, and the README has the measurements.
+Everything that changed in Rhue. It got built in milestones before the first release, so 1.0.0 is all of them. [`docs/DESIGN.md`](docs/DESIGN.md) has the reasoning behind each one, and the README has the numbers.
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and versions will follow [Semantic Versioning](https://semver.org/) once
-published. Only the `rhue` crate's API is meant to be stable; the other
-crates are its implementation.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow [Semantic Versioning](https://semver.org/). Only the `rhue` crate's API is meant to be stable, the other crates are its insides.
 
-## [0.1.0] - Unreleased
+## [1.0.0] - 2026-11-18
+
+### Release
+
+- Feat: First release on crates.io, every crate at 1.0.0.
+- Feat: The repository moved to [rhuelang/rhue](https://github.com/rhuelang/rhue), and the site's up at [rhue.dev](https://rhue.dev).
+- Feat: `changelog/` and `bench/results.json`, what rhue.dev reads for its changelog, "What's next" and benchmark table.
+
+### Hot reload (milestone 26)
+
+- Feat: `Engine::reload_module` swaps a module over to new source while scripts keep running. Functions change in place, so every handle to them runs the new code.
+- Feat: State carries over. The module's tables stay the same tables and keep their values, and locals its functions capture keep theirs.
+- Feat: A broken edit (syntax, types, or an error while it runs) changes nothing and comes back as an `Err`.
+- Feat: `Engine::reload` asks the loader again, `Engine::loaded_modules` lists what's been `require`d, and `Context::reload_module` reloads from inside a native or a debug hook.
+- Feat: Checked code compiled after a reload sees the module's new type.
+- Feat: `rhue-dap` reloads a module when you save it mid-session.
+- Feat: The `hot_reload` example, a game loop that reloads modules when their files change.
+
 
 ### Async hosts (milestone 25)
 

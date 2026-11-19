@@ -1,9 +1,11 @@
 <div align="center">
-  <img src="assets/Logo.svg" width="180" alt="Rhue logo">
+  <img src="https://raw.githubusercontent.com/rhuelang/rhue/main/assets/Logo.svg" width="180" alt="Rhue logo">
   <h1>Rhue</h1>
   <p>Luau-style scripting for Rust, compiled to <b>register bytecode</b>.</p>
   <p>
-    <a href="https://github.com/gyfdb/rhue/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/gyfdb/rhue/ci.yml?branch=main&amp;style=for-the-badge&amp;label=ci" alt="CI status"></a>
+    <a href="https://crates.io/crates/rhue"><img src="https://img.shields.io/crates/v/rhue?style=for-the-badge&amp;color=e07b4f" alt="rhue on crates.io"></a>
+    <a href="https://docs.rs/rhue"><img src="https://img.shields.io/docsrs/rhue?style=for-the-badge" alt="docs.rs"></a>
+    <a href="https://github.com/rhuelang/rhue/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/rhuelang/rhue/ci.yml?branch=main&amp;style=for-the-badge&amp;label=ci" alt="CI status"></a>
     <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/rust-1.88%2B-e07b4f?style=for-the-badge&amp;logo=rust" alt="Rust 1.88 or newer"></a>
     <a href="https://luau.org"><img src="https://img.shields.io/badge/syntax-luau-e07b4f?style=for-the-badge" alt="Luau syntax"></a>
     <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue?style=for-the-badge" alt="MIT or Apache-2.0"></a>
@@ -14,13 +16,13 @@ I write a lot of Luau and a lot of Rust, and wanted the first one inside the sec
 
 Rhue looks like Luau (same syntax, same `--!strict` gradual typing), embeds about as easily as Rhai, and compiles to register bytecode for its own VM. Nothing gets tree-walked.
 
-## ⚡️ Quick start
+The site's at [rhue.dev](https://rhue.dev) and the API docs are on [docs.rs](https://docs.rs/rhue).
 
-Not on crates.io yet, so grab it from git:
+## ⚡️ Quick start
 
 ```toml
 [dependencies]
-rhue = { git = "https://github.com/gyfdb/rhue" }
+rhue = "1"
 ```
 
 ```rust
@@ -39,7 +41,7 @@ fn main() -> Result<(), rhue::Error> {
 The CLI comes with a REPL:
 
 ```bash
-cargo install --git https://github.com/gyfdb/rhue rhue-cli
+cargo install rhue-cli
 rhue
 ```
 
@@ -57,13 +59,14 @@ heap after churn: 82 KB
 
 ## ✨ Status
 
-25 milestones in. What's there so far:
+1.0.0 is out, 26 milestones in. What's in it:
 
 - **Language** — Luau syntax, string interpolation, metatables and `setmetatable` classes, tail calls, coroutines, generic `for` with `__iter`, vectors
 - **Types** — gradual typing with `--!strict` and `--!nonstrict`, generics and type packs, narrowing and flow typing, read-only and write-only properties
 - **Standard library** — `table`, `string` with Lua patterns, `math`, `utf8`, a sandbox-safe `os`, `bit32`, `buffer`, `vector`, `debug`, frozen tables
 - **Embedding** — typed `register`, `#[derive(UserData)]`, calling scripts from Rust, natives that pause scripts, the `task` library, separate environments for plugins, `serde`, instruction and memory limits
 - **Async** — async Rust functions scripts can wait on, `eval_async`, `task.wait` on real time, stopping scripts from any thread
+- **Hot reload** — swap a module for new code while scripts run, functions change in place and state carries over
 - **Modules and chunks** — `require` with typed modules, saved bytecode that goes through a verifier before it runs
 - **Tooling** — the `rhue` CLI (REPL, `rhue test`, `rhue fmt`, compiling to bytecode), a language server, a debug adapter
 - **Speed** — inline caches, table templates, fast paths for builtins. Luau's interpreter is still 1.1–3.3× faster, Rhai is 4–15× slower
@@ -72,9 +75,7 @@ Full history's in [`CHANGELOG.md`](CHANGELOG.md), and the why behind things is i
 
 ### 🗺️ Planned
 
-1. **Hot reload (M26)** — swap modules out while scripts are running and keep their state
-2. **1.0.0 on crates.io** — the crates already package fine, it just needs pushing
-3. **Faster calls, again** — still where Luau's furthest ahead
+1. **Faster calls, again** — still where Luau's furthest ahead
 
 ## 🔤 Types
 
@@ -258,7 +259,7 @@ engine.eval(r#"--!strict
 
 ```bash
 $ rhue
-Rhue 0.1.0. Globals persist between entries; :help for commands, Ctrl-D to exit.
+Rhue 1.0.0. Globals persist between entries; :help for commands, Ctrl-D to exit.
 > local function fib(n)
     if n < 2 then return n end
     return fib(n - 1) + fib(n - 2)
@@ -305,7 +306,7 @@ tests/cart_test.rhue
 ## ✏️ Editor support
 
 ```bash
-$ cargo install --path crates/rhue-lsp      # the language server, `rhue-lsp`
+$ cargo install rhue-lsp                    # the language server, `rhue-lsp`
 $ rhue fmt src/*.rhue                        # format in place (tabs; --indent 4 for spaces)
 $ rhue fmt --check src/*.rhue                # CI: list files that need formatting
 ```
@@ -323,7 +324,7 @@ The formatter keeps your line breaks and comments and only fixes spacing and ind
 ## 🐞 Debugging
 
 ```bash
-$ cargo install --path crates/rhue-dap      # the debug adapter, `rhue-dap`
+$ cargo install rhue-dap                    # the debug adapter, `rhue-dap`
 ```
 
 `rhue-dap` speaks the Debug Adapter Protocol over stdio. Breakpoints (with conditions, hit counts and logpoints), stepping, the call stack, scopes, watches and console eval all work, `require`d modules included. With nvim-dap:
@@ -489,6 +490,24 @@ Any runtime works, but the futures aren't `Send`, so on tokio use a current-thre
 
 `engine.interrupt_handle()` stops a script from somewhere else with an error `pcall` can't catch. A script stuck in a loop is hogging its thread, so on a single-threaded runtime the interrupt has to come from another thread. It only gets checked when the instruction budget refills, so it costs basically nothing.
 
+### Hot reload
+
+`reload_module` swaps a module over to new source while everything keeps running. Functions in it change in place, so anything already holding one (a callback you stored, a field another module copied) runs the new code from its next call. The module's tables stay the same tables and keep their values, and locals its functions capture keep theirs, so state carries over. A broken edit comes back as an `Err` and the old code keeps going.
+
+```rust
+engine.set_module_loader(|name| std::fs::read_to_string(format!("scripts/{name}.rhue")).ok());
+engine.eval("npc = require('npc')")?;
+
+// later, when scripts/npc.rhue changes
+for name in engine.loaded_modules() {
+    if changed(&name) {
+        engine.reload(&name)?; // asks the loader again
+    }
+}
+```
+
+A call that's already running finishes on the old code, and closures the old code built at runtime keep theirs until something builds them again. `rhue-dap` does this for you, save a module mid-session and it reloads. `cargo run -p rhue --example hot_reload` has the whole loop.
+
 ### Environments
 
 `create_environment` gives scripts their own globals, so plugins or mods can share one engine without seeing each other's stuff. Reads fall back to the engine's globals (the stdlib and whatever you registered), writes stay in the environment, and the checker knows about it.
@@ -587,6 +606,7 @@ Measured at M23. Luau's had years of tuning and it shows, though plain arithmeti
 | `modules` | `require` from source, from compiled chunks and from a loader |
 | `tasks` | the `task` library driven by a game loop |
 | `async_host` | tokio, overlapping async calls, killing a runaway script |
+| `hot_reload` | a game loop that reloads modules when their files change |
 | `bench` | the benchmark runner (`--release`) |
 
 `examples/*.rhue` are scripts for the CLI (`rhue examples/tour.rhue`).
@@ -612,7 +632,7 @@ Measured at M23. Luau's had years of tuning and it shows, though plain arithmeti
 ## 🛠️ Development
 
 ```bash
-cargo test             # 556 tests, 561 with --all-features
+cargo test             # 571 tests, 576 with --all-features
 cargo clippy --all-targets
 cargo run --release -p rhue --example bench
 cargo run -p rhue-cli  # REPL

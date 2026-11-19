@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 rust-version.workspace = true
 description = "An embeddable, Luau-flavoured scripting language for Rust: register functions, run scripts, check types"
 keywords = ["scripting", "luau", "lua", "embedded", "language"]
