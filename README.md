@@ -1,8 +1,45 @@
-# Rhue
+<div align="center">
+  <img src="assets/Logo.svg" width="180" alt="Rhue logo">
+  <h1>Rhue</h1>
+  <p>An embeddable scripting language for Rust. It looks like <b>Luau</b> (syntax, gradual typing with <code>--!strict</code>), embeds as easily as <b>Rhai</b>, and compiles to <b>register-based bytecode</b> run by a VM. Nothing is tree-walked.</p>
+  <p>
+    <a href="https://github.com/gyfdb/rhue/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/gyfdb/rhue/ci.yml?branch=main&amp;style=for-the-badge&amp;label=ci" alt="CI status"></a>
+    <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/rust-1.88%2B-e07b4f?style=for-the-badge&amp;logo=rust" alt="Rust 1.88 or newer"></a>
+    <a href="https://luau.org"><img src="https://img.shields.io/badge/syntax-luau-e07b4f?style=for-the-badge" alt="Luau syntax"></a>
+    <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue?style=for-the-badge" alt="MIT or Apache-2.0"></a>
+  </p>
+</div>
 
-[![CI](https://github.com/gyfdb/rhue/actions/workflows/ci.yml/badge.svg)](https://github.com/gyfdb/rhue/actions/workflows/ci.yml)
+## ⚡️ Quick start
 
-An embeddable scripting language for Rust. It looks like Luau (syntax, gradual typing with `--!strict`), embeds as easily as Rhai, and compiles to register-based bytecode run by a VM. Nothing is tree-walked.
+It's not on crates.io yet, so pull it straight from git:
+
+```toml
+[dependencies]
+rhue = { git = "https://github.com/gyfdb/rhue" }
+```
+
+```rust
+use rhue::Engine;
+
+fn main() -> Result<(), rhue::Error> {
+    let mut engine = Engine::new();
+    engine.register("shout", |s: String| s.to_uppercase() + "!");
+
+    let out: String = engine.eval_as(r#"return shout("hello from rhue")"#)?;
+    println!("{out}"); // HELLO FROM RHUE!
+    Ok(())
+}
+```
+
+Or grab the CLI and mess around in the REPL:
+
+```bash
+cargo install --git https://github.com/gyfdb/rhue rhue-cli
+rhue
+```
+
+From a clone of the repo, the example scripts run like this:
 
 ```bash
 $ cargo run -q -p rhue-cli -- examples/tables.rhue
@@ -14,7 +51,7 @@ abc	->	error: examples/tables.rhue:49: not a number: abc
 heap after churn: 82 KB
 ```
 
-## Status
+## ✨ Status
 
 Milestone 25's done. Here's what Rhue has so far:
 
@@ -29,13 +66,13 @@ Milestone 25's done. Here's what Rhue has so far:
 
 The whole history is in [`CHANGELOG.md`](CHANGELOG.md) and the reasoning's in [`docs/DESIGN.md`](docs/DESIGN.md).
 
-### Planned
+### 🗺️ Planned
 
 1. **Hot reload (M26)** — reload modules while scripts are running. Functions get swapped in place so anything holding them picks up the new code, module state carries over, plus a file-watching example host, and the language server and debugger keep up.
 2. **Publish 1.0.0** — the crates already package fine, it just needs pushing to crates.io.
 3. **Faster calls, again** — calls are still where Luau's furthest ahead (`callbacks` is about 3.3× faster there), so another round on that.
 
-## Types
+## 🔤 Types
 
 ```lua
 --!strict
@@ -93,7 +130,7 @@ end
 
 Registered Rust functions are declared to the checker with Luau signatures derived from their Rust types: `|a: f64, b: Option<String>| -> Vec<String>` becomes `(number, string?) -> {string}`. `#[derive(UserData)]` types become classes with typed fields and methods, `set_global` declares the value's type, and `engine.declare("name", "type")` covers anything else.
 
-## Classes and metatables
+## 🧩 Classes and metatables
 
 ```lua
 --!strict
@@ -124,7 +161,7 @@ Metatables work as in Lua 5.4 / Luau: `__index` and `__newindex` (tables or func
 
 Backtick strings interpolate any expression in `{}` (`` `hp {p.hp}/{max}` ``), going through `tostring` and `__tostring`. `return f(x)` is a proper tail call, so tail recursion runs in constant stack (tracebacks keep the last two tail-called frames and count the rest). `Engine::set_memory_limit` caps the heap: going over it raises an uncatchable `not enough memory` error that `pcall` can't swallow, and natives can check a big allocation up front with `Context::reserve`.
 
-## Coroutines
+## 🔁 Coroutines
 
 ```lua
 local function range(n)
@@ -154,7 +191,7 @@ let done: f64 = cx.resume(&co, 42)?;             // 42 is what `yield` returns i
 assert_eq!(cx.thread_status(&co), "dead");
 ```
 
-## Patterns and text
+## 🧵 Patterns and text
 
 ```lua
 local k, v = ("retries = 3"):match("^(%w+)%s*=%s*(%d+)$")      -- "retries", "3"
@@ -166,7 +203,7 @@ print(utf8.len("héllo"), os.date("!%Y-%m-%d", 0))                      -- 5   1
 
 Patterns are Lua 5.4's, ported from `lstrlib.c`: classes, sets, the four quantifiers, captures (including `()` positions), back-references, `%b()` and `%f[...]`. They match bytes, like Lua's, so `.` takes one byte of a multi-byte character (a lone half comes out as U+FFFD, as with `string.sub`). A property test checks `string.find` against the `regex` crate on thousands of random patterns. `utf8` has `char`, `codepoint`, `len`, `offset` and `codes`; `os` has only `time`, `clock`, `date` (UTC) and `difftime`, so nothing reaches outside the sandbox.
 
-## Bits, buffers, vectors and frozen tables
+## 🧮 Bits, buffers, vectors and frozen tables
 
 ```lua
 local header = buffer.create(8)
@@ -196,7 +233,7 @@ print(p, vector.magnitude(p), vector.normalize(p))          -- 2.5   0.6, 0, 0.8
 
 One deliberate difference: Rhue strings are UTF-8, so there's no `string.pack`/`string.unpack` (their output is arbitrary bytes). Binary data lives in buffers, and `buffer.tostring` and `readstring` refuse bytes that aren't UTF-8 instead of making a string that isn't.
 
-## Modules
+## 📦 Modules
 
 ```rust
 engine.add_module("vec", include_str!("scripts/vec.rhue"));            // a module from source
@@ -211,7 +248,7 @@ engine.eval(r#"--!strict
 
 `require(name)` runs a module once, with its name as `...`, and caches what it returned (`true` if nothing). Rhue never touches the file system on its own: modules come from `Engine::add_module` or the host's loader (the `rhue` CLI loads `a.b` from `a/b.rhue` or `a/b/init.rhue` next to the script). A cycle is an error naming it (`cyclic module dependency: a -> b -> a`), and a module that fails to load isn't cached. When a checked chunk calls `require` with a literal name, the engine checks that module first, so its exports (functions, records, even metatable classes with their methods and operators) keep their types in the requiring file.
 
-## The command line
+## 💻 The command line
 
 `rhue FILE` runs a script, `rhue -e '...'` a snippet, and `rhue compile`, `rhue fmt` and `rhue --check` do what they say. `rhue` on its own is a REPL:
 
@@ -261,7 +298,7 @@ tests/cart_test.rhue
 
 `expect(x)` has `toBe` (same value), `toEqual` (deeply equal), `toBeNil`, `toBeTruthy`, `toBeFalsy`, `toBeCloseTo(n, digits?)`, `toBeGreaterThan`, `toBeLessThan`, `toHaveLength`, `toContain` (an item, or a substring), and `toThrow(text?)`; `expect(x).never` negates each. They're typed, so strict test files are checked like any other. A failure points at the line of the `expect` that failed. Test files can `require` modules next to them or from the folder `rhue test` runs in. `--filter TEXT` runs only tests whose names contain it; the exit code is non-zero if anything failed or couldn't run, for CI.
 
-## Editor support
+## ✏️ Editor support
 
 ```bash
 $ cargo install --path crates/rhue-lsp      # the language server, `rhue-lsp`
@@ -281,7 +318,7 @@ It also shows **inlay hints** for the types the checker inferred where the code 
 
 The formatter keeps your line breaks, blank lines (at most one in a row) and comments, and fixes indentation and spacing: one space around operators and after commas, `{ a, b }` braces, tight calls, `obj:method()` and generics, `x: T` annotations. Its output always lexes to exactly the input's tokens and comments, or it refuses with an internal error instead of changing your program.
 
-## Debugging
+## 🐞 Debugging
 
 ```bash
 $ cargo install --path crates/rhue-dap      # the debug adapter, `rhue-dap`
@@ -319,7 +356,7 @@ engine.set_debug_hook(HookMask { line: true, ..HookMask::default() }, |dbg, even
 
 Without a hook the interpreter pays one predictable branch per instruction (about 3% on the loop benchmarks). The hook doesn't fire for scripts it runs itself.
 
-## Embedding
+## 🦀 Embedding
 
 ```rust
 use rhue::{Context, Engine, Function, ScriptError, UserData, Variadic};
@@ -515,7 +552,7 @@ type List<T> = { head: T, tail: List<T>? }
 
 The aliases resolve among themselves wherever the module is used, without clashing with the user's own names. A type that doesn't resolve in the loading engine (a host type it lacks) is `any`.
 
-## Performance
+## 🚀 Performance
 
 `bench/` holds small programs that each stress one thing; the runner checks every result and reports times:
 
@@ -578,7 +615,7 @@ Measured at M23 (the best of two runs of five). Luau's interpreter is about two 
 
 Every compiled chunk passes a **bytecode verifier** (registers, constants, jump targets, the `top` protocol, closure captures) before it runs, and `Engine::run` verifies any prototype that didn't come from the compiler. A fuzz test damages compiled programs at random and runs whatever still verifies: none may panic the VM, and none may escape the instruction limit.
 
-## Examples
+## 🧪 Examples
 
 `crates/rhue/examples` has small hosts to start from; run any of them with `cargo run -p rhue --example NAME`:
 
@@ -594,7 +631,7 @@ Every compiled chunk passes a **bytecode verifier** (registers, constants, jump 
 
 `examples/*.rhue` are scripts for the command line (`rhue examples/tour.rhue`).
 
-## Layout
+## 🗂️ Layout
 
 | Crate | Role |
 | --- | --- |
@@ -612,7 +649,7 @@ Every compiled chunk passes a **bytecode verifier** (registers, constants, jump 
 | `rhue-dap` | the `rhue-dap` debug adapter, on top of the engine's debug hook |
 | `rhue-cli` | the `rhue` binary: REPL, `-e`, files and compiled chunks, `--dump`, `compile`, `fmt`, `test` |
 
-## Development
+## 🛠️ Development
 
 ```sh
 cargo test             # 556 tests (561 with --all-features, which adds serde): property tests over ~38,000 generated or damaged programs (including a type-soundness property, verifier and chunk-loading fuzz tests, metamethod-vs-plain arithmetic, the same arithmetic with a coroutine yield at every step, Lua patterns against the regex crate, and formatting that ignores how the input was spaced), a table-vs-HashMap model test, and suites re-run with the GC collecting at every safe point
@@ -623,6 +660,6 @@ cargo run -p rhue-cli  # REPL
 
 Rhue needs Rust 1.88 or newer (edition 2024) and forbids `unsafe` in its own crates. CI (`.github/workflows/ci.yml`) runs the build and tests on Linux, macOS and Windows, then the examples and the benchmark scripts' expected results; it also runs `rustfmt`, clippy and rustdoc with warnings denied, a build on Rust 1.88, and `cargo package` for every crate. [`CHANGELOG.md`](CHANGELOG.md) lists what each milestone added.
 
-## License
+## ⚠️ License
 
 Rhue is licensed under either of the [Apache License, Version 2.0](LICENSE-APACHE) or the [MIT license](LICENSE-MIT), at your option. Unless you explicitly state otherwise, any contribution you intentionally submit for inclusion in Rhue, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
