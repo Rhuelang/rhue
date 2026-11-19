@@ -122,6 +122,17 @@ impl<'a> Context<'a> {
         self.vm.thread_status(co.r).name()
     }
 
+    /// [`Engine::reload_module`](crate::Engine::reload_module) from inside a
+    /// native or a debug hook, so a host can reload a module without waiting
+    /// for the script to finish. The new module code runs nested here.
+    pub fn reload_module(
+        &mut self,
+        name: &str,
+        source: &str,
+    ) -> Result<crate::Reloaded, crate::Error> {
+        crate::modules::reload(self.vm, name, source)
+    }
+
     /// Calls the global function `name`.
     pub fn call_global<R: FromValues>(
         &mut self,

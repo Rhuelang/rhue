@@ -36,6 +36,7 @@ pub mod heap;
 mod meta;
 mod oslib;
 pub mod pattern;
+mod reload;
 mod stdlib;
 mod strpat;
 pub mod table;
@@ -57,6 +58,7 @@ pub use heap::{
     LuaClosure, Native, NativeFn, Rets, Special, StrRef, TableRef, Thread, ThreadRef, UdRef,
     UpvalRef, Upvalue, UserData,
 };
+pub use reload::SwapStats;
 pub use smallvec::{SmallVec, smallvec};
 pub use table::{Key, KeyError, Table};
 pub use value::{Value, vector_text};

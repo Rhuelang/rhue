@@ -179,7 +179,7 @@ pub use convert::{
 pub use debug::{DebugEvent, Debugger, HookMask, StackFrame};
 pub use environment::Environment;
 pub use hints::{HintKind, InlayHint};
-pub use modules::Analysis;
+pub use modules::{Analysis, Reloaded};
 pub use native::{IntoAsyncNative, IntoNative, IntoNativeResult, WithContext};
 pub use outline::{
     Base, Exports, FieldUse, Outline, SemanticToken, Symbol, SymbolKind, TokenKind, outline,
@@ -401,6 +401,66 @@ impl Engine {
         state.sources.insert(name.to_string(), source.to_string());
         state.compiled.remove(name);
         state.binary.remove(name);
+    }
+
+    /// Swaps module `name` over to new source while scripts keep running (hot
+    /// reload).
+    ///
+    /// The new source gets compiled and checked first, so a broken edit
+    /// changes nothing and comes back as an `Err`. If the module hasn't been
+    /// `require`d yet, the new source just waits for the first `require`.
+    /// Otherwise it runs once and gets merged into what the old code made:
+    ///
+    /// - functions at the same spot (a field of the module, a field of a table
+    ///   in it, a local they capture) run the new code, through every handle to
+    ///   them. A call that's already running finishes on the old code
+    /// - the module's tables stay the same tables, so `local m = require("m")`
+    ///   elsewhere sees the changes. They take the new functions and any new
+    ///   keys, keep their old values for the rest (that's the state), and drop
+    ///   functions the new code doesn't have
+    /// - locals the functions capture keep their values (`local count = 0`
+    ///   keeps counting)
+    ///
+    /// Closures the old code built at runtime keep their code until something
+    /// builds them again. Checked code compiled after the reload sees the
+    /// module's new type.
+    ///
+    /// ```
+    /// let mut engine = rhue::Engine::new();
+    /// engine.add_module("counter", "
+    ///     local M = { hits = 0 }
+    ///     function M.hit() M.hits += 1 return 'old' end
+    ///     return M");
+    /// engine.eval("counter = require('counter') counter.hit()").unwrap();
+    ///
+    /// engine.reload_module("counter", "
+    ///     local M = { hits = 0 }
+    ///     function M.hit() M.hits += 1 return 'new' end
+    ///     return M").unwrap();
+    /// let (said, hits): (String, f64) = engine.eval_as("return counter.hit(), counter.hits").unwrap();
+    /// assert_eq!((said.as_str(), hits), ("new", 2.0));
+    /// ```
+    pub fn reload_module(&mut self, name: &str, source: &str) -> Result<Reloaded, Error> {
+        modules::reload(&mut self.vm, name, source)
+    }
+
+    /// [`reload_module`](Self::reload_module) with whatever source the module
+    /// would load from right now: what [`add_module`](Self::add_module) gave,
+    /// or what the [loader](Self::set_module_loader) returns. That's the one a
+    /// file-watching host calls when a file changes.
+    pub fn reload(&mut self, name: &str) -> Result<Reloaded, Error> {
+        let Some(source) = modules::current_source(&mut self.vm, name) else {
+            return Err(Error::from_script(ScriptError::new(format!(
+                "module '{name}' not found"
+            ))));
+        };
+        modules::reload(&mut self.vm, name, &source)
+    }
+
+    /// The modules `require` has loaded so far, sorted. Handy for knowing what
+    /// to watch.
+    pub fn loaded_modules(&mut self) -> Vec<String> {
+        modules::loaded_names(&mut self.vm)
     }
 
     /// Sets how `require` finds modules it hasn't been given. `loader` maps a

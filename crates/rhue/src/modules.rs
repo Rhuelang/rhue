@@ -392,3 +392,85 @@ fn loaded_table(vm: &mut rhue_vm::Vm) -> rhue_vm::TableRef {
     host(vm).loaded = Some((t, pin));
     t
 }
+
+// ─ Hot Reload ────────────────────────────────────────────────────────────────
+
+/// What a reload did (see [`Engine::reload_module`](crate::Engine::reload_module)).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Reloaded {
+    /// Whether the module had been `require`d. If not, nothing ran, the new
+    /// source just waits for the first `require`.
+    pub was_loaded: bool,
+    /// Old functions that run the new code now.
+    pub functions: usize,
+    /// Old tables the new ones got merged into.
+    pub tables: usize,
+    /// Upvalues (module locals and the like) that kept their old values.
+    pub upvalues: usize,
+}
+
+/// Swaps module `name` over to `source`. Compiles and checks it first, so a
+/// broken edit changes nothing. If the module was already `require`d, the new
+/// code runs once and gets merged into what the old code made.
+pub(crate) fn reload(vm: &mut rhue_vm::Vm, name: &str, source: &str) -> Result<Reloaded, Error> {
+    if host(vm).loading.iter().any(|m| m == name) {
+        return Err(Error::from_script(ScriptError::new(format!(
+            "module '{name}' is still loading"
+        ))));
+    }
+    let (proto, ty) = compile(vm, name, source)?;
+    let state = host(vm);
+    if state.sources.contains_key(name) {
+        state.sources.insert(name.to_string(), source.to_string());
+    }
+    state.binary.remove(name);
+    state.env.define_module(name, ty);
+    let cache = loaded_table(vm);
+    let key = vm.string(name);
+    let old = vm.heap().table(cache).get(key);
+    if old == rhue_vm::Value::Nil {
+        host(vm).compiled.insert(name.to_string(), proto);
+        return Ok(Reloaded::default());
+    }
+    host(vm).compiled.remove(name);
+    host(vm).loading.push(name.to_string());
+    let f = vm.load(&proto);
+    let name_value = vm.string(name);
+    let result = vm.try_call(f, &[name_value]);
+    host(vm).loading.pop();
+    let values = result.map_err(|r| Error::from_runtime(r.error()))?;
+    let new = match values.first().copied() {
+        None | Some(rhue_vm::Value::Nil) => rhue_vm::Value::Bool(true),
+        Some(v) => v,
+    };
+    let (keep, stats) = vm.hot_swap(old, new);
+    let key = vm.string(name);
+    let _ = vm.heap_mut().with_table(cache, |t| t.set(key, keep));
+    Ok(Reloaded {
+        was_loaded: true,
+        functions: stats.functions,
+        tables: stats.tables,
+        upvalues: stats.upvalues,
+    })
+}
+
+/// Names of the modules `require` has loaded so far, sorted.
+pub(crate) fn loaded_names(vm: &mut rhue_vm::Vm) -> Vec<String> {
+    let cache = loaded_table(vm);
+    let mut names = Vec::new();
+    let mut key = rhue_vm::Value::Nil;
+    while let Ok(Some((k, _))) = vm.heap().table(cache).next(key) {
+        if let rhue_vm::Value::String(s) = k {
+            names.push(vm.heap().get(s).to_string());
+        }
+        key = k;
+    }
+    names.sort();
+    names
+}
+
+/// The source module `name` would load from right now: what was added, or
+/// what the loader says.
+pub(crate) fn current_source(vm: &mut rhue_vm::Vm, name: &str) -> Option<String> {
+    host(vm).source_of(name)
+}

@@ -600,6 +600,19 @@ impl Heap {
         self.functions.get(r.index, r.generation, "function")
     }
 
+    /// Puts `cl` in function `r`'s slot, so every handle to it runs `cl` from
+    /// now on (hot reload).
+    pub(crate) fn replace_closure(&mut self, r: FnRef, cl: Rc<LuaClosure>) {
+        let slot = self.functions.get_mut(r.index, r.generation, "function");
+        let before = match slot {
+            Function::Lua(c) => c.upvalues.len() + c.constants.len(),
+            Function::Native(_) => 0,
+        };
+        let after = cl.upvalues.len() + cl.constants.len();
+        *slot = Function::Lua(cl);
+        self.bytes = (self.bytes + after * 16).saturating_sub(before * 16);
+    }
+
     /// Gives native `r` a fast path.
     pub(crate) fn set_fast(&mut self, r: FnRef, fast: FastFn) {
         if let Function::Native(n) = self.functions.get_mut(r.index, r.generation, "function") {
