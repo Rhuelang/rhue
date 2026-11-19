@@ -47,12 +47,10 @@ end
 return M
 "#;
 
-/// `a.b` → `dir/a/b.rhue` (or `dir/a/b/init.rhue`), same as the CLI.
+/// The file `require(name)` reads, same as the CLI.
 fn module_path(dir: &Path, name: &str) -> Option<PathBuf> {
-    let rel: PathBuf = name.split('.').collect();
-    [rel.with_extension("rhue"), rel.join("init.rhue")]
+    rhue::module_paths(dir, name)
         .into_iter()
-        .map(|p| dir.join(p))
         .find(|p| p.is_file())
 }
 

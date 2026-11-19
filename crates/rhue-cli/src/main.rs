@@ -242,10 +242,9 @@ fn main() -> ExitCode {
         _ => std::path::PathBuf::from("."),
     };
     engine.set_module_loader(move |name| {
-        let rel: std::path::PathBuf = name.split('.').collect();
-        [rel.with_extension("rhue"), rel.join("init.rhue")]
+        rhue::module_paths(&base, name)
             .iter()
-            .find_map(|p| std::fs::read_to_string(base.join(p)).ok())
+            .find_map(|p| std::fs::read_to_string(p).ok())
     });
     let color = io::stderr().is_terminal();
 

@@ -301,20 +301,16 @@ impl Session {
         });
         let dir = program.parent().map(Path::to_path_buf).unwrap_or_default();
         engine.set_module_loader(move |name| {
-            let rel: PathBuf = name.split('.').collect();
-            [rel.with_extension("rhue"), rel.join("init.rhue")]
-                .into_iter()
-                .map(|p| dir.join(p))
-                .find_map(|p| {
-                    let text = std::fs::read_to_string(&p).ok()?;
-                    module_files
-                        .borrow_mut()
-                        .insert(name.to_string(), canonical(&p));
-                    module_texts
-                        .borrow_mut()
-                        .insert(name.to_string(), text.clone());
-                    Some(text)
-                })
+            rhue::module_paths(&dir, name).into_iter().find_map(|p| {
+                let text = std::fs::read_to_string(&p).ok()?;
+                module_files
+                    .borrow_mut()
+                    .insert(name.to_string(), canonical(&p));
+                module_texts
+                    .borrow_mut()
+                    .insert(name.to_string(), text.clone());
+                Some(text)
+            })
         });
         let state = self.state.clone();
         let mask = HookMask::new().line(true);

@@ -200,6 +200,27 @@ pub use value::{AnyUserData, Buffer, Function, Table, Thread, Value};
 /// Memory statistics; see [`Engine::heap_stats`].
 pub use rhue_vm::HeapStats;
 
+/// Where `require(name)` looks for a module under `dir`, in order: `a.b` is
+/// `dir/a/b.rhue`, then `dir/a/b/init.rhue`. The CLI, the language server and
+/// the debugger all find modules this way, so a
+/// [loader](Engine::set_module_loader) that uses it agrees with them. It only
+/// builds the paths, nothing gets read.
+///
+/// ```
+/// use std::path::Path;
+///
+/// let [file, init] = rhue::module_paths(Path::new("scripts"), "npc.brain");
+/// assert_eq!(file, Path::new("scripts/npc/brain.rhue"));
+/// assert_eq!(init, Path::new("scripts/npc/brain/init.rhue"));
+/// ```
+pub fn module_paths(dir: &std::path::Path, name: &str) -> [std::path::PathBuf; 2] {
+    let rel: std::path::PathBuf = name.split('.').collect();
+    [
+        dir.join(rel.with_extension("rhue")),
+        dir.join(rel.join("init.rhue")),
+    ]
+}
+
 /// Which phase an [`Error`] came from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -472,7 +493,7 @@ impl Engine {
     /// module name to its source, or `None` if there's no such module. Rhue
     /// never touches the file system itself, so this is where a host decides
     /// what `require("a.b")` means (a file under a scripts folder, an asset
-    /// bundle entry, ...).
+    /// bundle entry, ...). [`module_paths`] gives the paths the Rhue tools use.
     pub fn set_module_loader(&mut self, loader: impl Fn(&str) -> Option<String> + 'static) {
         modules::host(&mut self.vm).loader = Some(Rc::new(loader));
     }
