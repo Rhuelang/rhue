@@ -568,8 +568,16 @@ engine.check("main.rhue", "--!strict\nlocal c = require('counter').new(1)\nc:bum
 
 ```bash
 $ cargo run --release -p rhue --example bench                # all of them
-$ cargo run --release -p rhue --example bench -- --save now.txt
-$ cargo run --release -p rhue --example bench -- --baseline bench/m10-baseline.txt fib
+$ cargo run --release -p rhue --example bench -- --save before.txt
+$ cargo run --release -p rhue --example bench -- --baseline before.txt fib
+```
+
+Wall times drift too much to trust a few percent, so for that there's `bench/counts.sh`. It runs each script under callgrind and compares the instruction counts with `bench/counts.json` (Linux, needs valgrind):
+
+```bash
+$ bench/counts.sh            # print them
+$ bench/counts.sh --check    # fail if any got more than 2% worse
+$ bench/counts.sh --save     # make these the new baseline
 ```
 
 ### Compared with Luau and Rhai
@@ -594,7 +602,7 @@ $ cargo run --release --manifest-path bench/compare/Cargo.toml
 | `strings` | 74.8 | 53.6 | 395 | 1.4× faster | 5.3× slower |
 | `tables` | 66.6 | 37.4 | 349 | 1.8× faster | 5.2× slower |
 
-Measured at M23. Luau's had years of tuning and it shows, though plain arithmetic loops are about even. Rhai walks a syntax tree, so it's not close. Wall times on my machine drift a lot between sessions, so I track progress with callgrind instruction counts instead, and those numbers live in [`docs/DESIGN.md`](docs/DESIGN.md). Also these are my own benchmarks, so they lean a bit toward what I tuned for.
+Measured at M23. Luau's had years of tuning and it shows, though plain arithmetic loops are about even. Rhai walks a syntax tree, so it's not close. Progress gets tracked with the instruction counts in `bench/counts.json`, older milestones' numbers are in [`docs/DESIGN.md`](docs/DESIGN.md). Also these are my own benchmarks, so they lean a bit toward what I tuned for.
 
 ## 🧪 Examples
 
