@@ -35,3 +35,7 @@ tokio = { version = "1", features = ["rt", "time", "macros", "test-util"] }
 proptest.workspace = true
 rhue-fmt.workspace = true
 regex.workspace = true
+
+# docs.rs builds with every feature, so `rhue::serde` shows up there
+[package.metadata.docs.rs]
+all-features = true
