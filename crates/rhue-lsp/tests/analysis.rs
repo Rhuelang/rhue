@@ -55,7 +55,7 @@ fn line_index_speaks_utf16() {
     );
     assert_eq!(
         idx.offset(Position::new(1, 99)),
-        text.find("\n\n").map_or(text.len() - 1, |i| i)
+        text.find("\n\n").unwrap_or(text.len() - 1)
     );
     assert_eq!(idx.offset(Position::new(9, 0)), text.len());
 }
