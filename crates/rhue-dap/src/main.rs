@@ -317,11 +317,7 @@ impl Session {
                 })
         });
         let state = self.state.clone();
-        let mask = HookMask {
-            line: true,
-            call: false,
-            ret: false,
-        };
+        let mask = HookMask::new().line(true);
         engine.set_debug_hook(mask, move |dbg, event| {
             let DebugEvent::Line(line) = event else {
                 return Ok(());

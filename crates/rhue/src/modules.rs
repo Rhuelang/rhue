@@ -246,6 +246,7 @@ pub(crate) fn compile_ast(
 /// What editor tooling learns about a chunk (see
 /// [`Engine::analyze`](crate::Engine::analyze)).
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct Analysis {
     /// Syntax, name and type errors (types as the chunk's directive, or the
     /// engine's default mode, says).
@@ -397,6 +398,7 @@ fn loaded_table(vm: &mut rhue_vm::Vm) -> rhue_vm::TableRef {
 
 /// What a reload did (see [`Engine::reload_module`](crate::Engine::reload_module)).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Reloaded {
     /// Whether the module had been `require`d. If not, nothing ran, the new
     /// source just waits for the first `require`.

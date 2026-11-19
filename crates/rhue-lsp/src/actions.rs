@@ -101,6 +101,7 @@ pub fn code_actions(docs: &Docs, uri: &Url, text: &str, range: Range) -> Vec<Cod
                     insert.trim_start_matches(": ")
                 )
             }
+            _ => format!("Add annotation `{}`", insert.trim_start_matches(": ")),
         };
         let position = idx.position(at);
         out.push(CodeActionOrCommand::CodeAction(CodeAction {

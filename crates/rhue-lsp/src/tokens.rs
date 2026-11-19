@@ -43,6 +43,8 @@ fn type_index(k: TokenKind) -> u32 {
         TokenKind::Type => 8,
         TokenKind::TypeParameter => 9,
         TokenKind::Namespace => 10,
+        // a kind this server doesn't know yet
+        _ => 3,
     }
 }
 

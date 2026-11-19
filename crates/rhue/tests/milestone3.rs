@@ -8,12 +8,8 @@ use rhue::{CompileOptions, Engine, ErrorKind, Value};
 
 fn engines() -> [Engine; 2] {
     [
-        Engine::with_options(CompileOptions {
-            fold_constants: true,
-        }),
-        Engine::with_options(CompileOptions {
-            fold_constants: false,
-        }),
+        Engine::with_options(CompileOptions::new().fold_constants(true)),
+        Engine::with_options(CompileOptions::new().fold_constants(false)),
     ]
 }
 

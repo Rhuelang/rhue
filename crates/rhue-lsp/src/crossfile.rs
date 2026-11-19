@@ -25,6 +25,7 @@ fn module_of<'a>(o: &'a Outline, base: &'a Base) -> Option<&'a str> {
             .iter()
             .find(|(s, _)| s == decl)
             .map(|(_, m)| m.as_str()),
+        _ => None,
     }
 }
 

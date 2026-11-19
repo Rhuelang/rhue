@@ -345,7 +345,7 @@ Hosts can hook in directly too:
 use rhue::{DebugEvent, Engine, HookMask};
 
 let mut engine = Engine::new();
-engine.set_debug_hook(HookMask { line: true, ..HookMask::default() }, |dbg, event| {
+engine.set_debug_hook(HookMask::new().line(true), |dbg, event| {
     if let DebugEvent::Line(12) = event {
         let frame = dbg.frame(0).unwrap();
         println!("{}:{} in {}", frame.source, frame.line, frame.function);

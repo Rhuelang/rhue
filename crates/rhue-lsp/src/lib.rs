@@ -342,6 +342,7 @@ fn to_lsp(idx: &LineIndex<'_>, d: &rhue::Diagnostic) -> Diagnostic {
         severity: Some(match d.severity {
             rhue::Severity::Error => DiagnosticSeverity::ERROR,
             rhue::Severity::Warning => DiagnosticSeverity::WARNING,
+            _ => DiagnosticSeverity::INFORMATION,
         }),
         source: Some("rhue".into()),
         message,

@@ -198,6 +198,7 @@ pub use rhue_vm::HeapStats;
 
 /// Which phase an [`Error`] came from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ErrorKind {
     /// Lexing or parsing failed.
     Syntax,

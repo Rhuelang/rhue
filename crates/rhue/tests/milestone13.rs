@@ -232,10 +232,7 @@ fn hooks_can_evaluate_expressions_in_a_frame() {
     let mut e = Engine::new();
     e.set_global("scale", 10.0);
     e.set_debug_hook(
-        HookMask {
-            line: true,
-            ..HookMask::default()
-        },
+        HookMask::new().line(true),
         move |dbg, event| {
             if event != DebugEvent::Line(5) {
                 return Ok(());

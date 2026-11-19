@@ -26,6 +26,7 @@ pub struct Task {
 
 /// Where a [`Task`] stopped.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum TaskState {
     /// It yielded these values and can be resumed.
     Suspended(Vec<Value>),

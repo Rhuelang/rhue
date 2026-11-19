@@ -38,6 +38,7 @@ use resolve::{Binding, LocalId, Resolution};
 pub const MAX_REGISTERS: u32 = 250;
 
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 pub struct CompileOptions {
     /// Evaluate constant arithmetic at compile time (Luau does this at `-O1`).
     pub fold_constants: bool,
@@ -45,9 +46,22 @@ pub struct CompileOptions {
 
 impl Default for CompileOptions {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CompileOptions {
+    /// The defaults, with constant folding on.
+    pub const fn new() -> Self {
         Self {
             fold_constants: true,
         }
+    }
+
+    /// Turns constant folding on or off.
+    pub const fn fold_constants(mut self, on: bool) -> Self {
+        self.fold_constants = on;
+        self
     }
 }
 

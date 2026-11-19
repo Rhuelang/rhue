@@ -8,18 +8,10 @@ use std::rc::Rc;
 
 use rhue::{Context, DebugEvent, Engine, Function, HookMask, ScriptError};
 
-const LINES: HookMask = HookMask {
-    line: true,
-    call: false,
-    ret: false,
-};
+const LINES: HookMask = HookMask::new().line(true);
 
 fn all() -> HookMask {
-    HookMask {
-        line: true,
-        call: true,
-        ret: true,
-    }
+    HookMask::new().line(true).call(true).ret(true)
 }
 
 /// Runs `src` with a hook that records `describe(dbg, event)` for each event.
@@ -62,10 +54,7 @@ fn call_and_return_events_name_their_functions() {
     let src = "local function inner() return 1 end\nlocal function outer()\n  return inner() + 1\nend\nouter()";
     let events = trace(
         &mut e,
-        HookMask {
-            line: false,
-            ..all()
-        },
+        all().line(false),
         src,
         |dbg, ev| {
             let f = dbg.frame(0)?;

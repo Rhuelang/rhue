@@ -232,9 +232,7 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let mut engine = Engine::with_options(CompileOptions {
-        fold_constants: args.fold,
-    });
+    let mut engine = Engine::with_options(CompileOptions::new().fold_constants(args.fold));
     if args.strict {
         engine.set_default_type_mode(TypeMode::Strict);
     }

@@ -355,6 +355,7 @@ impl<T> Slab<T> {
 /// Live object counts and memory use, for `collectgarbage("count")` and
 /// [`crate::Vm::heap_stats`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct HeapStats {
     pub strings: usize,
     pub tables: usize,
