@@ -68,6 +68,18 @@ impl<'a> Context<'a> {
         }
     }
 
+    /// Charges `n` instructions to the script's instruction budget, for a native
+    /// that does a lot of work in one call (a loop over a big argument, say).
+    /// Time spent in natives isn't counted otherwise, and this is also where
+    /// they notice an [`interrupt`](crate::InterruptHandle). Fails with an error
+    /// scripts can't catch once the budget's gone.
+    pub fn charge(&mut self, n: u64) -> Result<(), ScriptError> {
+        self.vm.charge(n).map_err(|e| match e {
+            NativeError::Uncatchable(m) => ScriptError(Repr::Uncatchable(m)),
+            other => unreachable!("charge only stops scripts: {other:?}"),
+        })
+    }
+
     /// A new coroutine that runs `func` when it's first resumed.
     pub fn create_thread(&mut self, func: &Function) -> Thread {
         let body = self.lower(Value::Function(func.clone()));
@@ -388,6 +400,7 @@ pub(crate) enum Repr {
     Message(String),
     Value(Value),
     OutOfMemory,
+    Uncatchable(String),
     Yield(Vec<Value>),
 }
 
@@ -433,6 +446,7 @@ impl ScriptError {
             Repr::Message(m) => m.clone(),
             Repr::Value(v) => v.to_string(),
             Repr::OutOfMemory => rhue_vm::OUT_OF_MEMORY.to_string(),
+            Repr::Uncatchable(m) => m.clone(),
             Repr::Yield(_) => "attempt to yield across a C-call boundary".to_string(),
         }
     }
@@ -441,7 +455,7 @@ impl ScriptError {
     pub fn is_catchable(&self) -> bool {
         match &self.0 {
             Repr::Thrown(r) => r.catchable(),
-            Repr::OutOfMemory => false,
+            Repr::OutOfMemory | Repr::Uncatchable(_) => false,
             _ => true,
         }
     }
@@ -455,6 +469,7 @@ impl ScriptError {
                 level: 0,
             },
             Repr::OutOfMemory => NativeError::OutOfMemory,
+            Repr::Uncatchable(m) => NativeError::Uncatchable(m),
             Repr::Yield(values) => {
                 NativeError::Yield(values.into_iter().map(|v| cx.lower(v)).collect())
             }

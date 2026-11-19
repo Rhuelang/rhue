@@ -490,6 +490,8 @@ Any runtime works, but the futures aren't `Send`, so on tokio use a current-thre
 
 `engine.interrupt_handle()` stops a script from somewhere else with an error `pcall` can't catch. A script stuck in a loop is hogging its thread, so on a single-threaded runtime the interrupt has to come from another thread. It only gets checked when the instruction budget refills, so it costs basically nothing.
 
+Time spent in the standard library counts against the instruction limit too, so a pattern that backtracks forever or a huge `table.move` gets stopped the same way a loop does. Your own natives can do the same with `cx.charge(n)` when they do a lot of work in one call.
+
 ### Hot reload
 
 `reload_module` swaps a module over to new source while everything keeps running. Functions in it change in place, so anything already holding one (a callback you stored, a field another module copied) runs the new code from its next call. The module's tables stay the same tables and keep their values, and locals its functions capture keep theirs, so state carries over. A broken edit comes back as an `Err` and the old code keeps going.

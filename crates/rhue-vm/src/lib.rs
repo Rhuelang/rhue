@@ -43,7 +43,7 @@ pub mod table;
 mod value;
 mod vectorlib;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
 use hash::{FxHashMap, FxIndexMap};
@@ -165,6 +165,9 @@ pub enum NativeError {
     /// The memory limit would be exceeded (see [`NativeCtx::reserve`]). Scripts
     /// can't catch it.
     OutOfMemory,
+    /// An error scripts can't catch, like running out of instructions or
+    /// getting interrupted (see [`NativeCtx::charge`]).
+    Uncatchable(String),
     /// Not an error. Suspends the running coroutine and hands these values to
     /// whoever resumed it (like `coroutine.yield`), and the values the next
     /// resume passes become the native's results. Only works when a script
@@ -277,6 +280,43 @@ impl NativeCtx<'_> {
         } else {
             Ok(())
         }
+    }
+
+    /// Charges `n` instructions to the script's budget, for a native whose work
+    /// grows with its arguments (`table.move` over a huge range, say). Without
+    /// this, time spent in a native is free and an interrupt can't reach it.
+    /// Fails once the budget's gone or the script got interrupted.
+    pub fn charge(&mut self, n: u64) -> Result<(), NativeError> {
+        self.vm.charge(n)
+    }
+
+    /// Takes the rest of the script's budget out of the VM, for a loop that
+    /// counts its own steps (see [`Meter`]). Give it back with
+    /// [`return_budget`](Self::return_budget) before calling anything.
+    pub fn meter(&mut self) -> Rc<Meter> {
+        // the VM keeps one around, so taking it doesn't touch the interrupt's
+        // reference count
+        let vm = &mut *self.vm;
+        let meter = vm.meter.clone();
+        meter.load(vm.budget.saturating_add(vm.reserve));
+        vm.budget = 0;
+        vm.reserve = 0;
+        meter
+    }
+
+    /// Puts what's left of `meter`'s budget back into the VM. The meter is
+    /// empty afterwards, refill it with [`refill`](Self::refill).
+    pub fn return_budget(&mut self, meter: &Meter) {
+        self.vm.set_budget(meter.drain());
+    }
+
+    /// Takes the budget back out into `meter` (after a
+    /// [`return_budget`](Self::return_budget)).
+    pub fn refill(&mut self, meter: &Meter) {
+        let vm = &mut *self.vm;
+        meter.load(vm.budget.saturating_add(vm.reserve));
+        vm.budget = 0;
+        vm.reserve = 0;
     }
 
     /// The VM this native runs in.
@@ -477,6 +517,126 @@ const BUDGET_SLICE: u64 = 1 << 14;
 /// The error a script stops with when it gets interrupted.
 pub const INTERRUPTED: &str = "script interrupted";
 
+fn limit_message(limit: Option<u64>) -> String {
+    format!(
+        "script exceeded its instruction limit ({})",
+        limit.unwrap_or(u64::MAX)
+    )
+}
+
+/// How many steps a [`Meter`] takes between looks at the interrupt flag.
+const METER_CHECK: u64 = 1 << 12;
+
+/// Instruction budget a native takes out of the VM (see [`NativeCtx::meter`])
+/// to count steps of its own long loop without going through the
+/// [`NativeCtx`] every time, the pattern matcher's backtracking say. Hand it
+/// back with [`NativeCtx::return_budget`] before anything else runs, scripts
+/// included.
+#[derive(Debug)]
+pub struct Meter {
+    /// Steps left before the next look at the interrupt flag.
+    chunk: Cell<u64>,
+    /// The rest of the budget, past `chunk`.
+    rest: Cell<u64>,
+    limit: Cell<Option<u64>>,
+    interrupt: Option<Arc<Interrupt>>,
+    /// Whether it ran out (or got interrupted), so the error it gave isn't
+    /// one scripts can catch.
+    stopped: Cell<bool>,
+}
+
+impl Meter {
+    fn with_budget(left: u64, limit: Option<u64>, interrupt: Option<Arc<Interrupt>>) -> Self {
+        // the first chunk skips the interrupt check, the VM just did one or is
+        // about to
+        let chunk = left.min(METER_CHECK);
+        Meter {
+            chunk: Cell::new(chunk),
+            rest: Cell::new(left - chunk),
+            limit: Cell::new(limit),
+            interrupt,
+            stopped: Cell::new(false),
+        }
+    }
+
+    /// A meter that never runs out, for code with no VM around.
+    pub fn unlimited() -> Self {
+        Self::with_budget(u64::MAX, None, None)
+    }
+
+    /// Spends one step. Fails once the budget's gone or the script got
+    /// interrupted. The error's a plain `String` so a matcher's results stay
+    /// small, turn it into the right [`NativeError`] with [`fail`](Self::fail).
+    #[inline]
+    pub fn tick(&self) -> Result<(), String> {
+        let c = self.chunk.get();
+        if c == 0 {
+            return self.next_chunk();
+        }
+        self.chunk.set(c - 1);
+        Ok(())
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn next_chunk(&self) -> Result<(), String> {
+        if self.interrupt.as_ref().is_some_and(|i| i.take()) {
+            self.stopped.set(true);
+            return Err(INTERRUPTED.into());
+        }
+        let rest = self.rest.get();
+        if rest == 0 {
+            self.stopped.set(true);
+            return Err(limit_message(self.limit.get()));
+        }
+        let take = rest.min(METER_CHECK);
+        self.rest.set(rest - take);
+        // this step comes out of the new chunk
+        self.chunk.set(take - 1);
+        Ok(())
+    }
+
+    /// Takes up to a chunk of steps out at once, for a loop that keeps its own
+    /// count (give back what it doesn't use with [`give_back`](Self::give_back)).
+    /// Fails like [`tick`](Self::tick) when there's nothing left.
+    pub fn take_chunk(&self) -> Result<u32, String> {
+        if self.chunk.get() == 0 {
+            self.next_chunk()?;
+            // next_chunk spent one step for its caller, this one's the caller
+            self.chunk.set(self.chunk.get() + 1);
+        }
+        Ok(self.chunk.replace(0) as u32)
+    }
+
+    /// Returns steps taken with [`take_chunk`](Self::take_chunk) and not used.
+    pub fn give_back(&self, steps: u32) {
+        self.chunk.set(self.chunk.get() + u64::from(steps));
+    }
+
+    /// The error for a message that came out of code using this meter: one
+    /// scripts can't catch if the meter's the one that stopped it.
+    pub fn fail(&self, message: String) -> NativeError {
+        if self.stopped.get() {
+            NativeError::Uncatchable(message)
+        } else {
+            NativeError::Message(message)
+        }
+    }
+
+    /// Loads `left` instructions into the meter, for a fresh use.
+    fn load(&self, left: u64) {
+        let chunk = left.min(METER_CHECK);
+        self.chunk.set(chunk);
+        self.rest.set(left - chunk);
+        self.stopped.set(false);
+    }
+
+    /// Takes everything that's left out of the meter.
+    fn drain(&self) -> u64 {
+        self.chunk.replace(0).saturating_add(self.rest.replace(0))
+    }
+}
+
 /// Stops a VM's running script from another task or thread. The script fails
 /// with [`INTERRUPTED`] (which `pcall` can't catch) the next time it loops or
 /// calls something. If nothing's running, the next script run is the one that
@@ -593,6 +753,8 @@ pub struct Vm {
     reserve: u64,
     /// Set from anywhere to stop the running script (see [`Interrupt`]).
     interrupt: Arc<Interrupt>,
+    /// Lent to natives that count their own steps (see [`NativeCtx::meter`]).
+    meter: Rc<Meter>,
     /// The main thread, and the thread running now (the main thread or a
     /// coroutine). The running thread's state is in the fields above.
     main_thread: ThreadRef,
@@ -656,6 +818,7 @@ impl Vm {
         let mut heap = Heap::new();
         let events = meta::Events::intern(&mut heap);
         let main_thread = heap.alloc_thread(heap::ThreadState::default(), CoStatus::Running);
+        let interrupt: Arc<Interrupt> = Arc::default();
         Vm {
             main_thread,
             current: main_thread,
@@ -683,7 +846,8 @@ impl Vm {
             native_depth: 0,
             budget: 0,
             reserve: u64::MAX,
-            interrupt: Arc::default(),
+            meter: Rc::new(Meter::with_budget(0, None, Some(interrupt.clone()))),
+            interrupt,
             placeholder: Rc::new(LuaClosure {
                 proto: Rc::new(Proto::default()),
                 upvalues: Rc::from(Vec::new()),
@@ -825,6 +989,7 @@ impl Vm {
     /// count's approximate but no loop or recursion gets past it.
     pub fn set_instruction_limit(&mut self, limit: Option<u64>) {
         self.instruction_limit = limit;
+        self.meter.limit.set(limit);
     }
 
     /// Formats a value like Luau's `tostring`.
@@ -1612,6 +1777,16 @@ impl Vm {
                     yielding: false,
                 }
             }
+            NativeError::Uncatchable(m) => {
+                let value = Value::String(self.heap.intern(&m));
+                error.message = m;
+                Thrown {
+                    value,
+                    error,
+                    catchable: false,
+                    yielding: false,
+                }
+            }
             NativeError::Message(m) => {
                 let text = positioned(&error, &m);
                 error.message = m;
@@ -1695,6 +1870,46 @@ impl Vm {
         Ok(())
     }
 
+    /// Puts `left` instructions back as the budget, one slice of it ready to
+    /// spend and the rest in reserve.
+    fn set_budget(&mut self, left: u64) {
+        self.budget = left.min(BUDGET_SLICE);
+        self.reserve = left - self.budget;
+    }
+
+    /// Charges `n` instructions to the running script's budget (see
+    /// [`NativeCtx::charge`]).
+    #[inline]
+    pub fn charge(&mut self, n: u64) -> Result<(), NativeError> {
+        if self.budget >= n {
+            self.budget -= n;
+            return Ok(());
+        }
+        self.charge_native(n)
+    }
+
+    /// [`Vm::charge`] when the current slice can't pay: an interrupt or the
+    /// limit stop the native, otherwise the slice gets refilled.
+    #[cold]
+    #[inline(never)]
+    fn charge_native(&mut self, n: u64) -> Result<(), NativeError> {
+        if self.interrupt.flag.swap(false, Ordering::AcqRel) {
+            return Err(NativeError::Uncatchable(INTERRUPTED.into()));
+        }
+        while self.budget < n {
+            if self.reserve == 0 {
+                return Err(NativeError::Uncatchable(limit_message(
+                    self.instruction_limit,
+                )));
+            }
+            let take = self.reserve.min(BUDGET_SLICE.max(n));
+            self.reserve -= take;
+            self.budget += take;
+        }
+        self.budget -= n;
+        Ok(())
+    }
+
     /// The flag that interrupts this VM's scripts, to hand off to other tasks
     /// or threads.
     pub fn interrupt_handle(&self) -> Arc<Interrupt> {
@@ -1702,12 +1917,8 @@ impl Vm {
     }
 
     fn limit_reached(&mut self, f: &Frame, pc: usize) -> Thrown {
-        let limit = self.instruction_limit.unwrap_or(u64::MAX);
-        let mut t = self.throw(
-            f,
-            pc,
-            format!("script exceeded its instruction limit ({limit})"),
-        );
+        let message = limit_message(self.instruction_limit);
+        let mut t = self.throw(f, pc, message);
         t.catchable = false;
         t
     }
