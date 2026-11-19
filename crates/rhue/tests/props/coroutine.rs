@@ -1,4 +1,4 @@
-//! Property test: the arithmetic trees from `proptest_meta.rs`, evaluated
+//! Property test: the arithmetic trees from `meta.rs`, evaluated
 //! inside a coroutine where every leaf and every metamethod *yields* its value
 //! to the main thread, which sends it straight back. Each yield suspends
 //! somewhere different (a plain call, an `__add` frame, a comparison's

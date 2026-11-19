@@ -242,9 +242,7 @@ fn check_with(
     fold: bool,
     gc_stress: bool,
 ) -> Result<(), TestCaseError> {
-    let mut engine = Engine::with_options(CompileOptions {
-        fold_constants: fold,
-    });
+    let mut engine = Engine::with_options(CompileOptions::new().fold_constants(fold));
     engine.set_gc_stress(gc_stress);
     match (engine.eval(src), expected) {
         (Ok(vals), Ok(want)) => {

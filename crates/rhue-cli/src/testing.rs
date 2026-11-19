@@ -130,11 +130,10 @@ fn engine_for(file: &Path) -> Result<(Engine, Table), rhue::Error> {
         PathBuf::from("."),
     ];
     engine.set_module_loader(move |name| {
-        let rel: PathBuf = name.split('.').collect();
         bases.iter().find_map(|base| {
-            [rel.with_extension("rhue"), rel.join("init.rhue")]
+            rhue::module_paths(base, name)
                 .iter()
-                .find_map(|p| std::fs::read_to_string(base.join(p)).ok())
+                .find_map(|p| std::fs::read_to_string(p).ok())
         })
     });
     let expectation = format!("{{ {MATCHERS}, never: {{ {MATCHERS} }} }}");

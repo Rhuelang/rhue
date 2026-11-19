@@ -4,6 +4,29 @@ Everything that changed in Rhue. It got built in milestones before the first rel
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow [Semantic Versioning](https://semver.org/). Only the `rhue` crate's API is meant to be stable, the other crates are its insides.
 
+## [2.0.0] - 2026-11-19
+
+### Breaking
+
+- Feat: The public enums and data structs are `#[non_exhaustive]`, so new value kinds or error kinds can come in minor releases. A `match` on `Value` needs a `_` arm now.
+- Feat: `HookMask` and `CompileOptions` can't be struct literals anymore, use `HookMask::new().line(true)` and `CompileOptions::new().fold_constants(false)`.
+- Feat: `Engine::compile`, `load` and `compile_in` hand out a `Chunk` instead of an `Rc<Proto>`. It can be saved, disassembled and run, and what's inside is free to change between releases.
+- Feat: `Engine::analyze`, `outline` and inlay hints are behind a `tooling` feature that isn't covered by semver. They're for the language server and change with it.
+- Fix: Only chunk format 4 loads. Formats 1 to 3 never shipped.
+- Fix: The internal crates are pinned to the exact same version as `rhue`, so `cargo update` can't mix and match them.
+
+### Sandbox
+
+- Fix: Natives count against the instruction limit and interrupts reach them. A `string.find` with a few `.-` in a row could hang a host that set every limit before.
+- Feat: `Context::charge`, for host natives that do a lot of work in one call.
+
+### Other
+
+- Feat: `rhue::module_paths`, the one place `require("a.b")` turns into a path. The CLI, language server, debugger and test runner all use it.
+- Feat: `bench/counts.sh` checks callgrind instruction counts against `bench/counts.json`. The budget change costs `patterns` about 2%.
+- Feat: `CONTRIBUTING.md` and `SECURITY.md`.
+- Fix: The tests are grouped by feature into two binaries instead of 32.
+
 ## [1.0.0] - 2026-11-18
 
 ### Release

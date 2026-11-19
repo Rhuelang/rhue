@@ -10,7 +10,7 @@
 //! let mut engine = Engine::new();
 //! let seen = Rc::new(RefCell::new(Vec::new()));
 //! let log = seen.clone();
-//! engine.set_debug_hook(HookMask { line: true, ..HookMask::default() }, move |dbg, event| {
+//! engine.set_debug_hook(HookMask::new().line(true), move |dbg, event| {
 //!     if event == DebugEvent::Line(3) {
 //!         // stopped on line 3, what's in scope?
 //!         for (name, value) in dbg.locals(0) {
@@ -29,6 +29,7 @@ use crate::{Context, Value};
 
 /// One frame of the stack.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct StackFrame {
     /// The function's name, `<main>` for a chunk, `<anonymous>` if it doesn't
     /// have one.

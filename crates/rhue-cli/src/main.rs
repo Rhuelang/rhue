@@ -34,9 +34,7 @@ mod pretty;
 mod repl;
 mod testing;
 
-use std::rc::Rc;
-
-use rhue::{CompileOptions, Engine, Error, ErrorKind, Proto, TypeMode, Value};
+use rhue::{Chunk, CompileOptions, Engine, Error, ErrorKind, TypeMode, Value};
 
 struct Args {
     dump: bool,
@@ -232,9 +230,7 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let mut engine = Engine::with_options(CompileOptions {
-        fold_constants: args.fold,
-    });
+    let mut engine = Engine::with_options(CompileOptions::new().fold_constants(args.fold));
     if args.strict {
         engine.set_default_type_mode(TypeMode::Strict);
     }
@@ -246,10 +242,9 @@ fn main() -> ExitCode {
         _ => std::path::PathBuf::from("."),
     };
     engine.set_module_loader(move |name| {
-        let rel: std::path::PathBuf = name.split('.').collect();
-        [rel.with_extension("rhue"), rel.join("init.rhue")]
+        rhue::module_paths(&base, name)
             .iter()
-            .find_map(|p| std::fs::read_to_string(base.join(p)).ok())
+            .find_map(|p| std::fs::read_to_string(p).ok())
     });
     let color = io::stderr().is_terminal();
 
@@ -317,7 +312,7 @@ pub(crate) fn run(
     dump: bool,
     expr_mode: bool,
 ) -> Result<Vec<Value>, Error> {
-    let proto: Rc<Proto> = if expr_mode {
+    let proto: Chunk = if expr_mode {
         match engine.compile_expr(name, src) {
             Ok(p) => p,
             // report whichever reading the user most likely meant

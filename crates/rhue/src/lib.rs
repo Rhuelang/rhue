@@ -151,13 +151,16 @@
 #![warn(missing_docs)]
 
 mod asyncs;
+mod chunk;
 mod context;
 mod convert;
 mod debug;
 mod environment;
+// compiled either way, `expression_type` is built on the analysis
 mod hints;
 mod modules;
 mod native;
+#[cfg(feature = "tooling")]
 mod outline;
 #[cfg(feature = "serde")]
 pub mod serde;
@@ -168,9 +171,12 @@ mod value;
 use std::fmt;
 use std::marker::PhantomData;
 use std::rc::Rc;
+
+use rhue_bytecode::Proto;
 use std::sync::Arc;
 
 pub use asyncs::InterruptHandle;
+pub use chunk::Chunk;
 pub use context::{Context, ScriptError};
 pub use convert::{
     ArgError, Args, ConversionError, FromArg, FromValue, FromValues, IntoValue, IntoValues,
@@ -178,13 +184,17 @@ pub use convert::{
 };
 pub use debug::{DebugEvent, Debugger, HookMask, StackFrame};
 pub use environment::Environment;
+#[cfg(feature = "tooling")]
 pub use hints::{HintKind, InlayHint};
-pub use modules::{Analysis, Reloaded};
+#[cfg(feature = "tooling")]
+pub use modules::Analysis;
+pub use modules::Reloaded;
 pub use native::{IntoAsyncNative, IntoNative, IntoNativeResult, WithContext};
+#[cfg(feature = "tooling")]
 pub use outline::{
     Base, Exports, FieldUse, Outline, SemanticToken, Symbol, SymbolKind, TokenKind, outline,
 };
-pub use rhue_bytecode::{Proto, is_chunk};
+pub use rhue_bytecode::is_chunk;
 pub use rhue_common::{Diagnostic, Severity, SourceFile, Span};
 pub use rhue_compiler::CompileOptions;
 pub use rhue_derive::UserData;
@@ -196,8 +206,30 @@ pub use value::{AnyUserData, Buffer, Function, Table, Thread, Value};
 /// Memory statistics; see [`Engine::heap_stats`].
 pub use rhue_vm::HeapStats;
 
+/// Where `require(name)` looks for a module under `dir`, in order: `a.b` is
+/// `dir/a/b.rhue`, then `dir/a/b/init.rhue`. The CLI, the language server and
+/// the debugger all find modules this way, so a
+/// [loader](Engine::set_module_loader) that uses it agrees with them. It only
+/// builds the paths, nothing gets read.
+///
+/// ```
+/// use std::path::Path;
+///
+/// let [file, init] = rhue::module_paths(Path::new("scripts"), "npc.brain");
+/// assert_eq!(file, Path::new("scripts/npc/brain.rhue"));
+/// assert_eq!(init, Path::new("scripts/npc/brain/init.rhue"));
+/// ```
+pub fn module_paths(dir: &std::path::Path, name: &str) -> [std::path::PathBuf; 2] {
+    let rel: std::path::PathBuf = name.split('.').collect();
+    [
+        dir.join(rel.with_extension("rhue")),
+        dir.join(rel.join("init.rhue")),
+    ]
+}
+
 /// Which phase an [`Error`] came from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ErrorKind {
     /// Lexing or parsing failed.
     Syntax,
@@ -467,7 +499,7 @@ impl Engine {
     /// module name to its source, or `None` if there's no such module. Rhue
     /// never touches the file system itself, so this is where a host decides
     /// what `require("a.b")` means (a file under a scripts folder, an asset
-    /// bundle entry, ...).
+    /// bundle entry, ...). [`module_paths`] gives the paths the Rhue tools use.
     pub fn set_module_loader(&mut self, loader: impl Fn(&str) -> Option<String> + 'static) {
         modules::host(&mut self.vm).loader = Some(Rc::new(loader));
     }
@@ -630,7 +662,7 @@ impl Engine {
     /// Compiles a chunk without running it (to inspect or cache it, say).
     /// Type-checks it first if its directive (or the default mode) says to. The
     /// globals it defines become known to chunks checked later.
-    pub fn compile(&mut self, name: &str, source: &str) -> Result<Rc<Proto>, Error> {
+    pub fn compile(&mut self, name: &str, source: &str) -> Result<Chunk, Error> {
         let file = SourceFile::new(name, source);
         let chunk = rhue_parser::parse_chunk(source)
             .map_err(|d| Error::new(ErrorKind::Syntax, d, &file))?;
@@ -638,7 +670,7 @@ impl Engine {
     }
 
     /// Compiles a single expression as `return <expr>`.
-    pub fn compile_expr(&mut self, name: &str, source: &str) -> Result<Rc<Proto>, Error> {
+    pub fn compile_expr(&mut self, name: &str, source: &str) -> Result<Chunk, Error> {
         let file = SourceFile::new(name, source);
         let chunk =
             rhue_parser::parse_expr(source).map_err(|d| Error::new(ErrorKind::Syntax, d, &file))?;
@@ -649,8 +681,8 @@ impl Engine {
         &mut self,
         chunk: &rhue_parser::ast::Chunk,
         file: &Rc<SourceFile>,
-    ) -> Result<Rc<Proto>, Error> {
-        modules::compile_ast(&mut self.vm, chunk, file).map(|c| c.proto)
+    ) -> Result<Chunk, Error> {
+        modules::compile_ast(&mut self.vm, chunk, file).map(|c| Chunk(c.proto))
     }
 
     /// Analyzes a chunk for editor tooling without compiling or running it: its
@@ -659,6 +691,9 @@ impl Engine {
     /// for the expression ending there. Types are inferred like `--!strict`
     /// would whatever the chunk's mode, errors are whatever its mode reports.
     /// Modules it `require`s get checked (not run) to learn their types.
+    ///
+    /// Needs the `tooling` feature, which isn't covered by semver.
+    #[cfg(feature = "tooling")]
     pub fn analyze(&mut self, source: &str, members_at: Option<u32>) -> Analysis {
         modules::analyze(&mut self.vm, source, members_at)
     }
@@ -671,7 +706,7 @@ impl Engine {
         const PREFIX: &str = "--!strict\nlocal __type = (";
         let source = format!("{PREFIX}{expr}\n)");
         let file = SourceFile::new("<expression>", source.as_str());
-        let analysis = self.analyze(&source, None);
+        let analysis = modules::analyze(&mut self.vm, &source, None);
         if !analysis.diagnostics.is_empty() {
             return Err(Error::new(ErrorKind::Type, analysis.diagnostics, &file));
         }
@@ -704,17 +739,17 @@ impl Engine {
         }
     }
 
-    /// Loads a chunk saved with [`Proto::to_bytes`] (see also
+    /// Loads a chunk saved with [`Chunk::to_bytes`] (see also
     /// [`compile_to_bytes`](Self::compile_to_bytes)) without parsing or
     /// type-checking it. The bytes go through the bytecode verifier, so damaged
     /// or hand-made chunks get refused ([`ErrorKind::Load`]) instead of run.
     /// The result can be [`run`](Self::run) as many times as you want.
-    pub fn load(&mut self, bytes: &[u8]) -> Result<Rc<Proto>, Error> {
+    pub fn load(&mut self, bytes: &[u8]) -> Result<Chunk, Error> {
         let (proto, types) = self.read_chunk(bytes)?;
         if let Some(types) = &types {
             modules::declare_chunk_types(&mut self.vm, types);
         }
-        Ok(proto)
+        Ok(Chunk(proto))
     }
 
     /// Reads and verifies a chunk, without declaring its types.
@@ -775,7 +810,8 @@ impl Engine {
     /// A prototype that didn't come from [`compile`](Self::compile) gets
     /// verified first (once), and rejected with [`ErrorKind::Compile`] if its
     /// bytecode is malformed.
-    pub fn run(&mut self, proto: &Rc<Proto>) -> Result<Vec<Value>, Error> {
+    pub fn run(&mut self, chunk: &Chunk) -> Result<Vec<Value>, Error> {
+        let proto = &chunk.0;
         self.verify(proto)?;
         let values = self
             .vm

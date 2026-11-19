@@ -13,6 +13,7 @@ fn kind(k: Kind) -> SymbolKind {
         Kind::Field => SymbolKind::FIELD,
         Kind::Module => SymbolKind::MODULE,
         Kind::Type => SymbolKind::INTERFACE,
+        _ => SymbolKind::VARIABLE,
     }
 }
 

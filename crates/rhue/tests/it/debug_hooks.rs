@@ -8,18 +8,10 @@ use std::rc::Rc;
 
 use rhue::{Context, DebugEvent, Engine, Function, HookMask, ScriptError};
 
-const LINES: HookMask = HookMask {
-    line: true,
-    call: false,
-    ret: false,
-};
+const LINES: HookMask = HookMask::new().line(true);
 
 fn all() -> HookMask {
-    HookMask {
-        line: true,
-        call: true,
-        ret: true,
-    }
+    HookMask::new().line(true).call(true).ret(true)
 }
 
 /// Runs `src` with a hook that records `describe(dbg, event)` for each event.
@@ -60,18 +52,10 @@ fn line_events_follow_execution() {
 fn call_and_return_events_name_their_functions() {
     let mut e = Engine::new();
     let src = "local function inner() return 1 end\nlocal function outer()\n  return inner() + 1\nend\nouter()";
-    let events = trace(
-        &mut e,
-        HookMask {
-            line: false,
-            ..all()
-        },
-        src,
-        |dbg, ev| {
-            let f = dbg.frame(0)?;
-            Some(format!("{ev:?} {} depth {}", f.function, dbg.depth()))
-        },
-    );
+    let events = trace(&mut e, all().line(false), src, |dbg, ev| {
+        let f = dbg.frame(0)?;
+        Some(format!("{ev:?} {} depth {}", f.function, dbg.depth()))
+    });
     assert_eq!(
         events,
         [

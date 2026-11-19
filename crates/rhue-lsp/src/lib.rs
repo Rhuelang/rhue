@@ -209,10 +209,8 @@ impl Docs {
     /// there is one (open in the editor or on disk).
     pub fn module_path(&self, uri: &Url, name: &str) -> Option<PathBuf> {
         let dir = uri.to_file_path().ok()?.parent()?.to_path_buf();
-        let rel: PathBuf = name.split('.').collect();
-        [rel.with_extension("rhue"), rel.join("init.rhue")]
+        rhue::module_paths(&dir, name)
             .into_iter()
-            .map(|p| dir.join(p))
             .find(|p| self.text_at(p).is_some())
     }
 
@@ -304,10 +302,8 @@ impl Docs {
         let seen = deps.clone();
         engine.set_module_loader(move |name| {
             let dir = dir.as_ref()?;
-            let rel: PathBuf = name.split('.').collect();
             stats.module_loads.set(stats.module_loads.get() + 1);
-            let candidates =
-                [rel.with_extension("rhue"), rel.join("init.rhue")].map(|p| dir.join(p));
+            let candidates = rhue::module_paths(dir, name);
             // both candidates count, creating the missing one changes things
             seen.borrow_mut().extend(candidates.iter().cloned());
             candidates.iter().find_map(|p| {
@@ -342,6 +338,7 @@ fn to_lsp(idx: &LineIndex<'_>, d: &rhue::Diagnostic) -> Diagnostic {
         severity: Some(match d.severity {
             rhue::Severity::Error => DiagnosticSeverity::ERROR,
             rhue::Severity::Warning => DiagnosticSeverity::WARNING,
+            _ => DiagnosticSeverity::INFORMATION,
         }),
         source: Some("rhue".into()),
         message,

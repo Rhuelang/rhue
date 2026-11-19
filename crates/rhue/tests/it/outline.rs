@@ -257,6 +257,7 @@ return M
             let base = match &u.base {
                 Base::Local(s) => slice(src, *s).to_string(),
                 Base::Module(m) => format!("require({m})"),
+                _ => unreachable!("a new kind of base"),
             };
             assert_eq!(slice(src, u.span), u.name);
             format!("{base}.{}", u.name)

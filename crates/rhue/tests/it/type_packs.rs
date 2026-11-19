@@ -34,6 +34,7 @@ fn fails(src: &str, needle: &str) {
     }
 }
 
+#[cfg(feature = "tooling")]
 fn type_of(src: &str, name: &str) -> String {
     let mut e = Engine::new();
     let a = e.analyze(src, None);
@@ -47,6 +48,7 @@ fn type_of(src: &str, name: &str) -> String {
 
 const PASS: &str = "local function pass<T...>(...: T...): T... return ... end\n";
 
+#[cfg(feature = "tooling")]
 #[test]
 fn packs_carry_argument_types_through() {
     ok(&format!("{PASS}local a: number, b: string = pass(1, 'x')"));
@@ -62,6 +64,7 @@ fn packs_carry_argument_types_through() {
     assert_eq!(type_of(PASS, "pass"), "<T...>(T...) -> T...");
 }
 
+#[cfg(feature = "tooling")]
 #[test]
 fn packs_link_a_callback_to_its_arguments() {
     let call = "local function call<A..., R...>(f: (A...) -> R..., ...: A...): R...\n  return f(...)\nend\nlocal function add(a: number, b: number): number return a + b end\n";
@@ -289,6 +292,7 @@ fn flow_locals_in_non_strict_files_are_any() {
     .unwrap();
 }
 
+#[cfg(feature = "tooling")]
 #[test]
 fn hovering_a_flow_local_shows_what_it_can_hold() {
     let src =
@@ -391,22 +395,12 @@ fn loaded_chunks_declare_their_globals() {
 }
 
 #[test]
-fn older_and_untyped_chunks_still_load() {
+fn untyped_chunks_load() {
     let mut e = Engine::new();
-    let proto = e.compile("old.rhue", "return 1 + 1").unwrap();
-    // format 1: no types section
-    let v2 = proto.to_bytes();
-    let mut v1 = v2.clone();
-    let magic = rhue_bytecode::MAGIC.len();
-    v1[magic] = 1;
-    // the types flag comes after the name and text (both short here)
-    let flag = magic + 1 + 1 + "old.rhue".len() + 1 + "return 1 + 1".len();
-    assert_eq!(v1.remove(flag), 0);
-    for bytes in [v1, v2] {
-        let mut fresh = Engine::new();
-        let p = fresh.load(&bytes).unwrap();
-        assert_eq!(fresh.run(&p).unwrap(), vec![rhue::Value::Number(2.0)]);
-    }
+    let chunk = e.compile("old.rhue", "return 1 + 1").unwrap();
+    let mut fresh = Engine::new();
+    let p = fresh.load(&chunk.to_bytes()).unwrap();
+    assert_eq!(fresh.run(&p).unwrap(), vec![rhue::Value::Number(2.0)]);
     // a compiled module without types is `any` to the checker
     let untyped = Engine::new()
         .compile("m", "return { f = function(x: number) return x end }")

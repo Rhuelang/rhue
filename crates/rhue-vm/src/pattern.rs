@@ -7,6 +7,12 @@
 //! Matching works on bytes like Lua's, so classes only know ASCII and `.`
 //! matches one byte of a multi-byte character. The matcher backtracks
 //! recursively with a depth limit ("pattern too complex"), same as Lua's.
+//! Every attempt it makes gets charged to the script's instruction budget
+//! through a [`Meter`], since a few `.-` in a row can backtrack for a very long
+//! time. Plain scans (how far `.*` reaches, `%b`) are linear in the subject, so
+//! they aren't counted.
+
+use crate::Meter;
 
 /// How many captures a pattern can have.
 pub const MAX_CAPTURES: usize = 32;
@@ -34,6 +40,9 @@ enum Len {
 pub struct Matcher<'a> {
     src: &'a [u8],
     pat: &'a [u8],
+    pub(crate) meter: &'a Meter,
+    /// Steps taken out of the meter and not spent yet.
+    fuel: u32,
     depth: usize,
     level: usize,
     caps: [(usize, Len); MAX_CAPTURES],
@@ -41,16 +50,24 @@ pub struct Matcher<'a> {
 
 type M = Result<Option<usize>, String>;
 
+impl Drop for Matcher<'_> {
+    fn drop(&mut self) {
+        self.meter.give_back(self.fuel);
+    }
+}
+
 /// Whether `pat` needs the pattern matcher (has a special character).
 pub fn has_specials(pat: &[u8]) -> bool {
     pat.iter().any(|c| SPECIALS.contains(c))
 }
 
 impl<'a> Matcher<'a> {
-    pub fn new(src: &'a [u8], pat: &'a [u8]) -> Self {
+    pub fn new(src: &'a [u8], pat: &'a [u8], meter: &'a Meter) -> Self {
         Matcher {
             src,
             pat,
+            meter,
+            fuel: 0,
             depth: MAX_DEPTH,
             level: 0,
             caps: [(0, Len::Unfinished); MAX_CAPTURES],
@@ -119,6 +136,10 @@ impl<'a> Matcher<'a> {
     }
 
     fn do_match(&mut self, s: usize, p: usize) -> M {
+        if self.fuel == 0 {
+            self.fuel = self.meter.take_chunk()?;
+        }
+        self.fuel -= 1;
         if self.depth == 0 {
             return Err("pattern too complex".into());
         }
@@ -406,13 +427,14 @@ pub fn find(
     src: &[u8],
     pat: &[u8],
     init: usize,
+    meter: &Meter,
 ) -> Result<Option<(usize, usize, Vec<Capture>)>, String> {
     let (anchor, p) = if pat.first() == Some(&b'^') {
         (true, 1)
     } else {
         (false, 0)
     };
-    let mut m = Matcher::new(src, pat);
+    let mut m = Matcher::new(src, pat, meter);
     let mut s = init;
     loop {
         if let Some(e) = m.try_at(s, p)? {
@@ -430,7 +452,8 @@ mod tests {
     use super::*;
 
     fn caps(src: &str, pat: &str) -> Option<Vec<String>> {
-        let (s, e, mut caps) = find(src.as_bytes(), pat.as_bytes(), 0).unwrap()?;
+        let (s, e, mut caps) =
+            find(src.as_bytes(), pat.as_bytes(), 0, &Meter::unlimited()).unwrap()?;
         if caps.is_empty() {
             caps.push(Capture::Str(s, e));
         }
@@ -486,11 +509,15 @@ mod tests {
             ("%f", "missing '[' after '%f' in pattern"),
             ("%b", "malformed pattern (missing arguments to '%b')"),
         ] {
-            assert_eq!(find(b"a", pat.as_bytes(), 0).unwrap_err(), want, "{pat}");
+            assert_eq!(
+                find(b"a", pat.as_bytes(), 0, &Meter::unlimited()).unwrap_err(),
+                want,
+                "{pat}"
+            );
         }
         let deep = "a?".repeat(300) + &"a".repeat(300);
         assert_eq!(
-            find(&[b'a'; 300], deep.as_bytes(), 0).unwrap_err(),
+            find(&[b'a'; 300], deep.as_bytes(), 0, &Meter::unlimited()).unwrap_err(),
             "pattern too complex"
         );
     }

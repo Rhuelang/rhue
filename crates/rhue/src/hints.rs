@@ -10,6 +10,7 @@ use crate::Span;
 
 /// A type shown after a name or a parameter list.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct InlayHint {
     /// Where it goes, right after the name or after a function's `)`.
     pub offset: u32,
@@ -24,6 +25,7 @@ pub struct InlayHint {
 
 /// What an [`InlayHint`] describes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum HintKind {
     /// A local's, loop variable's or parameter's type.
     Type,

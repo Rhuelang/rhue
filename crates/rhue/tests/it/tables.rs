@@ -14,12 +14,8 @@ fn engines() -> [Engine; 3] {
     let mut stressed = Engine::new();
     stressed.set_gc_stress(true);
     [
-        Engine::with_options(CompileOptions {
-            fold_constants: true,
-        }),
-        Engine::with_options(CompileOptions {
-            fold_constants: false,
-        }),
+        Engine::with_options(CompileOptions::new().fold_constants(true)),
+        Engine::with_options(CompileOptions::new().fold_constants(false)),
         stressed,
     ]
 }

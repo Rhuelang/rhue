@@ -626,6 +626,9 @@ fn table_concat(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let n = ctx.heap().table(t).len() as i64;
     let i = opt_int(args, 2, "concat", 1)?;
     let j = opt_int(args, 3, "concat", n)?;
+    if j >= i {
+        ctx.charge(j.abs_diff(i) + 1)?;
+    }
     let mut out = String::new();
     for k in i..=j {
         // checked as it grows (the final size isn't known up front)
@@ -745,6 +748,8 @@ fn table_move(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
             return Err("invalid argument #4 to 'move' (destination wrap around)".into());
         }
         ctx.reserve(count * 16)?;
+        // copying is cheap, about 8 elements for one instruction's worth
+        ctx.charge(count as u64 / 8)?;
         let values = ctx.heap().table(a1).get_run(f, count);
         ctx.heap_mut()
             .with_table(a2, |tbl| tbl.set_run(t, &values))
@@ -901,6 +906,7 @@ fn string_rep(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
         return Err("resulting string too large".into());
     }
     ctx.reserve(size)?;
+    ctx.charge(n as u64 + size as u64 / 64)?;
     let out = vec![s.as_str(); n].join(&sep);
     Ok(smallvec![ctx.string(&out)])
 }

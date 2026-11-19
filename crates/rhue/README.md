@@ -15,7 +15,7 @@ I write a lot of Luau and a lot of Rust, and wanted the first one inside the sec
 
 ```toml
 [dependencies]
-rhue = "1"
+rhue = "2"
 ```
 
 ```rust
@@ -40,6 +40,7 @@ What you get:
 - **Hot reload** — swap a module for new code while scripts run, state carries over
 - **Debug hooks** — line, call and return events, locals, upvalues, evaluating in a frame
 - **`serde`** — behind the `serde` feature, convert any `Serialize`/`Deserialize` type to script values and back
+- **`tooling`** — what the language server's built on (`Engine::analyze`, outlines, inlay hints). It's not covered by semver, it changes whenever the editor features need it to
 
 ```rust
 use rhue::Engine;

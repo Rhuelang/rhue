@@ -1,0 +1,38 @@
+name: Bug
+description: Something does the wrong thing
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: And what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Script or code that shows it
+      description: The smaller the better. A script plus the Rust that runs it, if the host matters.
+      render: lua
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Rhue version
+      placeholder: "2.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options:
+        - the language or standard library
+        - type checker
+        - embedding API
+        - rhue CLI
+        - language server
+        - debugger
+        - something else

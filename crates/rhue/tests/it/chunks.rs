@@ -2,7 +2,8 @@
 
 use std::rc::Rc;
 
-use rhue::{Engine, ErrorKind, Proto, Value};
+use rhue::{Engine, ErrorKind, Value};
+use rhue_bytecode::Proto;
 
 fn programs() -> Vec<(String, String)> {
     let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
@@ -29,7 +30,7 @@ fn programs() -> Vec<(String, String)> {
 fn every_example_round_trips_exactly() {
     for (name, src) in programs() {
         let mut e = Engine::new();
-        let proto = e.compile(&name, &src).unwrap();
+        let proto = e.compile(&name, &src).unwrap().proto().clone();
         let bytes = proto.to_bytes();
         let back = Proto::from_bytes(&bytes).unwrap();
         assert_eq!(*back, *proto, "{name}");
@@ -139,7 +140,9 @@ fn the_verifier_guards_loading() {
     let mut e = Engine::new();
     let proto = e
         .compile("t.rhue", "local a, b = 1, 2 return a + b")
-        .unwrap();
+        .unwrap()
+        .proto()
+        .clone();
     let edit = |f: &dyn Fn(&mut Proto)| {
         let mut p = (*proto).clone();
         f(&mut p);
@@ -172,7 +175,12 @@ fn the_verifier_guards_loading() {
     // and `run` verifies hand-made prototypes the same way
     let mut p = (*proto).clone();
     p.locals[0].reg = 200;
-    assert_eq!(e.run(&Rc::new(p)).unwrap_err().kind, ErrorKind::Compile);
+    assert_eq!(
+        e.run(&rhue::Chunk::from_proto(Rc::new(p)))
+            .unwrap_err()
+            .kind,
+        ErrorKind::Compile
+    );
 }
 
 #[test]
@@ -231,37 +239,31 @@ fn hooks_can_evaluate_expressions_in_a_frame() {
     let log = seen.clone();
     let mut e = Engine::new();
     e.set_global("scale", 10.0);
-    e.set_debug_hook(
-        HookMask {
-            line: true,
-            ..HookMask::default()
-        },
-        move |dbg, event| {
-            if event != DebugEvent::Line(5) {
-                return Ok(());
-            }
-            let mut show = |level: usize, src: &str| {
-                let shown = match dbg.eval(level, src) {
-                    Ok(vs) => vs
-                        .iter()
-                        .map(|v| v.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    Err(e) => format!("error: {e}"),
-                };
-                log.borrow_mut().push(format!("{src} => {shown}"));
+    e.set_debug_hook(HookMask::new().line(true), move |dbg, event| {
+        if event != DebugEvent::Line(5) {
+            return Ok(());
+        }
+        let mut show = |level: usize, src: &str| {
+            let shown = match dbg.eval(level, src) {
+                Ok(vs) => vs
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                Err(e) => format!("error: {e}"),
             };
-            show(0, "x * scale + offset"); // a local, a global, an upvalue
-            show(0, "#items, items[2]");
-            show(0, "string.format('%s=%d', name, x)");
-            show(1, "x"); // the caller's `x`
-            show(0, "items[1] = 99"); // a statement: tables are shared
-            show(0, "x = 1000"); // locals are copies
-            show(0, "nope.field");
-            show(0, "1 +");
-            Ok(())
-        },
-    );
+            log.borrow_mut().push(format!("{src} => {shown}"));
+        };
+        show(0, "x * scale + offset"); // a local, a global, an upvalue
+        show(0, "#items, items[2]");
+        show(0, "string.format('%s=%d', name, x)");
+        show(1, "x"); // the caller's `x`
+        show(0, "items[1] = 99"); // a statement: tables are shared
+        show(0, "x = 1000"); // locals are copies
+        show(0, "nope.field");
+        show(0, "1 +");
+        Ok(())
+    });
     let out = e
         .eval(
             "local offset = 0.5

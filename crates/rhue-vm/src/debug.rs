@@ -23,6 +23,7 @@ use crate::{Frame, NativeError, Thrown, Value, Vm};
 
 /// What the hook is told about.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DebugEvent {
     /// About to run the first instruction of a new line (or the same line again
     /// after a backward jump), 1-based.
@@ -35,10 +36,40 @@ pub enum DebugEvent {
 
 /// Which events the hook wants.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct HookMask {
     pub line: bool,
     pub call: bool,
     pub ret: bool,
+}
+
+impl HookMask {
+    /// Nothing, turn on what you want with the methods below.
+    pub const fn new() -> Self {
+        Self {
+            line: false,
+            call: false,
+            ret: false,
+        }
+    }
+
+    /// Tell the hook about every new line.
+    pub const fn line(mut self, on: bool) -> Self {
+        self.line = on;
+        self
+    }
+
+    /// Tell the hook when a function gets entered.
+    pub const fn call(mut self, on: bool) -> Self {
+        self.call = on;
+        self
+    }
+
+    /// Tell the hook when a function is about to return.
+    pub const fn ret(mut self, on: bool) -> Self {
+        self.ret = on;
+        self
+    }
 }
 
 /// The host's hook. `Err(message)` stops the script.

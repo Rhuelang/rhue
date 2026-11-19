@@ -17,6 +17,7 @@ use crate::Span;
 
 /// A file's outline; see [`outline`].
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct Outline {
     /// Its functions, variables, fields and types, nested as written: `function
     /// M.f()` sits under `local M`.
@@ -36,6 +37,7 @@ pub struct Outline {
 
 /// A named thing defined in a file, for outlines and workspace symbols.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Symbol {
     /// Its name (a field's own name, `f` for `M.f`, listed under `M`).
     pub name: String,
@@ -54,6 +56,7 @@ pub struct Symbol {
 
 /// What kind of thing a [`Symbol`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SymbolKind {
     /// A function (`local function f`, `function f`).
     Function,
@@ -71,6 +74,7 @@ pub enum SymbolKind {
 
 /// A highlighted range of source, for semantic highlighting.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SemanticToken {
     /// The range it covers.
     pub span: Span,
@@ -84,6 +88,7 @@ pub struct SemanticToken {
 
 /// What a [`SemanticToken`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum TokenKind {
     /// A keyword (`local`, `function`, `if`...).
     Keyword,
@@ -112,6 +117,7 @@ pub enum TokenKind {
 /// A field read from a local or a module (`m.name`, `m:name()`), for navigating
 /// across modules.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct FieldUse {
     /// The field's name as written.
     pub span: Span,
@@ -123,6 +129,7 @@ pub struct FieldUse {
 
 /// What a field is read from.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum Base {
     /// The local declared at this span.
     Local(Span),
@@ -132,6 +139,7 @@ pub enum Base {
 
 /// What a module file exports, for navigating across modules.
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct Exports {
     /// For `return M`, where `M` is declared.
     pub local: Option<Span>,

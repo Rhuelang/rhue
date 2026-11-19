@@ -1,8 +1,0 @@
-closures 80.89
-fib 40.32
-host 202.65
-loops 153.40
-methods 194.73
-natives 486.72
-strings 82.76
-tables 90.91

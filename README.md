@@ -22,7 +22,7 @@ The site's at [rhue.dev](https://rhue.dev) and the API docs are on [docs.rs](htt
 
 ```toml
 [dependencies]
-rhue = "1"
+rhue = "2"
 ```
 
 ```rust
@@ -59,7 +59,7 @@ heap after churn: 82 KB
 
 ## ✨ Status
 
-1.0.0 is out, 26 milestones in. What's in it:
+2.0.0 is out, 26 milestones in (2.0 was a quick API cleanup right after 1.0). What's in it:
 
 - **Language** — Luau syntax, string interpolation, metatables and `setmetatable` classes, tail calls, coroutines, generic `for` with `__iter`, vectors
 - **Types** — gradual typing with `--!strict` and `--!nonstrict`, generics and type packs, narrowing and flow typing, read-only and write-only properties
@@ -259,7 +259,7 @@ engine.eval(r#"--!strict
 
 ```bash
 $ rhue
-Rhue 1.0.0. Globals persist between entries; :help for commands, Ctrl-D to exit.
+Rhue 2.0.0. Globals persist between entries; :help for commands, Ctrl-D to exit.
 > local function fib(n)
     if n < 2 then return n end
     return fib(n - 1) + fib(n - 2)
@@ -345,7 +345,7 @@ Hosts can hook in directly too:
 use rhue::{DebugEvent, Engine, HookMask};
 
 let mut engine = Engine::new();
-engine.set_debug_hook(HookMask { line: true, ..HookMask::default() }, |dbg, event| {
+engine.set_debug_hook(HookMask::new().line(true), |dbg, event| {
     if let DebugEvent::Line(12) = event {
         let frame = dbg.frame(0).unwrap();
         println!("{}:{} in {}", frame.source, frame.line, frame.function);
@@ -490,6 +490,8 @@ Any runtime works, but the futures aren't `Send`, so on tokio use a current-thre
 
 `engine.interrupt_handle()` stops a script from somewhere else with an error `pcall` can't catch. A script stuck in a loop is hogging its thread, so on a single-threaded runtime the interrupt has to come from another thread. It only gets checked when the instruction budget refills, so it costs basically nothing.
 
+Time spent in the standard library counts against the instruction limit too, so a pattern that backtracks forever or a huge `table.move` gets stopped the same way a loop does. Your own natives can do the same with `cx.charge(n)` when they do a lot of work in one call.
+
 ### Hot reload
 
 `reload_module` swaps a module over to new source while everything keeps running. Functions in it change in place, so anything already holding one (a callback you stored, a field another module copied) runs the new code from its next call. The module's tables stay the same tables and keep their values, and locals its functions capture keep theirs, so state carries over. A broken edit comes back as an `Err` and the old code keeps going.
@@ -540,11 +542,11 @@ let config: Config = rhue::serde::from_value(&mut engine.context(), value)?;
 Compile once, load later without parsing or type-checking (about 9× faster than compiling):
 
 ```rust
-let bytes = engine.compile_to_bytes("main.rhue", &source)?; // or proto.to_bytes()
+let bytes = engine.compile_to_bytes("main.rhue", &source)?; // or chunk.to_bytes(), without the types
 std::fs::write("main.rhuec", &bytes)?;
 
-let proto = other_engine.load(&std::fs::read("main.rhuec")?)?; // ErrorKind::Load if it's not valid
-other_engine.run(&proto)?;
+let chunk = other_engine.load(&std::fs::read("main.rhuec")?)?; // ErrorKind::Load if it's not valid
+other_engine.run(&chunk)?;
 ```
 
 ```bash
@@ -566,8 +568,16 @@ engine.check("main.rhue", "--!strict\nlocal c = require('counter').new(1)\nc:bum
 
 ```bash
 $ cargo run --release -p rhue --example bench                # all of them
-$ cargo run --release -p rhue --example bench -- --save now.txt
-$ cargo run --release -p rhue --example bench -- --baseline bench/m10-baseline.txt fib
+$ cargo run --release -p rhue --example bench -- --save before.txt
+$ cargo run --release -p rhue --example bench -- --baseline before.txt fib
+```
+
+Wall times drift too much to trust a few percent, so for that there's `bench/counts.sh`. It runs each script under callgrind and compares the instruction counts with `bench/counts.json` (Linux, needs valgrind):
+
+```bash
+$ bench/counts.sh            # print them
+$ bench/counts.sh --check    # fail if any got more than 2% worse
+$ bench/counts.sh --save     # make these the new baseline
 ```
 
 ### Compared with Luau and Rhai
@@ -592,7 +602,7 @@ $ cargo run --release --manifest-path bench/compare/Cargo.toml
 | `strings` | 74.8 | 53.6 | 395 | 1.4× faster | 5.3× slower |
 | `tables` | 66.6 | 37.4 | 349 | 1.8× faster | 5.2× slower |
 
-Measured at M23. Luau's had years of tuning and it shows, though plain arithmetic loops are about even. Rhai walks a syntax tree, so it's not close. Wall times on my machine drift a lot between sessions, so I track progress with callgrind instruction counts instead, and those numbers live in [`docs/DESIGN.md`](docs/DESIGN.md). Also these are my own benchmarks, so they lean a bit toward what I tuned for.
+Measured at M23. Luau's had years of tuning and it shows, though plain arithmetic loops are about even. Rhai walks a syntax tree, so it's not close. Progress gets tracked with the instruction counts in `bench/counts.json`, older milestones' numbers are in [`docs/DESIGN.md`](docs/DESIGN.md). Also these are my own benchmarks, so they lean a bit toward what I tuned for.
 
 ## 🧪 Examples
 
@@ -618,7 +628,7 @@ Measured at M23. Luau's had years of tuning and it shows, though plain arithmeti
 | `rhue-common` | spans and diagnostics |
 | `rhue-lexer` | the lexer (logos) |
 | `rhue-parser` | the parser and AST |
-| `rhue-bytecode` | opcodes, `Proto`, the verifier, the chunk format |
+| `rhue-bytecode` | opcodes, `Proto` (what a `Chunk` wraps), the verifier, the chunk format |
 | `rhue-compiler` | name resolution, constant folding, the register compiler |
 | `rhue-types` | the type checker |
 | `rhue-vm` | values, the GC, the interpreter, coroutines, the stdlib |
@@ -632,7 +642,7 @@ Measured at M23. Luau's had years of tuning and it shows, though plain arithmeti
 ## 🛠️ Development
 
 ```bash
-cargo test             # 571 tests, 576 with --all-features
+cargo test             # 578 tests, 583 with --all-features
 cargo clippy --all-targets
 cargo run --release -p rhue --example bench
 cargo run -p rhue-cli  # REPL

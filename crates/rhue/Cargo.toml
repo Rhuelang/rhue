@@ -28,6 +28,10 @@ serde = { version = "1", optional = true }
 [features]
 # `rhue::serde`: converting between Rhue values and Rust types.
 serde = ["dep:serde"]
+# what the language server is built on (`Engine::analyze`, `outline`, inlay
+# hints). Unstable, it changes whenever the editor features need it to, minor
+# releases included.
+tooling = []
 
 [dev-dependencies]
 serde = { version = "1", features = ["derive"] }

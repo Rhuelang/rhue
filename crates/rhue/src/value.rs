@@ -14,8 +14,12 @@ use crate::userdata::{Ud, UserData};
 /// object alive too. Handles only mean something to the [`Engine`] that made
 /// them, passing one to another engine panics.
 ///
+/// New kinds of value can show up in a minor release (`buffer` and `vector`
+/// both did before 1.0), so a `match` on one needs a `_` arm.
+///
 /// [`Engine`]: crate::Engine
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum Value {
     /// `nil`.
     Nil,

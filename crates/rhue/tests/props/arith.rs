@@ -87,7 +87,7 @@ proptest! {
         let src = t.source();
         let expected = t.eval();
         for fold in [true, false] {
-            let mut engine = Engine::with_options(CompileOptions { fold_constants: fold });
+            let mut engine = Engine::with_options(CompileOptions::new().fold_constants(fold));
             let got = engine.eval_expr(&src).map_err(|e| TestCaseError::fail(e.render(false)))?;
             let Value::Number(got) = got else { return Err(TestCaseError::fail("not a number")) };
             prop_assert!(same(got, expected), "{} (fold={}) gave {:?}, expected {:?}", src, fold, got, expected);

@@ -31,7 +31,7 @@ rhue fmt src/*.rhue           # format in place (--check for CI, --indent 4 for 
 
 ```bash
 $ rhue
-Rhue 1.0.0. Globals persist between entries; :help for commands, Ctrl-D to exit.
+Rhue 2.0.0. Globals persist between entries; :help for commands, Ctrl-D to exit.
 > local function fib(n)
     if n < 2 then return n end
     return fib(n - 1) + fib(n - 2)

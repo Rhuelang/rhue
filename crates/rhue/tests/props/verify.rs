@@ -7,7 +7,8 @@ use std::rc::Rc;
 
 use proptest::prelude::*;
 use proptest::strategy::ValueTree;
-use rhue::{Engine, Proto};
+use rhue::{Chunk, Engine};
+use rhue_bytecode::Proto;
 use rhue_bytecode::{Instr, Op, verify};
 
 const PROGRAMS: &[&str] = &[
@@ -93,7 +94,7 @@ proptest! {
         edits in prop::collection::vec((any::<prop::sample::Index>(), any::<usize>(), damage()), 1..4),
     ) {
         let mut e = Engine::new();
-        let proto = e.compile("damaged", PROGRAMS[program]).expect("the samples compile");
+        let proto = e.compile("damaged", PROGRAMS[program]).expect("the samples compile").proto().clone();
         prop_assert!(verify(&proto).is_ok());
         let mut p = (*proto).clone();
         let mut all = Vec::new();
@@ -107,7 +108,7 @@ proptest! {
         // purpose too (Rhue has no memory limit), so it isn't a VM bug
         if verify(&p).is_ok() && !uses_concat(&p) {
             e.set_instruction_limit(Some(20_000));
-            let p = Rc::new(p);
+            let p = Chunk::from_proto(Rc::new(p));
             let ran = catch_unwind(AssertUnwindSafe(|| {
                 let _ = e.run(&p);
             }));
@@ -129,7 +130,11 @@ fn damage_often_still_verifies() {
             .new_tree(&mut runner)
             .unwrap()
             .current();
-        let proto = e.compile("damaged", PROGRAMS[program]).unwrap();
+        let proto = e
+            .compile("damaged", PROGRAMS[program])
+            .unwrap()
+            .proto()
+            .clone();
         let mut p = (*proto).clone();
         apply(&mut p, at, &d);
         if verify(&p).is_ok() {

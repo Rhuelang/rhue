@@ -11,7 +11,7 @@ use std::rc::Rc;
 use smallvec::smallvec;
 
 use crate::pattern::{self, Capture, Matcher};
-use crate::{NativeCtx, NativeError, Rets, Value};
+use crate::{Meter, NativeCtx, NativeError, Rets, Value};
 
 use crate::stdlib::{bad_arg, opt_int, text_arg};
 
@@ -67,7 +67,10 @@ fn find_aux(ctx: &mut NativeCtx<'_>, args: &[Value], find: bool) -> R {
         );
     }
     let src = s.as_bytes();
-    match pattern::find(src, pat.as_bytes(), start)? {
+    let meter = ctx.meter();
+    let found = pattern::find(src, pat.as_bytes(), start, &meter);
+    ctx.return_budget(&meter);
+    match found.map_err(|e| meter.fail(e))? {
         Some((a, b, mut caps)) => {
             let mut out = Rets::new();
             if find {
@@ -104,26 +107,47 @@ pub(crate) fn string_gmatch(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let pos = Cell::new(start);
     let last: Cell<Option<usize>> = Cell::new(None);
     let iter = move |ctx: &mut NativeCtx<'_>, _: &[Value]| -> R {
-        let mut m = Matcher::new(&src, &pat);
-        let mut s = pos.get();
-        while s <= src.len() {
-            if let Some(e) = m.try_at(s, 0)?
-                && Some(e) != last.get()
-            {
+        let meter = ctx.meter();
+        let found = next_match(&src, &pat, pos.get(), last.get(), &meter);
+        ctx.return_budget(&meter);
+        match found.map_err(|e| meter.fail(e))? {
+            Some((_, e, caps)) => {
                 pos.set(e);
                 last.set(Some(e));
-                let caps = m.captures(s, e)?;
-                return Ok(caps
+                Ok(caps
                     .into_iter()
                     .map(|c| capture_value(ctx, &src, c))
-                    .collect());
+                    .collect())
             }
-            s += 1;
+            None => {
+                pos.set(src.len() + 1);
+                Ok(smallvec![Value::Nil])
+            }
         }
-        pos.set(src.len() + 1);
-        Ok(smallvec![Value::Nil])
     };
     Ok(smallvec![ctx.vm().native("gmatch_iter", Rc::new(iter))])
+}
+
+/// The next match for `gmatch` from byte `from`, skipping an empty one that
+/// ends where the last match did.
+fn next_match(
+    src: &[u8],
+    pat: &[u8],
+    from: usize,
+    last: Option<usize>,
+    meter: &Meter,
+) -> Result<Option<(usize, usize, Vec<Capture>)>, String> {
+    let mut m = Matcher::new(src, pat, meter);
+    let mut s = from;
+    while s <= src.len() {
+        if let Some(e) = m.try_at(s, 0)?
+            && Some(e) != last
+        {
+            return Ok(Some((s, e, m.captures(s, e)?)));
+        }
+        s += 1;
+    }
+    Ok(None)
 }
 
 /// `string.gsub(s, pattern, repl [, n])`.
@@ -146,16 +170,47 @@ pub(crate) fn string_gsub(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     } else {
         (false, 0)
     };
-    let mut m = Matcher::new(src, pat.as_bytes());
+    let meter = ctx.meter();
+    let result = gsub_loop(
+        ctx,
+        &meter,
+        src,
+        pat.as_bytes(),
+        p,
+        anchor,
+        max,
+        repl,
+        repl_text.as_deref(),
+    );
+    ctx.return_budget(&meter);
+    let (out, n) = result?;
+    ctx.reserve(out.len())?;
+    let result = text(&out);
+    Ok(smallvec![ctx.string(&result), Value::Number(n as f64)])
+}
+
+#[allow(clippy::too_many_arguments)]
+fn gsub_loop(
+    ctx: &mut NativeCtx<'_>,
+    meter: &Meter,
+    src: &[u8],
+    pat: &[u8],
+    p: usize,
+    anchor: bool,
+    max: usize,
+    repl: Value,
+    repl_text: Option<&str>,
+) -> Result<(Vec<u8>, usize), NativeError> {
+    let mut m = Matcher::new(src, pat, meter);
     let mut out: Vec<u8> = Vec::with_capacity(src.len());
     let (mut i, mut n) = (0usize, 0usize);
     let mut last: Option<usize> = None;
     while n < max {
-        let found = m.try_at(i, p)?;
+        let found = m.try_at(i, p).map_err(|e| meter.fail(e))?;
         match found {
             Some(e) if Some(e) != last => {
                 n += 1;
-                add_value(ctx, &m, src, i, e, repl, repl_text.as_deref(), &mut out)?;
+                add_value(ctx, &m, src, i, e, repl, repl_text, &mut out)?;
                 i = e;
                 last = Some(e);
             }
@@ -170,9 +225,7 @@ pub(crate) fn string_gsub(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
         }
     }
     out.extend_from_slice(&src[i.min(src.len())..]);
-    ctx.reserve(out.len())?;
-    let result = text(&out);
-    Ok(smallvec![ctx.string(&result), Value::Number(n as f64)])
+    Ok((out, n))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -227,10 +280,12 @@ fn add_value(
                 .into_iter()
                 .map(|c| capture_value(ctx, src, c))
                 .collect();
-            ctx.call(repl, &caps)?
-                .first()
-                .copied()
-                .unwrap_or(Value::Nil)
+            // the replacement function runs on the script's budget, so it goes
+            // back to the VM for the call
+            ctx.return_budget(m.meter);
+            let called = ctx.call(repl, &caps);
+            ctx.refill(m.meter);
+            called?.first().copied().unwrap_or(Value::Nil)
         }
     };
     match value {

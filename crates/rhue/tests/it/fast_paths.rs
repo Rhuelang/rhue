@@ -358,7 +358,7 @@ fn compiled_chunks_verify() {
              return f(table.unpack(t))",
         )
         .unwrap();
-    rhue_bytecode::verify(&p).unwrap();
+    rhue_bytecode::verify(p.proto()).unwrap();
 }
 
 #[test]
@@ -383,7 +383,7 @@ fn hand_built_backward_branches_are_charged_too() {
     rhue_bytecode::verify(&p).unwrap();
     let mut e = Engine::new();
     e.set_instruction_limit(Some(10_000));
-    let err = e.run(&Rc::new(p)).unwrap_err();
+    let err = e.run(&rhue::Chunk::from_proto(Rc::new(p))).unwrap_err();
     assert!(err.to_string().contains("instruction limit"), "{err}");
 }
 
@@ -414,7 +414,7 @@ fn the_engine_refuses_bytecode_that_does_not_verify() {
         ..Proto::default()
     };
     let mut e = Engine::new();
-    let err = e.run(&Rc::new(p)).unwrap_err();
+    let err = e.run(&rhue::Chunk::from_proto(Rc::new(p))).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Compile);
     assert_eq!(
         err.to_string(),
@@ -422,5 +422,5 @@ fn the_engine_refuses_bytecode_that_does_not_verify() {
     );
     // compiled chunks are marked verified, so running them again is free
     let p = e.compile("ok", "return 1").unwrap();
-    assert!(p.verified.get());
+    assert!(p.proto().verified.get());
 }

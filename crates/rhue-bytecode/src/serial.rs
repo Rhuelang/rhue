@@ -4,13 +4,12 @@
 //! ```text
 //! chunk   := MAGIC version:u8 name:str text:str types proto
 //! types   := 0 | 1 returns:str [name:str type:str] [alias:str]
-//!            (version 2 on; the aliases from version 3)
 //! proto   := flags:u8 [name:str] code:[u32] constants:[constant]
 //!            spans:[span] max_stack:u8 num_params:u8 protos:[proto]
 //!            upvalues:[in_stack:u8 index:u8 name:str]
 //!            locals:[name:str reg:u8 start:uv end:uv]
 //!            [templates:[array:uv hash:uv keys:[uv]]] span
-//!            (templates when flag 4 is set, from version 4)
+//!            (templates when flag 4 is set)
 //! constant:= 0 f64 | 1 str
 //! span    := start:uv len:uv
 //! str     := len:uv bytes          [x] := count:uv x*
@@ -37,9 +36,9 @@ use crate::{Constant, Instr, LocalVar, Proto, TableTemplate, UpvalDesc};
 /// The first bytes of every serialized chunk.
 pub const MAGIC: &[u8; 5] = b"\x1bRhue";
 
-/// Bumped whenever the encoding or instruction set changes. Chunks from a newer
-/// version get refused instead of misread (older versions are subsets of this
-/// one and still load).
+/// Bumped whenever the encoding or instruction set changes. Chunks from any
+/// other version get refused instead of misread. Formats 1 to 3 never shipped,
+/// so 4 is the first one any release reads.
 pub const FORMAT_VERSION: u8 = 4;
 
 /// The types saved with a chunk, as Luau type syntax.
@@ -119,8 +118,8 @@ pub fn write_chunk(proto: &Proto, types: Option<&ChunkTypes>) -> Vec<u8> {
     w.0
 }
 
-/// Reads a chunk and the types saved with it (none for chunks saved without, or
-/// in format 1). Not verified.
+/// Reads a chunk and the types saved with it (none for chunks saved without).
+/// Not verified.
 pub fn read_chunk(bytes: &[u8]) -> Result<(Rc<Proto>, Option<ChunkTypes>), LoadError> {
     let mut r = Reader { bytes, pos: 0 };
     if !is_chunk(bytes) {
@@ -128,43 +127,37 @@ pub fn read_chunk(bytes: &[u8]) -> Result<(Rc<Proto>, Option<ChunkTypes>), LoadE
     }
     r.pos = MAGIC.len();
     let version = r.u8()?;
-    if !(1..=FORMAT_VERSION).contains(&version) {
+    if version != FORMAT_VERSION {
         return Err(LoadError {
             offset: MAGIC.len(),
             message: format!(
-                "compiled for bytecode format {version}, but this Rhue reads formats 1 to {FORMAT_VERSION}"
+                "compiled for bytecode format {version}, but this Rhue reads format {FORMAT_VERSION}"
             ),
         });
     }
     let name = r.str()?;
     let text = r.str()?;
-    let types = if version >= 2 {
-        match r.u8()? {
-            0 => None,
-            1 => {
-                let returns = r.str()?.to_string();
-                let n = r.count(2)?;
-                let mut globals = Vec::with_capacity(n);
-                for _ in 0..n {
-                    globals.push((r.str()?.to_string(), r.str()?.to_string()));
-                }
-                let mut aliases = Vec::new();
-                if version >= 3 {
-                    let n = r.count(1)?;
-                    for _ in 0..n {
-                        aliases.push(r.str()?.to_string());
-                    }
-                }
-                Some(ChunkTypes {
-                    aliases,
-                    returns,
-                    globals,
-                })
+    let types = match r.u8()? {
+        0 => None,
+        1 => {
+            let returns = r.str()?.to_string();
+            let n = r.count(2)?;
+            let mut globals = Vec::with_capacity(n);
+            for _ in 0..n {
+                globals.push((r.str()?.to_string(), r.str()?.to_string()));
             }
-            _ => return Err(r.fail("bad types flag")),
+            let n = r.count(1)?;
+            let mut aliases = Vec::with_capacity(n);
+            for _ in 0..n {
+                aliases.push(r.str()?.to_string());
+            }
+            Some(ChunkTypes {
+                aliases,
+                returns,
+                globals,
+            })
         }
-    } else {
-        None
+        _ => return Err(r.fail("bad types flag")),
     };
     let source = SourceFile::new(name, text);
     let proto = r.proto(&source, 0)?;

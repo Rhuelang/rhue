@@ -5,6 +5,7 @@ use ariadne::{CharSet, Color, Config, IndexType, Label as ALabel, Report, Report
 use crate::Span;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Severity {
     Error,
     Warning,
@@ -23,6 +24,7 @@ pub struct Label {
 /// only ever deal with one error shape and the CLI can print any of them with
 /// [`Diagnostic::render`].
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Diagnostic {
     pub severity: Severity,
     pub message: String,

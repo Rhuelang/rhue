@@ -1,6 +1,13 @@
 {
   "entries": [
     {
+      "file": "v2.0.0.md",
+      "tag": "2.0.0",
+      "title": "API cleanup",
+      "version": "2.0.0",
+      "date": "2026-11-19"
+    },
+    {
       "file": "v1.0.0.md",
       "tag": "1.0.0",
       "title": "First release",
