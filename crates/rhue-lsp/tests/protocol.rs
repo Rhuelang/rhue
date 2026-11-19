@@ -6,6 +6,18 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use serde_json::{Value, json};
 
+/// A real `file://` URI for `name` in a temp folder (on Windows that has a
+/// drive letter, so it can't be written out by hand)
+fn file_uri(dir: &std::path::Path, name: &str) -> String {
+    url::Url::from_file_path(dir.join(name))
+        .expect("temp dirs are absolute")
+        .to_string()
+}
+
+fn temp_dir(name: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("{name}-{}", std::process::id()))
+}
+
 struct Client {
     child: Child,
     stdin: ChildStdin,
@@ -102,7 +114,8 @@ fn a_session() {
     );
     c.notify("initialized", json!({}));
 
-    let uri = "file:///tmp/rhue-lsp-protocol/main.rhue";
+    let dir = temp_dir("rhue-lsp-protocol");
+    let uri = file_uri(&dir, "main.rhue");
     let text = "--!strict\nlocal greeting = 'hi'\nlocal n: number = greeting\n";
     c.notify(
         "textDocument/didOpen",
@@ -188,7 +201,7 @@ fn a_session() {
         "textDocument/rename",
         json!({ "textDocument": { "uri": uri }, "position": { "line": 2, "character": 6 }, "newName": "flag" }),
     );
-    let edits = edit["result"]["changes"][uri].as_array().unwrap();
+    let edits = edit["result"]["changes"][uri.as_str()].as_array().unwrap();
     assert_eq!(edits.len(), 3);
     assert!(edits.iter().all(|e| e["newText"] == "flag"));
     let refused = c.request(
@@ -213,8 +226,8 @@ fn a_session() {
     assert_eq!(help["result"]["signatures"][0]["label"], "print(...any)");
 
     // incremental edits, and a module edit republishing its dependents
-    let lib = "file:///tmp/rhue-lsp-protocol/lib.rhue";
-    let app = "file:///tmp/rhue-lsp-protocol/app.rhue";
+    let lib = file_uri(&dir, "lib.rhue");
+    let app = file_uri(&dir, "app.rhue");
     c.notify(
         "textDocument/didOpen",
         json!({ "textDocument": { "uri": lib, "languageId": "luau", "version": 1, "text": "return { n = 1 }" } }),
@@ -261,7 +274,9 @@ fn editor_features_over_the_wire() {
         "--!strict\nlocal M = {}\nfunction M.greet(name: string) return 'hi ' .. name end\nreturn M\n",
     )
     .unwrap();
-    let root = format!("file://{}", dir.display());
+    let root = url::Url::from_directory_path(&dir)
+        .expect("temp dirs are absolute")
+        .to_string();
     let mut c = Client::start();
     let init = c.request(
         "initialize",
@@ -282,7 +297,7 @@ fn editor_features_over_the_wire() {
     );
     c.notify("initialized", json!({}));
 
-    let uri = format!("{root}/main.rhue");
+    let uri = file_uri(&dir, "main.rhue");
     let text = "--!strict\nlocal lib = require('lib')\nlocal s = lib.greet('a')\nprint(s.lenn)\n";
     c.notify(
         "textDocument/didOpen",
