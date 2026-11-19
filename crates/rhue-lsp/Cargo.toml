@@ -15,7 +15,7 @@ categories = ["development-tools"]
 workspace = true
 
 [dependencies]
-rhue.workspace = true
+rhue = { workspace = true, features = ["tooling"] }
 rhue-common.workspace = true
 rhue-fmt.workspace = true
 lsp-server = "0.7"

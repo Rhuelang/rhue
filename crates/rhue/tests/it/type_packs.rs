@@ -34,6 +34,7 @@ fn fails(src: &str, needle: &str) {
     }
 }
 
+#[cfg(feature = "tooling")]
 fn type_of(src: &str, name: &str) -> String {
     let mut e = Engine::new();
     let a = e.analyze(src, None);
@@ -47,6 +48,7 @@ fn type_of(src: &str, name: &str) -> String {
 
 const PASS: &str = "local function pass<T...>(...: T...): T... return ... end\n";
 
+#[cfg(feature = "tooling")]
 #[test]
 fn packs_carry_argument_types_through() {
     ok(&format!("{PASS}local a: number, b: string = pass(1, 'x')"));
@@ -62,6 +64,7 @@ fn packs_carry_argument_types_through() {
     assert_eq!(type_of(PASS, "pass"), "<T...>(T...) -> T...");
 }
 
+#[cfg(feature = "tooling")]
 #[test]
 fn packs_link_a_callback_to_its_arguments() {
     let call = "local function call<A..., R...>(f: (A...) -> R..., ...: A...): R...\n  return f(...)\nend\nlocal function add(a: number, b: number): number return a + b end\n";
@@ -289,6 +292,7 @@ fn flow_locals_in_non_strict_files_are_any() {
     .unwrap();
 }
 
+#[cfg(feature = "tooling")]
 #[test]
 fn hovering_a_flow_local_shows_what_it_can_hold() {
     let src =

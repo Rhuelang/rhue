@@ -16,6 +16,8 @@ mod functions;
 mod hot_reload;
 mod metatables;
 mod native_budget;
+// the editor API is behind the `tooling` feature
+#[cfg(feature = "tooling")]
 mod outline;
 mod patterns_and_modules;
 mod statements;

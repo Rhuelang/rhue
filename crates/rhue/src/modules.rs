@@ -245,6 +245,7 @@ pub(crate) fn compile_ast(
 
 /// What editor tooling learns about a chunk (see
 /// [`Engine::analyze`](crate::Engine::analyze)).
+#[cfg_attr(not(feature = "tooling"), allow(dead_code))]
 #[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct Analysis {
@@ -263,7 +264,7 @@ pub struct Analysis {
     /// The globals scripts can see, with their types.
     pub globals: Vec<(String, String)>,
     /// Inferred types the source doesn't spell out, for inlay hints.
-    pub hints: Vec<crate::InlayHint>,
+    pub hints: Vec<crate::hints::InlayHint>,
 }
 
 pub(crate) fn analyze(vm: &mut rhue_vm::Vm, source: &str, members_at: Option<u32>) -> Analysis {

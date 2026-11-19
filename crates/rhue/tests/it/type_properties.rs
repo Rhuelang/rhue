@@ -82,6 +82,7 @@ fn access_follows_variance() {
     );
 }
 
+#[cfg(feature = "tooling")]
 #[test]
 fn access_shows_in_types() {
     let mut e = Engine::new();
@@ -145,6 +146,7 @@ fn flow_locals_are_typed_inside_loops() {
     );
 }
 
+#[cfg(feature = "tooling")]
 #[test]
 fn silent_passes_leave_no_trace() {
     // one error, reported once (not once per pass), and hover types aren't

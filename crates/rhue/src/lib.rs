@@ -156,9 +156,11 @@ mod context;
 mod convert;
 mod debug;
 mod environment;
+// compiled either way, `expression_type` is built on the analysis
 mod hints;
 mod modules;
 mod native;
+#[cfg(feature = "tooling")]
 mod outline;
 #[cfg(feature = "serde")]
 pub mod serde;
@@ -182,9 +184,13 @@ pub use convert::{
 };
 pub use debug::{DebugEvent, Debugger, HookMask, StackFrame};
 pub use environment::Environment;
+#[cfg(feature = "tooling")]
 pub use hints::{HintKind, InlayHint};
-pub use modules::{Analysis, Reloaded};
+#[cfg(feature = "tooling")]
+pub use modules::Analysis;
+pub use modules::Reloaded;
 pub use native::{IntoAsyncNative, IntoNative, IntoNativeResult, WithContext};
+#[cfg(feature = "tooling")]
 pub use outline::{
     Base, Exports, FieldUse, Outline, SemanticToken, Symbol, SymbolKind, TokenKind, outline,
 };
@@ -685,6 +691,9 @@ impl Engine {
     /// for the expression ending there. Types are inferred like `--!strict`
     /// would whatever the chunk's mode, errors are whatever its mode reports.
     /// Modules it `require`s get checked (not run) to learn their types.
+    ///
+    /// Needs the `tooling` feature, which isn't covered by semver.
+    #[cfg(feature = "tooling")]
     pub fn analyze(&mut self, source: &str, members_at: Option<u32>) -> Analysis {
         modules::analyze(&mut self.vm, source, members_at)
     }
@@ -697,7 +706,7 @@ impl Engine {
         const PREFIX: &str = "--!strict\nlocal __type = (";
         let source = format!("{PREFIX}{expr}\n)");
         let file = SourceFile::new("<expression>", source.as_str());
-        let analysis = self.analyze(&source, None);
+        let analysis = modules::analyze(&mut self.vm, &source, None);
         if !analysis.diagnostics.is_empty() {
             return Err(Error::new(ErrorKind::Type, analysis.diagnostics, &file));
         }

@@ -11,6 +11,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Feat: The public enums and data structs are `#[non_exhaustive]`, so new value kinds or error kinds can come in minor releases. A `match` on `Value` needs a `_` arm now.
 - Feat: `HookMask` and `CompileOptions` can't be struct literals anymore, use `HookMask::new().line(true)` and `CompileOptions::new().fold_constants(false)`.
 - Feat: `Engine::compile`, `load` and `compile_in` hand out a `Chunk` instead of an `Rc<Proto>`. It can be saved, disassembled and run, and what's inside is free to change between releases.
+- Feat: `Engine::analyze`, `outline` and inlay hints are behind a `tooling` feature that isn't covered by semver. They're for the language server and change with it.
 - Fix: Only chunk format 4 loads. Formats 1 to 3 never shipped.
 - Fix: The internal crates are pinned to the exact same version as `rhue`, so `cargo update` can't mix and match them.
 
