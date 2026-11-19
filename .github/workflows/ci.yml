@@ -1,4 +1,4 @@
-name: CI
+﻿name: CI
 
 on:
   push:
@@ -74,13 +74,16 @@ jobs:
       - name: Check
         run: cargo check --workspace --all-features --locked
 
-  # instruction counts from callgrind, which don't drift like wall times do.
-  # fails if a benchmark gets more than 2% worse than bench/counts.json
+  # callgrind instruction counts for the base commit and this one, on the same
+  # runner since counts change between machines. fails if a benchmark got more
+  # than 2% worse
   bench:
     name: Benchmarks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -89,8 +92,27 @@ jobs:
             bench/compare
       - name: Install valgrind
         run: sudo apt-get update && sudo apt-get install -y valgrind
+      - name: Counts for the base
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "no base commit to compare with"
+            exit 0
+          fi
+          git worktree add -q ../base "$BASE"
+          if [ ! -x ../base/bench/counts.sh ]; then
+            echo "the base doesn't have counts.sh yet"
+            exit 0
+          fi
+          ../base/bench/counts.sh --save "$RUNNER_TEMP/base.json"
       - name: Instruction counts
-        run: bench/counts.sh --check
+        run: |
+          if [ -f "$RUNNER_TEMP/base.json" ]; then
+            bench/counts.sh --check "$RUNNER_TEMP/base.json"
+          else
+            bench/counts.sh
+          fi
       # its own workspace, so nothing else builds it
       - name: Build the Luau/Rhai comparison
         run: cargo build --release --locked --manifest-path bench/compare/Cargo.toml
