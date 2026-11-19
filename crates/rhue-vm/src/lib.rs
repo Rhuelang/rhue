@@ -298,7 +298,7 @@ impl NativeCtx<'_> {
         // reference count
         let vm = &mut *self.vm;
         let meter = vm.meter.clone();
-        meter.load(vm.budget.saturating_add(vm.reserve));
+        meter.load(vm.budget, vm.reserve);
         vm.budget = 0;
         vm.reserve = 0;
         meter
@@ -307,14 +307,21 @@ impl NativeCtx<'_> {
     /// Puts what's left of `meter`'s budget back into the VM. The meter is
     /// empty afterwards, refill it with [`refill`](Self::refill).
     pub fn return_budget(&mut self, meter: &Meter) {
-        self.vm.set_budget(meter.drain());
+        // what the native spent comes out of the slice it started on, so a loop
+        // that keeps calling natives still runs it dry and gets the interrupt
+        // checked
+        let left = meter.drain();
+        let used = meter.taken.get().saturating_sub(left);
+        let vm = &mut *self.vm;
+        vm.budget = meter.slice.get().saturating_sub(used).min(left);
+        vm.reserve = left - vm.budget;
     }
 
     /// Takes the budget back out into `meter` (after a
     /// [`return_budget`](Self::return_budget)).
     pub fn refill(&mut self, meter: &Meter) {
         let vm = &mut *self.vm;
-        meter.load(vm.budget.saturating_add(vm.reserve));
+        meter.load(vm.budget, vm.reserve);
         vm.budget = 0;
         vm.reserve = 0;
     }
@@ -543,6 +550,11 @@ pub struct Meter {
     /// Whether it ran out (or got interrupted), so the error it gave isn't
     /// one scripts can catch.
     stopped: Cell<bool>,
+    /// What was left of the VM's slice, and of the whole budget, when the
+    /// meter took it. Handing back a fresh slice instead would mean the VM
+    /// never runs one dry, and the interrupt only gets read when it does.
+    slice: Cell<u64>,
+    taken: Cell<u64>,
 }
 
 impl Meter {
@@ -556,6 +568,8 @@ impl Meter {
             limit: Cell::new(limit),
             interrupt,
             stopped: Cell::new(false),
+            slice: Cell::new(0),
+            taken: Cell::new(0),
         }
     }
 
@@ -623,12 +637,16 @@ impl Meter {
         }
     }
 
-    /// Loads `left` instructions into the meter, for a fresh use.
-    fn load(&self, left: u64) {
+    /// Loads the VM's budget into the meter, for a fresh use: `slice` is what
+    /// was left of the current slice, `reserve` the rest.
+    fn load(&self, slice: u64, reserve: u64) {
+        let left = slice.saturating_add(reserve);
         let chunk = left.min(METER_CHECK);
         self.chunk.set(chunk);
         self.rest.set(left - chunk);
         self.stopped.set(false);
+        self.slice.set(slice);
+        self.taken.set(left);
     }
 
     /// Takes everything that's left out of the meter.
@@ -1868,13 +1886,6 @@ impl Vm {
             self.budget += take;
         }
         Ok(())
-    }
-
-    /// Puts `left` instructions back as the budget, one slice of it ready to
-    /// spend and the rest in reserve.
-    fn set_budget(&mut self, left: u64) {
-        self.budget = left.min(BUDGET_SLICE);
-        self.reserve = left - self.budget;
     }
 
     /// Charges `n` instructions to the running script's budget (see

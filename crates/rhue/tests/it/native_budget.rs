@@ -38,6 +38,32 @@ fn an_interrupt_reaches_a_backtracking_pattern() {
 }
 
 #[test]
+fn an_interrupt_reaches_a_loop_of_pattern_calls() {
+    // each call is cheap, but they have to keep using up the slice or the
+    // interrupt never gets looked at
+    for src in [
+        r#"while true do string.match("x", "x") end"#,
+        r#"while true do string.gsub("x", "x", function(c) return c end) end"#,
+        r#"while true do for _ in string.gmatch("xx", "x") do end end"#,
+    ] {
+        let mut e = Engine::new();
+        let handle = e.interrupt_handle();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(500));
+            handle.interrupt();
+        });
+        let t = Instant::now();
+        let err = e.eval(src).unwrap_err();
+        assert!(err.to_string().contains("interrupted"), "{src}: {err}");
+        assert!(
+            t.elapsed() < Duration::from_secs(5),
+            "{src}: {:?}",
+            t.elapsed()
+        );
+    }
+}
+
+#[test]
 fn the_budget_comes_back_after_a_pattern_error() {
     let mut e = Engine::new();
     e.set_instruction_limit(Some(1_000_000));
