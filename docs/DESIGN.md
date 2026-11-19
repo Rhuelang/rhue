@@ -4,10 +4,12 @@ How Rhue fits together and why things ended up the way they did, milestone by mi
 
 ## Pipeline
 
-```
-source -> rhue-lexer -> rhue-parser -> resolver -> fold + codegen -> Proto tree -> rhue-vm
-             tokens          AST        bindings,    (rhue-compiler)  (one per       frames,
-                                        captures                      function)      upvalues
+```mermaid
+flowchart LR
+    src[source] --> lex[rhue-lexer] --> parse[rhue-parser] --> res[resolver]
+    res --> gen["fold + codegen<br/>(rhue-compiler)"] --> proto[Proto tree] --> vm[rhue-vm]
+    lex -. tokens .-> parse
+    parse -. AST .-> res
 ```
 
 `rhue-common` (spans, diagnostics) sits under every crate. `rhue` is the embedder-facing facade, and `rhue-cli` is the binary.
