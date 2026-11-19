@@ -1,15 +1,15 @@
 {
-  "arrays": 118414947,
-  "callbacks": 176813943,
-  "classes": 3698448685,
-  "closures": 784313409,
-  "coroutines": 924369943,
-  "fib": 465178873,
-  "host": 2133150032,
-  "loops": 1301950627,
-  "methods": 2199305657,
-  "natives": 4188126465,
-  "patterns": 2012158109,
-  "strings": 662053857,
-  "tables": 782714294
+  "arrays": 117836036,
+  "callbacks": 179373542,
+  "classes": 3808270299,
+  "closures": 783501017,
+  "coroutines": 923525243,
+  "fib": 464764426,
+  "host": 2080750418,
+  "loops": 1301521288,
+  "methods": 2153129705,
+  "natives": 4225158062,
+  "patterns": 1937815010,
+  "strings": 619168152,
+  "tables": 783119048
 }
