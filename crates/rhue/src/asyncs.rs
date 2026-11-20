@@ -16,7 +16,7 @@ use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::task::Poll;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::context::Repr;
 use crate::tasks::{Scheduler, Task, TaskState};
@@ -125,6 +125,7 @@ enum Turn {
     },
     Interrupted,
     NoSleep,
+    NoClock,
 }
 
 /// Cleans up after a driver's task if the driver gets dropped before it
@@ -219,6 +220,22 @@ impl Engine {
         self.asyncs.borrow_mut().sleep = Some(Rc::new(move |d| Box::pin(sleep(d))));
     }
 
+    /// Where `os.time`, `os.date`, `os.clock` and the `task` timers get the
+    /// time: a function giving the time since the Unix epoch. Without one
+    /// Rhue uses std's clocks, which `wasm32-unknown-unknown` doesn't have, so
+    /// set one there. `os.clock` starts again from 0.
+    ///
+    /// ```ignore
+    /// // in a browser, through js-sys
+    /// engine.set_clock(|| Duration::from_secs_f64(js_sys::Date::now() / 1000.0));
+    /// ```
+    pub fn set_clock<F>(&mut self, clock: F)
+    where
+        F: Fn() -> Duration + 'static,
+    {
+        self.vm.set_clock(Rc::new(clock));
+    }
+
     /// A handle that stops this engine's scripts (see [`InterruptHandle`]).
     pub fn interrupt_handle(&self) -> InterruptHandle {
         InterruptHandle(self.vm.interrupt_handle())
@@ -295,12 +312,14 @@ impl Engine {
         let interrupt = self.vm.interrupt_handle();
         let asyncs = self.asyncs.clone();
         let tasks = self.tasks.clone();
-        let mut clock = Instant::now();
-        let mut sleeping: Option<(Instant, BoxFuture<()>)> = None;
-        // a deadline the host's sleep said has passed. the host's clock is the
+        // times here are the VM's uptime, from its clock (std's, or the host's)
+        let uptime = self.vm.uptime_fn();
+        let mut clock = uptime().unwrap_or_default();
+        let mut sleeping: Option<(Duration, BoxFuture<()>)> = None;
+        // a deadline the host's sleep said has passed. the host's sleep is the
         // one that counts (it might be a test's paused clock), so time is at
-        // least this far along even if `Instant::now` disagrees
-        let mut reached: Option<Instant> = None;
+        // least this far along even if the clock disagrees
+        let mut reached: Option<Duration> = None;
         let mut yielded_to_host = false;
         loop {
             match &main {
@@ -339,7 +358,10 @@ impl Engine {
                         due = true;
                     } else if let Some(wait) = s.next_timer_in() {
                         let at = clock + Duration::from_secs_f64(wait);
-                        if Instant::now().max(reached.unwrap_or(clock)) >= at {
+                        let Some(now) = uptime() else {
+                            return Poll::Ready(Turn::NoClock);
+                        };
+                        if now.max(reached.unwrap_or(clock)) >= at {
                             due = true;
                         } else {
                             let sleep = asyncs.borrow().sleep.clone();
@@ -347,10 +369,7 @@ impl Engine {
                                 return Poll::Ready(Turn::NoSleep);
                             };
                             if sleeping.as_ref().is_none_or(|(when, _)| *when != at) {
-                                sleeping = Some((
-                                    at,
-                                    sleep(at.saturating_duration_since(Instant::now().max(clock))),
-                                ));
+                                sleeping = Some((at, sleep(at.saturating_sub(now.max(clock)))));
                             }
                             if let Some((_, f)) = &mut sleeping
                                 && f.as_mut().poll(cx).is_ready()
@@ -387,6 +406,11 @@ impl Engine {
                 Turn::Interrupted => {
                     return Err(Error::from_script(ScriptError::new(rhue_vm::INTERRUPTED)));
                 }
+                Turn::NoClock => {
+                    return Err(Error::from_script(ScriptError::new(
+                        "a script waited on the task clock, but there's no clock to read here (Engine::set_clock)",
+                    )));
+                }
                 Turn::NoSleep => {
                     return Err(Error::from_script(ScriptError::new(
                         "a script waited on the task clock, but the engine has no sleep function (Engine::set_sleep)",
@@ -414,8 +438,10 @@ impl Engine {
                 self.resume(t, Vec::new())?;
             }
             // the task clock follows real time while a driver runs
-            let now = Instant::now().max(reached.take().unwrap_or(clock));
-            let dt = (now - clock).as_secs_f64();
+            let now = uptime()
+                .unwrap_or(clock)
+                .max(reached.take().unwrap_or(clock));
+            let dt = now.saturating_sub(clock).as_secs_f64();
             clock = now;
             if tasks.is_some() {
                 let errors = self.step(dt);

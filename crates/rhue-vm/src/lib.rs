@@ -26,6 +26,7 @@
 
 mod bitlib;
 mod buffer;
+mod clock;
 mod coroutine;
 mod debug;
 mod debuglib;
@@ -771,6 +772,8 @@ pub struct Vm {
     reserve: u64,
     /// Set from anywhere to stop the running script (see [`Interrupt`]).
     interrupt: Arc<Interrupt>,
+    /// Where the time comes from, see [`Vm::set_clock`].
+    clock: clock::Clock,
     /// Lent to natives that count their own steps (see [`NativeCtx::meter`]).
     meter: Rc<Meter>,
     /// The main thread, and the thread running now (the main thread or a
@@ -865,6 +868,7 @@ impl Vm {
             budget: 0,
             reserve: u64::MAX,
             meter: Rc::new(Meter::with_budget(0, None, Some(interrupt.clone()))),
+            clock: clock::Clock::default(),
             interrupt,
             placeholder: Rc::new(LuaClosure {
                 proto: Rc::new(Proto::default()),
@@ -1919,6 +1923,31 @@ impl Vm {
         }
         self.budget -= n;
         Ok(())
+    }
+
+    /// Where `os.time`, `os.date`, `os.clock` and the task timers get the time
+    /// from: a function giving the time since the Unix epoch. Without one the
+    /// VM uses std's clocks, which don't exist on `wasm32-unknown-unknown`, so
+    /// set one there (from `Date.now()`, say). `os.clock` starts again from 0.
+    pub fn set_clock(&mut self, clock: Rc<dyn Fn() -> std::time::Duration>) {
+        self.clock.set(clock);
+    }
+
+    /// The time since the Unix epoch, or `None` with no clock to read.
+    pub fn wall_time(&self) -> Option<std::time::Duration> {
+        self.clock.wall_time()
+    }
+
+    /// The time since the VM was made (or since its clock was set), what
+    /// `os.clock` gives. `None` with no clock to read.
+    pub fn uptime(&self) -> Option<std::time::Duration> {
+        self.clock.uptime()
+    }
+
+    /// A function giving the time since the VM was made (or since its clock
+    /// was set), never going backwards. `None` with no clock to read.
+    pub fn uptime_fn(&self) -> Rc<dyn Fn() -> Option<std::time::Duration>> {
+        self.clock.uptime_fn()
     }
 
     /// The flag that interrupts this VM's scripts, to hand off to other tasks

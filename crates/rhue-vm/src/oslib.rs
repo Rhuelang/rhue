@@ -4,7 +4,6 @@
 //! database), and `os.clock` counts seconds since the VM was made.
 
 use std::rc::Rc;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use smallvec::smallvec;
 
@@ -14,17 +13,11 @@ use crate::{NativeCtx, NativeError, Rets, Table, Value, Vm};
 type R = Result<Rets, NativeError>;
 
 pub(crate) fn install(vm: &mut Vm) {
-    let started = Instant::now();
     let os = lib(
         vm,
         vec![
             ("time", Rc::new(os_time)),
-            (
-                "clock",
-                Rc::new(move |_: &mut NativeCtx<'_>, _: &[Value]| -> R {
-                    Ok(smallvec![Value::Number(started.elapsed().as_secs_f64())])
-                }),
-            ),
+            ("clock", Rc::new(os_clock)),
             ("date", Rc::new(os_date)),
             ("difftime", Rc::new(os_difftime)),
         ],
@@ -55,10 +48,19 @@ fn lib(vm: &mut Vm, entries: Vec<(&str, crate::NativeFn)>) -> Value {
 
 // ─ os ────────────────────────────────────────────────────────────────────────
 
-fn now() -> f64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0.0, |d| d.as_secs() as f64)
+/// What the error says when there's no clock to read.
+const NO_CLOCK: &str =
+    "there's no clock to read here, the host needs to give the engine one (Engine::set_clock)";
+
+/// Whole seconds since the Unix epoch.
+fn now(ctx: &mut NativeCtx<'_>) -> Result<f64, NativeError> {
+    let t = ctx.vm().wall_time().ok_or(NO_CLOCK)?;
+    Ok(t.as_secs() as f64)
+}
+
+fn os_clock(ctx: &mut NativeCtx<'_>, _: &[Value]) -> R {
+    let t = ctx.vm().uptime().ok_or(NO_CLOCK)?;
+    Ok(smallvec![Value::Number(t.as_secs_f64())])
 }
 
 /// Days since 1970-01-01 for a proleptic Gregorian date (Howard Hinnant's
@@ -98,7 +100,7 @@ fn civil_from_days(z: i64) -> (i64, i64, i64) {
 /// out of range: `{year = 2026, month = 13, day = 1}` is January 2027).
 fn os_time(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     let t = match args.first().copied() {
-        None | Some(Value::Nil) => return Ok(smallvec![Value::Number(now())]),
+        None | Some(Value::Nil) => return Ok(smallvec![Value::Number(now(ctx)?)]),
         Some(Value::Table(t)) => t,
         Some(other) => return Err(bad_arg(1, "time", "table", other)),
     };
@@ -193,7 +195,7 @@ fn os_date(ctx: &mut NativeCtx<'_>, args: &[Value]) -> R {
     };
     let fmt = fmt.strip_prefix('!').unwrap_or(&fmt);
     let t = match args.get(1) {
-        None | Some(Value::Nil) => now() as i64,
+        None | Some(Value::Nil) => now(ctx)? as i64,
         Some(_) => opt_int(args, 1, "date", 0)?,
     };
     let d = date_parts(t);

@@ -492,6 +492,16 @@ Any runtime works, but the futures aren't `Send`, so on tokio use a current-thre
 
 The heavy parts of the standard library count against the instruction limit too (the pattern functions, `table.move`, `table.concat` and `string.rep`), so a pattern that backtracks forever or a huge `table.move` gets stopped the same way a loop does. Your own natives can do the same with `cx.charge(n)` when they do a lot of work in one call.
 
+### WebAssembly
+
+Rhue builds for `wasm32-unknown-unknown`, there's just no clock there. `os.time`, `os.clock` and the `task` timers error until you give the engine one:
+
+```rust
+engine.set_clock(|| Duration::from_secs_f64(js_sys::Date::now() / 1000.0));
+```
+
+It takes the time since the Unix epoch, and works anywhere else too if you want scripts on a fake clock.
+
 ### Hot reload
 
 `reload_module` swaps a module over to new source while everything keeps running. Functions in it change in place, so anything already holding one (a callback you stored, a field another module copied) runs the new code from its next call. The module's tables stay the same tables and keep their values, and locals its functions capture keep theirs, so state carries over. A broken edit comes back as an `Err` and the old code keeps going.
