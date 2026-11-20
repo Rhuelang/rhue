@@ -34,11 +34,11 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           path: rhue
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: rhuelang/rhue-site
           path: site
