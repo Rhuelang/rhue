@@ -755,6 +755,7 @@ version = "2.2.0"
 dependencies = [
  "lsp-server",
  "lsp-types",
+ "percent-encoding",
  "rhue",
  "rhue-common",
  "rhue-fmt",
