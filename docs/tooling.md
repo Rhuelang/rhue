@@ -8,7 +8,7 @@ The `rhue` command line, the language server and the debugger. All three are on 
 
 ```bash
 $ rhue
-Rhue 2.1.0. Globals persist between entries; :help for commands, Ctrl-D to exit.
+Rhue 2.2.0. Globals persist between entries; :help for commands, Ctrl-D to exit.
 > local function fib(n)
     if n < 2 then return n end
     return fib(n - 1) + fib(n - 2)

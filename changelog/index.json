@@ -1,6 +1,13 @@
 {
   "entries": [
     {
+      "file": "v2.2.0.md",
+      "tag": "2.2.0",
+      "title": "Tech debt",
+      "version": "2.2.0",
+      "date": "2026-11-20"
+    },
+    {
       "file": "v2.1.0.md",
       "tag": "2.1.0",
       "title": "Review fixes",

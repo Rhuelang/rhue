@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*", "xtask"]
 
 [workspace.package]
-version = "2.1.0"
+version = "2.2.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/rhuelang/rhue"
@@ -11,16 +11,16 @@ homepage = "https://rhue.dev"
 rust-version = "1.88"
 
 [workspace.dependencies]
-rhue-common = { path = "crates/rhue-common", version = "=2.1.0" }
-rhue-lexer = { path = "crates/rhue-lexer", version = "=2.1.0" }
-rhue-parser = { path = "crates/rhue-parser", version = "=2.1.0" }
-rhue-bytecode = { path = "crates/rhue-bytecode", version = "=2.1.0" }
-rhue-compiler = { path = "crates/rhue-compiler", version = "=2.1.0" }
-rhue-vm = { path = "crates/rhue-vm", version = "=2.1.0" }
-rhue-types = { path = "crates/rhue-types", version = "=2.1.0" }
-rhue = { path = "crates/rhue", version = "=2.1.0" }
-rhue-derive = { path = "crates/rhue-derive", version = "=2.1.0" }
-rhue-fmt = { path = "crates/rhue-fmt", version = "=2.1.0" }
+rhue-common = { path = "crates/rhue-common", version = "=2.2.0" }
+rhue-lexer = { path = "crates/rhue-lexer", version = "=2.2.0" }
+rhue-parser = { path = "crates/rhue-parser", version = "=2.2.0" }
+rhue-bytecode = { path = "crates/rhue-bytecode", version = "=2.2.0" }
+rhue-compiler = { path = "crates/rhue-compiler", version = "=2.2.0" }
+rhue-vm = { path = "crates/rhue-vm", version = "=2.2.0" }
+rhue-types = { path = "crates/rhue-types", version = "=2.2.0" }
+rhue = { path = "crates/rhue", version = "=2.2.0" }
+rhue-derive = { path = "crates/rhue-derive", version = "=2.2.0" }
+rhue-fmt = { path = "crates/rhue-fmt", version = "=2.2.0" }
 logos = "0.16"
 ariadne = "0.6"
 proptest = "1"

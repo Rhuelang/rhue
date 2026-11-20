@@ -59,7 +59,7 @@ heap after churn: 82 KB
 
 ## ✨ Status
 
-2.1.0 is out, 26 milestones in (2.0 was a quick API cleanup right after 1.0). What's in it:
+2.2.0 is out, 26 milestones in (2.0 was a quick API cleanup right after 1.0). What's in it:
 
 - **Language** — Luau syntax, string interpolation, metatables and `setmetatable` classes, tail calls, coroutines, generic `for` with `__iter`, vectors
 - **Types** — gradual typing with `--!strict` and `--!nonstrict`, generics and type packs, narrowing and flow typing, read-only and write-only properties

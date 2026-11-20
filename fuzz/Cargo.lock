@@ -151,7 +151,7 @@ dependencies = [
  "quote",
  "regex-automata",
  "regex-syntax",
- "syn",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -231,7 +231,7 @@ checksum = "d902046e6a28a1e4c3cab97258a0ce11e994903f01c2d97a9447a0b3df85f4f6"
 
 [[package]]
 name = "rhue"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "rhue-bytecode",
  "rhue-common",
@@ -245,21 +245,21 @@ dependencies = [
 
 [[package]]
 name = "rhue-bytecode"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "rhue-common",
 ]
 
 [[package]]
 name = "rhue-common"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "ariadne",
 ]
 
 [[package]]
 name = "rhue-compiler"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "rhue-bytecode",
  "rhue-common",
@@ -269,11 +269,11 @@ dependencies = [
 
 [[package]]
 name = "rhue-derive"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn",
+ "syn 3.0.10",
 ]
 
 [[package]]
@@ -286,7 +286,7 @@ dependencies = [
 
 [[package]]
 name = "rhue-lexer"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "logos",
  "rhue-common",
@@ -294,7 +294,7 @@ dependencies = [
 
 [[package]]
 name = "rhue-parser"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "rhue-common",
  "rhue-lexer",
@@ -303,7 +303,7 @@ dependencies = [
 
 [[package]]
 name = "rhue-types"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "foldhash",
  "rhue-common",
@@ -314,7 +314,7 @@ dependencies = [
 
 [[package]]
 name = "rhue-vm"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "foldhash",
  "hashbrown",
@@ -355,6 +355,17 @@ name = "syn"
 version = "2.0.119"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "872831b642d1a07999a962a351ed35b955ea2cfc8f3862091e2a240a84f17297"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
+
+[[package]]
+name = "syn"
+version = "3.0.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ae9ccbea3a7b0b09443036490c8f34a8b1b760fd345e5c0dae0aac718faea79"
 dependencies = [
  "proc-macro2",
  "quote",
