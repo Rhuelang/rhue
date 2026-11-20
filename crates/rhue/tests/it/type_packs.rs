@@ -46,6 +46,7 @@ fn type_of(src: &str, name: &str) -> String {
         .unwrap_or_else(|| panic!("no type for {name}"))
 }
 
+#[cfg(feature = "tooling")]
 const PASS: &str = "local function pass<T...>(...: T...): T... return ... end\n";
 
 #[cfg(feature = "tooling")]
