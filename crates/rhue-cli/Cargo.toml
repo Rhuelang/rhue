@@ -17,7 +17,7 @@ workspace = true
 [dependencies]
 rhue.workspace = true
 rhue-fmt.workspace = true
-rustyline = { version = "17", features = ["derive"] }
+rustyline = { version = "19", features = ["derive"] }
 
 [[bin]]
 name = "rhue"
