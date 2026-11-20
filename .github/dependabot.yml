@@ -5,7 +5,8 @@ updates:
     schedule:
       interval: weekly
     groups:
-      # one PR for everything that doesn't break, instead of one per crate
+      # one PR for minor and patch bumps instead of one per crate. a minor bump
+      # of a 0.x crate can break things, CI catches those
       minor:
         update-types: [minor, patch]
 

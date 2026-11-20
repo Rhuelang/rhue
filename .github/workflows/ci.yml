@@ -1,4 +1,4 @@
-﻿name: CI
+name: CI
 
 on:
   push:
@@ -33,6 +33,9 @@ jobs:
         run: cargo build --workspace --all-targets --all-features --locked
       - name: Test
         run: cargo test --workspace --all-features --locked
+      # rhue on its own, without the features the rest of the workspace turns on
+      - name: Test rhue with default features
+        run: cargo test -p rhue --locked
       - name: Examples
         shell: bash
         run: |
