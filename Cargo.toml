@@ -30,7 +30,7 @@ smallvec = { version = "1.15", features = ["union", "const_generics"] }
 hashbrown = { version = "0.17", default-features = false }
 foldhash = "0.2"
 indexmap = "2"
-syn = { version = "2", default-features = false, features = ["derive", "parsing", "printing", "proc-macro"] }
+syn = { version = "3", default-features = false, features = ["derive", "parsing", "printing", "proc-macro"] }
 quote = "1"
 proc-macro2 = "1"
 
