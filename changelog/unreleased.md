@@ -1,0 +1,7 @@
+- Feat: `Engine::set_clock`. `os.time`, `os.date`, `os.clock` and the `task` timers read the engine's clock now, so Rhue runs on `wasm32-unknown-unknown` once the host hands it one, and anywhere else scripts can be put on a fake clock. With no clock to read they're an error instead of a panic.
+- Feat: `rhue-dap` is a library too. `rhue_dap::serve` runs the adapter over any pair of streams and `rhue_dap::run` is the session fed from a channel.
+- Feat: `cargo xtask gen` writes `CHANGELOG.md` from `changelog/` and the README's benchmark table from `bench/results.json`, and `bench/compare --write` fills in `results.json`.
+- Feat: Fuzz targets in `fuzz/` for compiling, loading chunks, patterns and running scripts.
+- Fix: Every narrowing cast is checked or says why it can't overflow, and clippy's `cast_possible_truncation` is on for the whole workspace.
+- Fix: syn 3, rustyline 17, lsp-server 0.10 and lsp-types 0.97.
+- Fix: The README's language, embedding and tooling sections moved to `docs/`, with a list of where Rhue differs from Luau and a short page on how it works now.
