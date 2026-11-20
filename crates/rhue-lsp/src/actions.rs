@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use lsp_types::{
     CodeAction, CodeActionKind, CodeActionOrCommand, InlayHint, InlayHintKind, InlayHintLabel,
-    Range, TextEdit, Url, WorkspaceEdit,
+    Range, TextEdit, Uri, WorkspaceEdit,
 };
 
 use crate::{Docs, LineIndex, to_lsp};
@@ -13,7 +13,7 @@ use crate::{Docs, LineIndex, to_lsp};
 /// The inferred types in `range` the source doesn't spell out: locals, loop
 /// variables, parameters and results. A hint with a writable type gets inserted
 /// when you double-click it.
-pub fn inlay_hints(docs: &Docs, uri: &Url, text: &str, range: Range) -> Vec<InlayHint> {
+pub fn inlay_hints(docs: &Docs, uri: &Uri, text: &str, range: Range) -> Vec<InlayHint> {
     let idx = LineIndex::new(text);
     let (from, to) = (idx.offset(range.start), idx.offset(range.end));
     let analysis = docs.analyze(uri, text);
@@ -42,7 +42,7 @@ pub fn inlay_hints(docs: &Docs, uri: &Url, text: &str, range: Range) -> Vec<Inla
         .collect()
 }
 
-fn edit(uri: &Url, edits: Vec<TextEdit>) -> WorkspaceEdit {
+fn edit(uri: &Uri, edits: Vec<TextEdit>) -> WorkspaceEdit {
     WorkspaceEdit {
         changes: Some(HashMap::from([(uri.clone(), edits)])),
         ..WorkspaceEdit::default()
@@ -51,7 +51,7 @@ fn edit(uri: &Url, edits: Vec<TextEdit>) -> WorkspaceEdit {
 
 /// What you can do in `range`: fixes for errors touching it, then writing in
 /// the inferred types of names declared on its lines.
-pub fn code_actions(docs: &Docs, uri: &Url, text: &str, range: Range) -> Vec<CodeActionOrCommand> {
+pub fn code_actions(docs: &Docs, uri: &Uri, text: &str, range: Range) -> Vec<CodeActionOrCommand> {
     let idx = LineIndex::new(text);
     let (from, to) = (idx.offset(range.start), idx.offset(range.end));
     let analysis = docs.analyze(uri, text);

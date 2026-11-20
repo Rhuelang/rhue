@@ -15,10 +15,11 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use crate::uri::UriExt;
 use lsp_types::{
     CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity, Hover, HoverContents,
     Location, MarkupContent, MarkupKind, ParameterInformation, ParameterLabel, Position, Range,
-    SignatureHelp, SignatureInformation, TextEdit, Url, WorkspaceEdit,
+    SignatureHelp, SignatureInformation, TextEdit, Uri, WorkspaceEdit,
 };
 use rhue::{Analysis, Engine, Outline, Span, TypeMode};
 
@@ -26,6 +27,7 @@ mod actions;
 mod crossfile;
 mod symbols;
 mod tokens;
+pub mod uri;
 
 pub use actions::{code_actions, inlay_hints};
 pub use symbols::{document_symbols, workspace_symbols};
@@ -95,9 +97,9 @@ impl<'a> LineIndex<'a> {
 /// could depend on it.
 #[derive(Default)]
 pub struct Docs {
-    pub open: HashMap<Url, String>,
-    engines: RefCell<HashMap<Url, (Engine, Deps)>>,
-    analyses: RefCell<HashMap<Url, (String, Rc<Analysis>)>>,
+    pub open: HashMap<Uri, String>,
+    engines: RefCell<HashMap<Uri, (Engine, Deps)>>,
+    analyses: RefCell<HashMap<Uri, (String, Rc<Analysis>)>>,
     /// Outlines of files (open or on disk) by path, with the text each one was
     /// made from.
     outlines: RefCell<HashMap<PathBuf, (String, Rc<Outline>)>>,
@@ -121,7 +123,7 @@ pub struct Stats {
 impl Docs {
     /// A document got opened, or its whole text replaced. Returns the other
     /// open documents whose analysis might have changed.
-    pub fn set_text(&mut self, uri: &Url, text: String) -> Vec<Url> {
+    pub fn set_text(&mut self, uri: &Uri, text: String) -> Vec<Uri> {
         self.open.insert(uri.clone(), text);
         self.invalidate(uri)
     }
@@ -129,7 +131,7 @@ impl Docs {
     /// Applies an editor's change to a document, either a range swapped for new
     /// text or (no range) the whole text. Returns the other open documents
     /// whose analysis might have changed (they `require` it).
-    pub fn apply_change(&mut self, uri: &Url, range: Option<Range>, new_text: &str) -> Vec<Url> {
+    pub fn apply_change(&mut self, uri: &Uri, range: Option<Range>, new_text: &str) -> Vec<Uri> {
         let Some(text) = self.open.get_mut(uri) else {
             return Vec::new();
         };
@@ -146,7 +148,7 @@ impl Docs {
     }
 
     /// Closes a document (modules read its file on disk from now on).
-    pub fn close(&mut self, uri: &Url) -> Vec<Url> {
+    pub fn close(&mut self, uri: &Uri) -> Vec<Uri> {
         self.open.remove(uri);
         self.engines.borrow_mut().remove(uri);
         self.analyses.borrow_mut().remove(uri);
@@ -155,8 +157,8 @@ impl Docs {
 
     /// Files changed on disk (saved, or changed outside the editor). Every
     /// document that read a module might see new types, so those get returned.
-    pub fn files_changed(&mut self) -> Vec<Url> {
-        let mut affected: Vec<Url> = self
+    pub fn files_changed(&mut self) -> Vec<Uri> {
+        let mut affected: Vec<Uri> = self
             .engines
             .borrow()
             .iter()
@@ -174,12 +176,12 @@ impl Docs {
     /// `changed` has new text: forget its analysis, plus the engines and
     /// analyses of documents that read it as a module. Its own engine stays,
     /// the modules *it* requires didn't change.
-    fn invalidate(&mut self, changed: &Url) -> Vec<Url> {
+    fn invalidate(&mut self, changed: &Uri) -> Vec<Uri> {
         self.analyses.borrow_mut().remove(changed);
         let Ok(path) = changed.to_file_path() else {
             return Vec::new();
         };
-        let mut affected: Vec<Url> = self
+        let mut affected: Vec<Uri> = self
             .engines
             .borrow()
             .iter()
@@ -199,7 +201,7 @@ impl Docs {
     }
 
     /// `uri`'s analysis of `text` (with no member query), cached.
-    pub fn analyze(&self, uri: &Url, text: &str) -> Rc<Analysis> {
+    pub fn analyze(&self, uri: &Uri, text: &str) -> Rc<Analysis> {
         if let Some((t, a)) = self.analyses.borrow().get(uri)
             && t == text
         {
@@ -215,7 +217,7 @@ impl Docs {
 
     /// The path of the module `name` as `uri`'s document would `require` it, if
     /// there is one (open in the editor or on disk).
-    pub fn module_path(&self, uri: &Url, name: &str) -> Option<PathBuf> {
+    pub fn module_path(&self, uri: &Uri, name: &str) -> Option<PathBuf> {
         if !rhue::is_module_name(name) {
             return None;
         }
@@ -277,7 +279,7 @@ impl Docs {
     }
 
     fn text_at(&self, path: &Path) -> Option<String> {
-        let open = Url::from_file_path(path)
+        let open = crate::uri::from_file_path(path)
             .ok()
             .and_then(|u| self.open.get(&u).cloned());
         open.or_else(|| std::fs::read_to_string(path).ok())
@@ -287,7 +289,7 @@ impl Docs {
     /// (annotations are checked, nothing else), and modules resolve next to the
     /// document. It's kept until something it might depend on changes. Don't
     /// hold onto it across a call to [`analyze`](Self::analyze).
-    pub fn engine_for(&self, uri: &Url) -> RefMut<'_, Engine> {
+    pub fn engine_for(&self, uri: &Uri) -> RefMut<'_, Engine> {
         RefMut::map(self.engines.borrow_mut(), |engines| {
             &mut engines
                 .entry(uri.clone())
@@ -296,7 +298,7 @@ impl Docs {
         })
     }
 
-    fn new_engine(&self, uri: &Url) -> (Engine, Deps) {
+    fn new_engine(&self, uri: &Uri) -> (Engine, Deps) {
         let mut engine = Engine::new();
         engine.set_default_type_mode(TypeMode::NonStrict);
         let snapshot: HashMap<PathBuf, String> = self
@@ -331,7 +333,7 @@ impl Docs {
     }
 }
 
-pub fn diagnostics(docs: &Docs, uri: &Url, text: &str) -> Vec<Diagnostic> {
+pub fn diagnostics(docs: &Docs, uri: &Uri, text: &str) -> Vec<Diagnostic> {
     let idx = LineIndex::new(text);
     let analysis = docs.analyze(uri, text);
     analysis
@@ -384,7 +386,7 @@ fn smallest<T>(items: impl Iterator<Item = (Span, T)>, offset: usize) -> Option<
 }
 
 /// The type of what's under the cursor, a name or the smallest expression.
-pub fn hover(docs: &Docs, uri: &Url, text: &str, pos: Position) -> Option<Hover> {
+pub fn hover(docs: &Docs, uri: &Uri, text: &str, pos: Position) -> Option<Hover> {
     let idx = LineIndex::new(text);
     let offset = idx.offset(pos);
     let analysis = docs.analyze(uri, text);
@@ -425,13 +427,13 @@ fn require_at(text: &str, offset: usize) -> Option<String> {
 
 /// Where the local under the cursor is declared, or the file a `require("...")`
 /// under the cursor loads.
-pub fn definition(docs: &Docs, uri: &Url, text: &str, pos: Position) -> Option<Location> {
+pub fn definition(docs: &Docs, uri: &Uri, text: &str, pos: Position) -> Option<Location> {
     let idx = LineIndex::new(text);
     let offset = idx.offset(pos);
     if let Some(name) = require_at(text, offset) {
         let path = docs.module_path(uri, &name)?;
         return Some(Location::new(
-            Url::from_file_path(path).ok()?,
+            crate::uri::from_file_path(path).ok()?,
             Range::default(),
         ));
     }
@@ -457,7 +459,7 @@ fn declaration_at(analysis: &rhue::Analysis, offset: usize) -> Option<Span> {
 
 /// Every use of the local under the cursor (and its declaration), or of the
 /// module field under it, across the workspace.
-pub fn references(docs: &Docs, uri: &Url, text: &str, pos: Position) -> Vec<Location> {
+pub fn references(docs: &Docs, uri: &Uri, text: &str, pos: Position) -> Vec<Location> {
     let idx = LineIndex::new(text);
     let offset = idx.offset(pos);
     let across = crossfile::references(docs, uri, text, offset);
@@ -514,7 +516,7 @@ fn kind_of(ty: &str) -> CompletionItemKind {
     clippy::cast_possible_truncation,
     reason = "positions in a source, capped at 4 GiB by the lexer"
 )]
-pub fn completion(docs: &Docs, uri: &Url, text: &str, pos: Position) -> Vec<CompletionItem> {
+pub fn completion(docs: &Docs, uri: &Uri, text: &str, pos: Position) -> Vec<CompletionItem> {
     let idx = LineIndex::new(text);
     let offset = idx.offset(pos);
     let word_start = text[..offset]
@@ -623,7 +625,7 @@ pub fn formatting(text: &str, insert_spaces: bool, tab_size: u32) -> Option<Vec<
 }
 
 /// The name a rename at the cursor would change, a local or nothing.
-pub fn prepare_rename(docs: &Docs, uri: &Url, text: &str, pos: Position) -> Option<Range> {
+pub fn prepare_rename(docs: &Docs, uri: &Uri, text: &str, pos: Position) -> Option<Range> {
     let idx = LineIndex::new(text);
     let offset = idx.offset(pos);
     let analysis = docs.analyze(uri, text);
@@ -659,7 +661,7 @@ fn is_identifier(name: &str) -> bool {
 )]
 pub fn rename(
     docs: &Docs,
-    uri: &Url,
+    uri: &Uri,
     text: &str,
     pos: Position,
     new_name: &str,
@@ -876,7 +878,7 @@ fn parameter_names(text: &str, callee: &str) -> Option<Vec<String>> {
     clippy::cast_possible_truncation,
     reason = "positions in a source, capped at 4 GiB by the lexer"
 )]
-pub fn signature_help(docs: &Docs, uri: &Url, text: &str, pos: Position) -> Option<SignatureHelp> {
+pub fn signature_help(docs: &Docs, uri: &Uri, text: &str, pos: Position) -> Option<SignatureHelp> {
     let idx = LineIndex::new(text);
     let offset = idx.offset(pos);
     let (paren, commas) = open_call(text, offset)?;

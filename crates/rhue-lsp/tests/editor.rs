@@ -5,8 +5,9 @@
 use std::path::PathBuf;
 
 use lsp_types::{
-    CodeActionOrCommand, DocumentSymbol, InlayHintLabel, Location, Position, Range, SymbolKind, Url,
+    CodeActionOrCommand, DocumentSymbol, InlayHintLabel, Location, Position, Range, SymbolKind, Uri,
 };
+use rhue_lsp::uri::UriExt;
 use rhue_lsp::{Docs, LineIndex};
 
 /// A fresh folder for one test's files.
@@ -21,8 +22,8 @@ fn workspace(name: &str, files: &[(&str, &str)]) -> PathBuf {
     dir
 }
 
-fn uri(path: &std::path::Path) -> Url {
-    Url::from_file_path(path).unwrap()
+fn uri(path: &std::path::Path) -> Uri {
+    rhue_lsp::uri::from_file_path(path).unwrap()
 }
 
 fn whole(text: &str) -> Range {
@@ -495,7 +496,7 @@ fn references_cross_modules() {
     let mut docs = Docs::default();
     docs.roots = vec![dir.clone()];
     let main = uri(&dir.join("main.rhue"));
-    let refs = |u: &Url, text: &str, pos: Position| {
+    let refs = |u: &Uri, text: &str, pos: Position| {
         let mut r: Vec<String> = rhue_lsp::references(&docs, u, text, pos)
             .iter()
             .map(|l| format!("{}@{}", at(l), l.range.start.line))

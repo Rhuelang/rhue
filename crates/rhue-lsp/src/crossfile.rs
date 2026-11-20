@@ -5,7 +5,8 @@
 
 use std::path::{Path, PathBuf};
 
-use lsp_types::{Location, Url};
+use crate::uri::UriExt;
+use lsp_types::{Location, Uri};
 use rhue::{Base, Outline, Span};
 
 use crate::{Docs, LineIndex, contains};
@@ -39,7 +40,7 @@ fn same_file(a: &Path, b: &Path) -> bool {
 
 /// The module field at `offset`, either a use of one (`m.name`) or where this
 /// file defines one it returns.
-fn target_at(docs: &Docs, uri: &Url, outline: &Outline, offset: usize) -> Option<Target> {
+fn target_at(docs: &Docs, uri: &Uri, outline: &Outline, offset: usize) -> Option<Target> {
     let here = uri.to_file_path().ok()?;
     if let Some(u) = outline.field_uses.iter().find(|u| contains(u.span, offset)) {
         if let Some(m) = module_of(outline, &u.base) {
@@ -82,13 +83,13 @@ fn file(
 
 fn location(path: &Path, text: &str, span: Span) -> Option<Location> {
     Some(Location::new(
-        Url::from_file_path(path).ok()?,
+        crate::uri::from_file_path(path).ok()?,
         LineIndex::new(text).range(span),
     ))
 }
 
 /// Where the module field at `offset` is defined.
-pub(crate) fn definition(docs: &Docs, uri: &Url, text: &str, offset: usize) -> Option<Location> {
+pub(crate) fn definition(docs: &Docs, uri: &Uri, text: &str, offset: usize) -> Option<Location> {
     let outline = std::rc::Rc::new(rhue::outline(text));
     let t = target_at(docs, uri, &outline, offset)?;
     let here = uri.to_file_path().ok()?;
@@ -101,7 +102,7 @@ pub(crate) fn definition(docs: &Docs, uri: &Url, text: &str, offset: usize) -> O
 /// definition. `None` if there's no module field there.
 pub(crate) fn references(
     docs: &Docs,
-    uri: &Url,
+    uri: &Uri,
     text: &str,
     offset: usize,
 ) -> Option<Vec<Location>> {
@@ -123,7 +124,7 @@ pub(crate) fn references(
         let Some((ftext, fo)) = file(docs, &f, (&here, text, &outline)) else {
             continue;
         };
-        let Ok(furi) = Url::from_file_path(&f) else {
+        let Ok(furi) = crate::uri::from_file_path(&f) else {
             continue;
         };
         for u in fo.field_uses.iter().filter(|u| u.name == t.name) {

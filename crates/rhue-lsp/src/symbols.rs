@@ -1,6 +1,6 @@
 //! Document symbols (the outline) and workspace symbols (search by name).
 
-use lsp_types::{DocumentSymbol, Location, SymbolInformation, SymbolKind, Url};
+use lsp_types::{DocumentSymbol, Location, SymbolInformation, SymbolKind, Uri};
 use rhue::{Symbol, SymbolKind as Kind};
 
 use crate::{Docs, LineIndex};
@@ -19,7 +19,7 @@ fn kind(k: Kind) -> SymbolKind {
 
 /// The document's symbols, nested (`function M.f()` under `M`), with the
 /// checker's type for each as its detail.
-pub fn document_symbols(docs: &Docs, uri: &Url, text: &str) -> Vec<DocumentSymbol> {
+pub fn document_symbols(docs: &Docs, uri: &Uri, text: &str) -> Vec<DocumentSymbol> {
     let idx = LineIndex::new(text);
     let outline = rhue::outline(text);
     let analysis = docs.analyze(uri, text);
@@ -79,7 +79,7 @@ pub fn workspace_symbols(docs: &Docs, query: &str) -> Vec<SymbolInformation> {
         let Some((text, outline)) = docs.outline_at(&path) else {
             continue;
         };
-        let Ok(uri) = Url::from_file_path(&path) else {
+        let Ok(uri) = crate::uri::from_file_path(&path) else {
             continue;
         };
         let idx = LineIndex::new(&text);

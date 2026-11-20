@@ -1,11 +1,11 @@
 //! The language server's answers, on plain strings (positions are found by
 //! a `|` marker in the source, which is removed).
 
-use lsp_types::{CompletionItemKind, HoverContents, Position, Range, Url};
+use lsp_types::{CompletionItemKind, HoverContents, Position, Range, Uri};
 use rhue_lsp::{Docs, LineIndex};
 
-fn uri() -> Url {
-    Url::from_file_path(std::env::temp_dir().join("rhue-lsp-test/main.rhue")).unwrap()
+fn uri() -> Uri {
+    rhue_lsp::uri::from_file_path(std::env::temp_dir().join("rhue-lsp-test/main.rhue")).unwrap()
 }
 
 /// The source without its `|`, and the position of the `|`.
@@ -129,12 +129,16 @@ fn definition_of_a_required_module() {
         "--!strict\nreturn { shout = function(s: string) return s:upper() end }",
     )
     .unwrap();
-    let main = Url::from_file_path(dir.join("main.rhue")).unwrap();
+    let main = rhue_lsp::uri::from_file_path(dir.join("main.rhue")).unwrap();
     let (text, pos) =
         at("--!strict\nlocal S = require('util.str|ings')\nlocal n: number = S.shout('x')");
     let docs = Docs::default();
     let def = rhue_lsp::definition(&docs, &main, &text, pos).unwrap();
-    assert!(def.uri.path().ends_with("util/strings.rhue"), "{}", def.uri);
+    assert!(
+        def.uri.as_str().ends_with("util/strings.rhue"),
+        "{}",
+        def.uri.as_str()
+    );
     // the module's types reach the requiring file
     let d = rhue_lsp::diagnostics(&docs, &main, &text);
     assert_eq!(d.len(), 1);
@@ -144,7 +148,7 @@ fn definition_of_a_required_module() {
     );
     // an open (unsaved) version of the module wins over the file on disk
     let mut docs = Docs::default();
-    let module = Url::from_file_path(dir.join("util/strings.rhue")).unwrap();
+    let module = rhue_lsp::uri::from_file_path(dir.join("util/strings.rhue")).unwrap();
     docs.open.insert(
         module,
         "--!strict\nreturn { shout = function(s: string): number return #s end }".into(),
@@ -381,9 +385,9 @@ fn requests_share_an_analysis_and_imports_are_checked_once() {
         "--!strict\nreturn { twice = function(n: number): number return n * 2 end }",
     )
     .unwrap();
-    let main = Url::from_file_path(dir.join("main.rhue")).unwrap();
-    let other = Url::from_file_path(dir.join("other.rhue")).unwrap();
-    let util = Url::from_file_path(dir.join("util.rhue")).unwrap();
+    let main = rhue_lsp::uri::from_file_path(dir.join("main.rhue")).unwrap();
+    let other = rhue_lsp::uri::from_file_path(dir.join("other.rhue")).unwrap();
+    let util = rhue_lsp::uri::from_file_path(dir.join("util.rhue")).unwrap();
     let mut docs = Docs::default();
     docs.set_text(
         &main,

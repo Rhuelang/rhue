@@ -7,6 +7,7 @@
 //! highlighting, completion (after `.` and `:`, and names in scope), renaming
 //! locals, signature help and formatting.
 
+use rhue_lsp::uri::UriExt;
 use std::error::Error;
 
 use lsp_server::{Connection, Message, Notification, Request, RequestId, Response};
@@ -32,7 +33,7 @@ use lsp_types::{
     PrepareRenameResponse, PublishDiagnosticsParams, ReferenceParams, RenameOptions, RenameParams,
     ServerCapabilities, SignatureHelpOptions, SignatureHelpParams, TextDocumentPositionParams,
     TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions,
-    TextDocumentSyncSaveOptions, Url,
+    TextDocumentSyncSaveOptions, Uri,
 };
 use rhue_lsp::Docs;
 
@@ -152,7 +153,7 @@ fn serve(
 fn publish(
     connection: &Connection,
     docs: &Docs,
-    uri: Url,
+    uri: Uri,
 ) -> Result<(), Box<dyn Error + Sync + Send>> {
     let diagnostics = match docs.open.get(&uri) {
         Some(text) => rhue_lsp::diagnostics(docs, &uri, text),
@@ -170,7 +171,7 @@ fn publish(
 
 /// Updates the open documents, returns the ones whose diagnostics might have
 /// changed.
-fn handle_notification(docs: &mut Docs, n: Notification) -> Vec<Url> {
+fn handle_notification(docs: &mut Docs, n: Notification) -> Vec<Uri> {
     match n.method.as_str() {
         DidOpenTextDocument::METHOD => {
             let Some(p): Option<lsp_types::DidOpenTextDocumentParams> =
@@ -341,7 +342,7 @@ fn handle_request(docs: &Docs, req: Request) -> Response {
     }
 }
 
-fn text<'a>(docs: &'a Docs, uri: &Url) -> Option<&'a str> {
+fn text<'a>(docs: &'a Docs, uri: &Uri) -> Option<&'a str> {
     docs.open.get(uri).map(String::as_str)
 }
 
