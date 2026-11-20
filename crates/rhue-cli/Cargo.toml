@@ -19,6 +19,9 @@ rhue.workspace = true
 rhue-fmt.workspace = true
 rustyline = { version = "17", features = ["derive"] }
 
+[lib]
+path = "src/lib.rs"
+
 [[bin]]
 name = "rhue"
 path = "src/main.rs"

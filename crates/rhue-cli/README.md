@@ -27,6 +27,8 @@ rhue fmt src/*.rhue           # format in place (--check for CI, --indent 4 for 
 
 `require("a.b")` loads `a/b.rhue` (or `a/b/init.rhue`) from next to the script, or from the current folder for `-e` and the REPL.
 
+There's a library in here too, mostly so it can be driven from tests. `rhue_cli::main(args)` is the whole command, arguments in and an exit code out.
+
 ## The REPL
 
 ```bash
