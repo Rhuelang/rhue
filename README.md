@@ -598,6 +598,9 @@ $ bench/counts.sh --save     # make these the new baseline
 $ cargo run --release --manifest-path bench/compare/Cargo.toml
 ```
 
+Add `--write` and the times go in `bench/results.json`, then `cargo xtask gen` puts them in this table.
+
+<!-- bench-table:start (generated from bench/results.json by `cargo xtask gen`) -->
 | Script | Rhue ms | Luau ms | Rhai ms | Luau vs Rhue | Rhai vs Rhue |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | `arrays` | 7.1 | 3.2 | – | 2.2× faster | – |
@@ -611,6 +614,7 @@ $ cargo run --release --manifest-path bench/compare/Cargo.toml
 | `patterns` | 206 | 105 | – | 2.0× faster | – |
 | `strings` | 74.8 | 53.6 | 395 | 1.4× faster | 5.3× slower |
 | `tables` | 66.6 | 37.4 | 349 | 1.8× faster | 5.2× slower |
+<!-- bench-table:end -->
 
 Measured at M23. Luau's had years of tuning and it shows, though plain arithmetic loops are about even. Rhai walks a syntax tree, so it's not close. Progress gets tracked with the instruction counts in `bench/counts.json`, older milestones' numbers are in [`docs/DESIGN.md`](docs/DESIGN.md). Also these are my own benchmarks, so they lean a bit toward what I tuned for.
 

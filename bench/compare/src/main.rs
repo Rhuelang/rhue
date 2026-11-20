@@ -17,13 +17,16 @@ const RHUE_ONLY: &[&str] = &["host", "natives"];
 fn main() {
     let mut runs = 5usize;
     let mut filter: Option<String> = None;
+    let mut write = false;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
             "--runs" => runs = args.next().and_then(|n| n.parse().ok()).expect("--runs N"),
+            "--write" => write = true,
             other => filter = Some(other.to_string()),
         }
     }
+    let mut measured = Vec::new();
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let bench = here.join("..");
     let mut scripts: Vec<PathBuf> = std::fs::read_dir(&bench)
@@ -109,6 +112,7 @@ fn main() {
         });
 
         let ms = |d: Duration| d.as_secs_f64() * 1000.0;
+        measured.push((name.clone(), ms(rhue.0), ms(luau.0), rhai.map(ms)));
         let ratio = |d: Duration| format!("{:.2}x", ms(d) / ms(rhue.0));
         println!(
             "{:<11} {:>9.1} {:>9.1} {:>9}   {:>10} {:>10}",
@@ -122,6 +126,69 @@ fn main() {
     }
     if failed {
         std::process::exit(1);
+    }
+    if write {
+        let path = bench.join("results.json");
+        write_results(&path, &measured);
+        println!("wrote {}, run `cargo xtask gen` to update the README", path.display());
+    }
+}
+
+/// Puts new times in `bench/results.json`, keeping everything else in it (the
+/// notes, what each script stresses). A script it doesn't know yet gets a row
+/// with an empty `stresses` to fill in.
+fn write_results(path: &Path, measured: &[(String, f64, f64, Option<f64>)]) {
+    use serde_json::{Map, Value, json};
+    let text = std::fs::read_to_string(path).unwrap_or_else(|_| "{}".into());
+    let mut results: Map<String, Value> = serde_json::from_str(&text).expect("results.json is JSON");
+    let mut rows: Vec<Value> = results
+        .get("rows")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    for (name, rhue, luau, rhai) in measured {
+        let row = match rows.iter_mut().find(|r| r["name"] == name.as_str()) {
+            Some(r) => r,
+            None => {
+                rows.push(json!({ "name": name, "stresses": "" }));
+                rows.last_mut().unwrap()
+            }
+        };
+        row["rhue"] = rounded(*rhue);
+        row["luau"] = rounded(*luau);
+        row["rhai"] = rhai.map_or(Value::Null, rounded);
+    }
+    rows.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+    results.remove("rows");
+    // one row per line, the way it's been written by hand
+    let mut out = String::from("{\n");
+    for (k, v) in &results {
+        out.push_str(&format!("  {}: {},\n", Value::from(k.as_str()), v));
+    }
+    out.push_str("  \"rows\": [\n");
+    let shown: Vec<String> = rows
+        .iter()
+        .map(|r| {
+            let fields: Vec<String> = r
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(k, v)| format!("{}: {v}", Value::from(k.as_str())))
+                .collect();
+            format!("    {{ {} }}", fields.join(", "))
+        })
+        .collect();
+    out.push_str(&shown.join(",\n"));
+    out.push_str("\n  ]\n}\n");
+    std::fs::write(path, out).expect("writing results.json");
+}
+
+/// Three-ish significant figures: whole from 100 ms up, one decimal under.
+fn rounded(ms: f64) -> serde_json::Value {
+    if ms >= 100.0 {
+        serde_json::Value::from(ms.round() as i64)
+    } else {
+        serde_json::Value::from((ms * 10.0).round() / 10.0)
     }
 }
 

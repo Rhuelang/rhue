@@ -14,7 +14,7 @@ CI runs the same three, plus the docs build, the MSRV (1.88) and `cargo package`
 
 A few things CI can't check for you:
 
-- Anything users would notice gets a line in `CHANGELOG.md`, under `## [Unreleased]` at the top (add the heading if it's not there).
+- Anything users would notice gets a line in `changelog/unreleased.md` (make it if it's not there). `CHANGELOG.md` is generated from that folder, so run `cargo xtask gen` after.
 - Performance work comes with before and after numbers from `bench/`.
 - New API is documented, and the README still matches what it does.
 

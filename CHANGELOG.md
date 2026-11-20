@@ -2,6 +2,8 @@
 
 Everything that changed in Rhue. It got built in milestones before the first release, so 1.0.0 is all of them. [`docs/DESIGN.md`](docs/DESIGN.md) has the reasoning behind each one, and the README has the numbers.
 
+This file is generated from [`changelog/`](changelog/) by `cargo xtask gen`, edit those instead.
+
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow [Semantic Versioning](https://semver.org/). Only the `rhue` crate's API is meant to be stable, the other crates are its insides.
 
 ## [2.1.0] - 2026-11-19
@@ -16,6 +18,8 @@ Fixes from reviewing 2.0.0. It's a minor and not a patch since `is_module_name` 
 - Fix: CI tests `rhue` with its default features too.
 
 ## [2.0.0] - 2026-11-19
+
+1.0.0 promised more than I meant it to, so 2.0.0 cleans up the API a day later instead of living with it for years. Nobody should have to wait for 3.0 just because a value kind got added.
 
 ### Breaking
 
@@ -55,7 +59,6 @@ Fixes from reviewing 2.0.0. It's a minor and not a patch since `is_module_name` 
 - Feat: Checked code compiled after a reload sees the module's new type.
 - Feat: `rhue-dap` reloads a module when you save it mid-session.
 - Feat: The `hot_reload` example, a game loop that reloads modules when their files change.
-
 
 ### Async hosts (milestone 25)
 

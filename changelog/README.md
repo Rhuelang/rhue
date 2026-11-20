@@ -1,8 +1,8 @@
 # changelog
 
-What the changelog on [rhue.dev](https://rhue.dev/changelog) reads. One markdown file per release (or milestone, for now), plus an `index.json` that says which ones exist and in what order.
+What the changelog on [rhue.dev](https://rhue.dev/changelog) reads, and where `CHANGELOG.md` gets generated from (`cargo xtask gen`). One markdown file per release (or milestone, for now), plus an `index.json` that says which ones exist and in what order.
 
-Until there's an `index.json` in here the site just splits `CHANGELOG.md` on its `### Name (milestone N)` headings, so nothing breaks while this gets filled in.
+What's merged but not released goes in `unreleased.md`. When it ships, rename it to `vX.Y.Z.md` and add it to the top of `index.json`.
 
 ## index.json
 
