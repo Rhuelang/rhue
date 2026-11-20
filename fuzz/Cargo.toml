@@ -1,0 +1,47 @@
+# Fuzz targets, run with cargo-fuzz (needs nightly):
+#
+#   cargo +nightly fuzz run compile -- -max_total_time=60
+#
+# fuzz/README.md has the rest. Its own workspace, like bench/compare.
+[package]
+name = "rhue-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+rhue = { path = "../crates/rhue" }
+
+[[bin]]
+name = "compile"
+path = "fuzz_targets/compile.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "load"
+path = "fuzz_targets/load.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "patterns"
+path = "fuzz_targets/patterns.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "run"
+path = "fuzz_targets/run.rs"
+test = false
+doc = false
+bench = false
