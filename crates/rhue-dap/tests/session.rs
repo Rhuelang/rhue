@@ -1,17 +1,19 @@
-//! A debugging session against the real `rhue-dap` binary, as an editor
-//! drives it: breakpoints, the stack, scopes and variables, stepping,
-//! evaluating, output, and the end of the program.
+//! Debugging sessions as an editor drives them: breakpoints, the stack,
+//! scopes and variables, stepping, evaluating, output, and the end of the
+//! program. They run in-process through `rhue_dap::run`, `stdio.rs` checks the
+//! binary itself.
 
-use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::mpsc::{Receiver, Sender, channel};
+use std::thread::JoinHandle;
+use std::time::Duration;
 
 use serde_json::{Value, json};
 
 struct Client {
-    child: Child,
-    stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
+    to_session: Option<Sender<Value>>,
+    from_session: Receiver<Value>,
+    session: Option<JoinHandle<()>>,
     seq: i64,
     /// Events received while waiting for something else.
     events: Vec<Value>,
@@ -19,47 +21,32 @@ struct Client {
 
 impl Client {
     fn start() -> Client {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_rhue-dap"))
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
+        let (to_session, messages) = channel();
+        let (sent, from_session) = channel();
+        let session = std::thread::spawn(move || {
+            rhue_dap::run(messages, move |msg| {
+                let _ = sent.send(msg);
+            });
+        });
         Client {
-            stdin: child.stdin.take().unwrap(),
-            stdout: BufReader::new(child.stdout.take().unwrap()),
-            child,
+            to_session: Some(to_session),
+            from_session,
+            session: Some(session),
             seq: 0,
             events: Vec::new(),
         }
     }
 
     fn recv(&mut self) -> Value {
-        let mut len = 0;
-        loop {
-            let mut line = String::new();
-            assert!(
-                self.stdout.read_line(&mut line).unwrap() > 0,
-                "rhue-dap closed stdout"
-            );
-            let line = line.trim_end();
-            if line.is_empty() {
-                break;
-            }
-            if let Some(n) = line.strip_prefix("Content-Length: ") {
-                len = n.parse().unwrap();
-            }
-        }
-        let mut body = vec![0; len];
-        self.stdout.read_exact(&mut body).unwrap();
-        serde_json::from_slice(&body).unwrap()
+        self.from_session
+            .recv_timeout(Duration::from_secs(20))
+            .expect("the session stopped talking")
     }
 
     fn request(&mut self, command: &str, arguments: Value) -> Value {
         self.seq += 1;
         let msg = json!({ "seq": self.seq, "type": "request", "command": command, "arguments": arguments });
-        let body = msg.to_string();
-        write!(self.stdin, "Content-Length: {}\r\n\r\n{body}", body.len()).unwrap();
-        self.stdin.flush().unwrap();
+        self.to_session.as_ref().unwrap().send(msg).unwrap();
         loop {
             let m = self.recv();
             if m["type"] == "response" && m["request_seq"] == json!(self.seq) {
@@ -67,6 +54,16 @@ impl Client {
             }
             self.events.push(m);
         }
+    }
+
+    /// Waits for the session to end, which it does after `disconnect`.
+    fn finish(&mut self) {
+        self.to_session = None;
+        self.session
+            .take()
+            .unwrap()
+            .join()
+            .expect("the session panicked");
     }
 
     /// The next event named `name` (possibly one already received).
@@ -271,7 +268,7 @@ fn breakpoints_stack_variables_and_stepping() {
     assert_eq!(c.event("exited")["body"]["exitCode"], json!(0));
     c.event("terminated");
     c.request("disconnect", json!({}));
-    assert!(c.child.wait().unwrap().success());
+    c.finish();
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -300,7 +297,7 @@ fn stop_on_entry_errors_and_terminate() {
     );
     assert_eq!(c.event("exited")["body"]["exitCode"], json!(1));
     c.request("disconnect", json!({}));
-    assert!(c.child.wait().unwrap().success());
+    c.finish();
 
     // disconnecting while stopped ends the script
     let mut c = Client::start();

@@ -18,6 +18,9 @@ workspace = true
 rhue.workspace = true
 serde_json = "1"
 
+[lib]
+path = "src/lib.rs"
+
 [[bin]]
 name = "rhue-dap"
 path = "src/main.rs"

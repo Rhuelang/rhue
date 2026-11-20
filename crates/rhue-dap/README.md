@@ -37,6 +37,8 @@ What works:
 
 Hovers only read names and field paths (`player.stats.hp`), so hovering over something can never run code.
 
+It's a library too, if you'd rather run it inside something else than as its own process. `rhue_dap::serve(input, output)` is the whole adapter over any pair of streams, and `rhue_dap::run(messages, send)` is just the session, fed from a channel.
+
 ## License
 
 MIT or Apache-2.0, same as the rest of Rhue.
