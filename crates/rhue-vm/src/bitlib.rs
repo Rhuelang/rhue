@@ -1,6 +1,11 @@
 //! `bit32`, same as Luau: bitwise ops on numbers treated as unsigned 32-bit
 //! integers (truncated toward zero, then wrapped mod 2^32).
 
+#![expect(
+    clippy::cast_possible_truncation,
+    reason = "bit32 works on numbers truncated to 32 bits, that's what it's for"
+)]
+
 use std::rc::Rc;
 
 use smallvec::smallvec;

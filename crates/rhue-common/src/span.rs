@@ -1,6 +1,19 @@
 use std::fmt;
 use std::ops::Range;
 
+/// An offset or length in a source as a `u32`. The lexer refuses anything over
+/// 4 GiB, so anything measured in a source that got that far fits. Counts of
+/// things in a source (tokens, locals, instructions) fit for the same reason.
+#[inline]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "see above, sources are under 4 GiB"
+)]
+pub fn offset(n: usize) -> u32 {
+    debug_assert!(u32::try_from(n).is_ok(), "{n} doesn't fit a source offset");
+    n as u32
+}
+
 /// A half-open byte range `start..end` into some source.
 ///
 /// Spans are `u32` to keep tokens, AST nodes and per-instruction debug info
@@ -41,7 +54,7 @@ impl Span {
 
 impl From<Range<usize>> for Span {
     fn from(r: Range<usize>) -> Self {
-        Span::new(r.start as u32, r.end as u32)
+        Span::new(offset(r.start), offset(r.end))
     }
 }
 

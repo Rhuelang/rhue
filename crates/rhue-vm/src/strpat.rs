@@ -5,6 +5,11 @@
 //! multi-byte character comes out with U+FFFD in its place, same as
 //! `string.sub`.
 
+#![expect(
+    clippy::cast_possible_truncation,
+    reason = "string positions are script numbers, clamped to the string first"
+)]
+
 use std::cell::Cell;
 use std::rc::Rc;
 

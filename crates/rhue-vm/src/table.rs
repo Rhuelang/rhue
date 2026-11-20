@@ -143,6 +143,10 @@ fn frozen() -> Result<(), KeyError> {
 }
 
 /// `n` as an array index (1-based) if it's a positive integer.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "array indices are checked against the array's length first"
+)]
 fn array_index(v: Value) -> Option<usize> {
     match v {
         Value::Number(n) if n >= 1.0 && n.fract() == 0.0 && n <= (usize::MAX >> 1) as f64 => {
@@ -256,6 +260,10 @@ impl Table {
     /// `t[key]` for a string key, trying the hash slot in `hint` first and
     /// updating it after a miss (see `rhue_bytecode::InlineCache`).
     #[inline]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "array indices are checked against the array's length first"
+    )]
     pub fn get_str_hinted(&self, key: StrRef, hint: &Cell<u32>) -> Value {
         let k = Key::String(key);
         if let Some((found, v)) = self.hash.get_index(hint.get() as usize)
@@ -280,6 +288,10 @@ impl Table {
     /// With a metatable, a key whose value is nil counts as missing too
     /// (assigning it might have to go to `__newindex`).
     #[inline]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "array indices are checked against the array's length first"
+    )]
     pub fn set_existing_str(&mut self, key: StrRef, value: Value, hint: &Cell<u32>) -> bool {
         if self.frozen {
             // `set` reports it
@@ -393,6 +405,10 @@ impl Table {
 
     /// `t[at + i] = values[i]` for each value, raw and in order, like
     /// `table.move` does. The part that lands in the array is one copy.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "array indices are checked against the array's length first"
+    )]
     pub fn set_run(&mut self, at: i64, values: &[Value]) -> Result<(), KeyError> {
         if self.frozen {
             return frozen();
@@ -420,6 +436,10 @@ impl Table {
     }
 
     /// `t[from..from + len]` (raw), from the array part when it's there.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "array indices are checked against the array's length first"
+    )]
     pub fn get_run(&self, from: i64, len: usize) -> Vec<Value> {
         if from >= 1 && from as usize - 1 + len <= self.array.len() {
             return self.array[from as usize - 1..][..len].to_vec();

@@ -340,6 +340,10 @@ impl<T> Slab<T> {
     }
 
     /// Frees every live slot `keep` says no to, calling `on_free` with each.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "slab slots and type ids are capped well under u32"
+    )]
     fn sweep(&mut self, keep: &[bool], mut on_free: impl FnMut(T)) {
         for (i, slot) in self.slots.iter_mut().enumerate() {
             if slot.value.is_some() && !keep[i] {
@@ -530,6 +534,10 @@ impl Heap {
     }
 
     /// Adds a userdata type name and returns its id.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "slab slots and type ids are capped well under u32"
+    )]
     pub fn add_userdata_type(&mut self, name: &str) -> u32 {
         self.ud_type_names.push(Rc::from(name));
         (self.ud_type_names.len() - 1) as u32

@@ -54,7 +54,7 @@ pub fn lex(source: &str) -> Lexed {
             Err(kind) => out.errors.push(kind.to_diagnostic(span, source)),
         }
     }
-    let end = source.len() as u32;
+    let end = rhue_common::offset(source.len());
     out.tokens.push(Spanned {
         token: Token::Eof,
         span: Span::new(end, end),

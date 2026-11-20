@@ -369,6 +369,10 @@ fn unexpected(v: &Value, wanted: &str) -> Error {
 impl<'de> de::Deserializer<'de> for Deserializer<'_, '_> {
     type Error = Error;
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "whole numbers in i64's range, checked first"
+    )]
     fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
         match self.value {
             Value::Nil => visitor.visit_unit(),

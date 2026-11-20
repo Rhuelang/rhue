@@ -60,6 +60,10 @@ thread_local! {
 
 /// The document's tokens, encoded how LSP wants them: each relative to the one
 /// before, one line at a time (a long string gets split per line).
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "lengths in a source, capped at 4 GiB by the lexer"
+)]
 pub fn semantic_tokens(text: &str) -> SemanticTokens {
     let idx = LineIndex::new(text);
     let outline = rhue::outline(text);

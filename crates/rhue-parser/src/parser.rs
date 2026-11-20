@@ -118,8 +118,8 @@ fn directive(source: &str) -> Option<(TypeMode, Span)> {
             _ => continue,
         };
         let lead = line.len() - line.trim_start().len();
-        let s = (start + lead) as u32;
-        return Some((mode, Span::new(s, s + 3 + word.len() as u32)));
+        let s = rhue_common::offset(start + lead);
+        return Some((mode, Span::new(s, s + 3 + rhue_common::offset(word.len()))));
     }
     None
 }
@@ -1475,14 +1475,16 @@ impl<'s> Parser<'s> {
         for piece in rhue_lexer::interp::pieces(raw) {
             match piece {
                 rhue_lexer::interp::Piece::Text(r) => {
-                    let text =
-                        strings::decode_interp_text(&raw[r.clone()], span.start + r.start as u32)
-                            .map_err(Box::new)?;
+                    let text = strings::decode_interp_text(
+                        &raw[r.clone()],
+                        span.start + rhue_common::offset(r.start),
+                    )
+                    .map_err(Box::new)?;
                     parts.push(InterpPart::Text(Rc::from(text)));
                 }
                 rhue_lexer::interp::Piece::Hole(r) => {
-                    let start = span.start + r.start as u32;
-                    let hole = Span::new(start - 1, span.start + r.end as u32 + 1);
+                    let start = span.start + rhue_common::offset(r.start);
+                    let hole = Span::new(start - 1, span.start + rhue_common::offset(r.end) + 1);
                     if raw[r.clone()].starts_with('{') {
                         return Err(Box::new(
                             Diagnostic::error(

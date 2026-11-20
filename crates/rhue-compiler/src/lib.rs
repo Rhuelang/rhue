@@ -28,7 +28,7 @@ use std::rc::Rc;
 use rhue_bytecode::{
     ArithOp, Constant, Instr, MAX_TEMPLATE_SIZE, Op, Proto, TableTemplate, UpvalDesc,
 };
-use rhue_common::{Diagnostic, SourceFile, Span};
+use rhue_common::{Diagnostic, SourceFile, Span, offset};
 use rhue_parser::ast::*;
 
 pub use fold::{fold, fold_number};
@@ -155,7 +155,7 @@ struct FuncState {
 impl FuncState {
     /// Locals still in scope at the end of the function live until its end.
     fn finish_debug(&mut self) {
-        let end = self.proto.code.len() as u32;
+        let end = offset(self.proto.code.len());
         for l in &mut self.proto.locals {
             l.end_pc = l.end_pc.min(end);
         }
@@ -210,6 +210,18 @@ enum Want {
 
 /// Boxed so `Result`s stay small on the hot (successful) path.
 type CResult<T = ()> = Result<T, Box<Diagnostic>>;
+
+/// A register as an instruction operand. `alloc_reg` keeps every register
+/// under `MAX_REGISTERS` (250), so it always fits a byte.
+#[inline]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "alloc_reg keeps registers under 250"
+)]
+fn reg8(n: u32) -> u8 {
+    debug_assert!(n <= MAX_REGISTERS, "register {n} is past the limit");
+    n as u8
+}
 
 fn error(message: impl Into<String>, span: Span, label: impl Into<String>) -> Box<Diagnostic> {
     Box::new(Diagnostic::error(message, span).with_label(label))
@@ -283,9 +295,9 @@ impl Compiler<'_> {
             )
             .map_help("split up long expressions or reduce the number of locals in scope"));
         }
-        let reg = self.fs.free_reg as u8;
+        let reg = reg8(self.fs.free_reg);
         self.fs.free_reg += 1;
-        self.fs.proto.max_stack = self.fs.proto.max_stack.max(self.fs.free_reg as u8);
+        self.fs.proto.max_stack = self.fs.proto.max_stack.max(reg8(self.fs.free_reg));
         Ok(reg)
     }
 
@@ -371,7 +383,7 @@ impl Compiler<'_> {
         self.fs.proto.locals.push(rhue_bytecode::LocalVar {
             name: name.text.clone(),
             reg,
-            start_pc: self.fs.proto.code.len() as u32,
+            start_pc: offset(self.fs.proto.code.len()),
             end_pc: u32::MAX,
         });
     }
@@ -394,7 +406,7 @@ impl Compiler<'_> {
             .iter()
             .any(|&(id, r)| r as u32 >= base && self.res.is_captured(id));
         if captured {
-            self.emit(Instr::abc(Op::Close, base as u8, 0, 0), span);
+            self.emit(Instr::abc(Op::Close, reg8(base), 0, 0), span);
         }
     }
 
@@ -415,7 +427,7 @@ impl Compiler<'_> {
             self.emit(Instr::abc(Op::Close, reg, 0, 0), span);
         }
         self.fs.active.truncate(active);
-        let end = self.fs.proto.code.len() as u32;
+        let end = offset(self.fs.proto.code.len());
         for i in self.fs.active_debug.drain(active..) {
             self.fs.proto.locals[i].end_pc = end;
         }
@@ -554,11 +566,11 @@ impl Compiler<'_> {
     fn local(&mut self, names: &[Name], values: &[Expr]) -> CResult {
         let base = self.fs.free_reg;
         let span = names[0].span;
-        self.explist(values, Want::Exactly(names.len() as u32), span)?;
-        self.fs.free_reg = base + names.len() as u32;
+        self.explist(values, Want::Exactly(offset(names.len())), span)?;
+        self.fs.free_reg = base + offset(names.len());
         self.fs.locals_top = self.fs.free_reg;
         for (i, name) in names.iter().enumerate() {
-            self.declare_local(name, (base + i as u32) as u8);
+            self.declare_local(name, reg8(base + offset(i)));
         }
         Ok(())
     }
@@ -570,9 +582,9 @@ impl Compiler<'_> {
     /// whatever uses them reads up to `top`. Returns the first register.
     fn explist(&mut self, values: &[Expr], want: Want, span: Span) -> CResult<u8> {
         let base = self.fs.free_reg;
-        let n = values.len() as u32;
+        let n = offset(values.len());
         for (i, value) in values.iter().enumerate() {
-            let i = i as u32;
+            let i = offset(i);
             let is_last = i + 1 == n;
             let value = self.root(value);
             if is_last && value.kind.is_multi() {
@@ -609,7 +621,7 @@ impl Compiler<'_> {
             }
             self.fs.free_reg = base + w;
         }
-        Ok(base as u8)
+        Ok(reg8(base))
     }
 
     /// Compiles a call, method call or `...` at register `base` (has to be the
@@ -677,7 +689,7 @@ impl Compiler<'_> {
             if multi_tail {
                 Want::All
             } else {
-                Want::Exactly(args.len() as u32)
+                Want::Exactly(offset(args.len()))
             },
             span,
         )?;
@@ -712,7 +724,7 @@ impl Compiler<'_> {
             .filter(|i| matches!(i, TableItem::Positional(_)))
             .count();
         let keyed = items.len() - positional;
-        let hint = |n: usize| n.min(255) as u8;
+        let hint = |n: usize| u8::try_from(n).unwrap_or(u8::MAX);
         let new_table = self.fs.proto.code.len();
         self.emit(
             Instr::abc(Op::NewTable, base, hint(positional), hint(keyed)),
@@ -776,7 +788,7 @@ impl Compiler<'_> {
         if !template.is_empty()
             && let Ok(t) = u16::try_from(self.fs.proto.templates.len())
         {
-            let size = |n: usize| n.min(MAX_TEMPLATE_SIZE as usize) as u32;
+            let size = |n: usize| offset(n.min(MAX_TEMPLATE_SIZE as usize));
             self.fs.proto.templates.push(TableTemplate {
                 array: size(positional),
                 hash: size(keyed),
@@ -799,7 +811,15 @@ impl Compiler<'_> {
                     "too many positional values",
                 )
             })?;
-        self.emit(Instr::abc(Op::SetList, table, count as u8, 0), span);
+        // a batch is at most FLUSH values
+        let count = u8::try_from(count).map_err(|_| {
+            error(
+                "table constructor is too large",
+                span,
+                "too many values in one batch",
+            )
+        })?;
+        self.emit(Instr::abc(Op::SetList, table, count, 0), span);
         self.emit(Instr::asax(Op::Data, start), span);
         Ok(())
     }
@@ -812,13 +832,13 @@ impl Compiler<'_> {
         self.scoped(|c| {
             let base = c.explist(exprs, Want::Exactly(3), span)?;
             let var_base = base as u32 + 3;
-            let region = (names.len() as u32).max(3);
+            let region = offset(names.len()).max(3);
             for _ in 0..region {
                 c.alloc_reg(span)?;
             }
             c.fs.locals_top = c.fs.free_reg;
             for (i, name) in names.iter().enumerate() {
-                c.declare_local(name, (var_base + i as u32) as u8);
+                c.declare_local(name, reg8(var_base + offset(i)));
             }
             let nvars = u8::try_from(names.len())
                 .map_err(|_| error("too many loop variables", span, "the limit is 255"))?;
@@ -832,7 +852,7 @@ impl Compiler<'_> {
                 .iter()
                 .any(|n| matches!(c.res.binding(n), Binding::Local(id) if c.res.is_captured(id)));
             if captured {
-                c.emit(Instr::abc(Op::Close, var_base as u8, 0, 0), span);
+                c.emit(Instr::abc(Op::Close, reg8(var_base), 0, 0), span);
             }
             c.emit(Instr::abc(Op::TForCall, base, 0, nvars), span);
             let back = c.emit(Instr::asbx(Op::TForLoop, base, 0), span);
@@ -863,7 +883,7 @@ impl Compiler<'_> {
             if multi_tail {
                 Want::All
             } else {
-                Want::Exactly(args.len() as u32)
+                Want::Exactly(offset(args.len()))
             },
             span,
         )?;
@@ -943,10 +963,13 @@ impl Compiler<'_> {
         for target in targets {
             places.push(self.place(target, true)?);
         }
-        let vbase =
-            self.explist(values, Want::Exactly(targets.len() as u32), targets[0].span)? as u32;
+        let vbase = u32::from(self.explist(
+            values,
+            Want::Exactly(offset(targets.len())),
+            targets[0].span,
+        )?);
         for (i, (place, target)) in places.iter().zip(targets).enumerate() {
-            self.store_place(place, (vbase + i as u32) as u8, target.span)?;
+            self.store_place(place, reg8(vbase + offset(i)), target.span)?;
         }
         self.free_to(base);
         Ok(())
@@ -1045,8 +1068,11 @@ impl Compiler<'_> {
                 let v = self.operand(&value, None)?;
                 self.emit(Instr::abc(Op::Concat, tmp, tmp, v.reg), span);
             }
-            (_, Some(aop), ExprKind::Number(n)) if self.number_constant(*n, value.span)? <= 255 => {
-                let k = self.number_constant(*n, value.span)? as u8;
+            (_, Some(aop), ExprKind::Number(n))
+                if u8::try_from(self.number_constant(*n, value.span)?).is_ok() =>
+            {
+                let k = u8::try_from(self.number_constant(*n, value.span)?)
+                    .expect("checked by the guard");
                 self.emit(Instr::abc(Op::arith_rk(aop), tmp, tmp, k), span);
             }
             (_, Some(aop), _) => {
@@ -1103,7 +1129,7 @@ impl Compiler<'_> {
             if multi_tail {
                 Want::All
             } else {
-                Want::Exactly(values.len() as u32)
+                Want::Exactly(offset(values.len()))
             },
             span,
         )?;
@@ -1121,11 +1147,11 @@ impl Compiler<'_> {
             {
                 *last = Instr::abc(Op::TailCall, last.a(), last.b(), 0);
             }
-            self.emit(Instr::abc(Op::Return, base as u8, 0, 1), span);
+            self.emit(Instr::abc(Op::Return, reg8(base), 0, 1), span);
         } else {
             let count = u8::try_from(values.len())
                 .map_err(|_| error("too many return values", span, "the limit is 255"))?;
-            self.emit(Instr::abc(Op::Return, base as u8, count, 0), span);
+            self.emit(Instr::abc(Op::Return, reg8(base), count, 0), span);
         }
         self.free_to(base);
         Ok(())
@@ -1310,7 +1336,7 @@ impl Compiler<'_> {
                         "the limit is 255",
                     )
                 })?;
-                self.emit(Instr::abc(Op::Interp, target, base as u8, count), span);
+                self.emit(Instr::abc(Op::Interp, target, reg8(base), count), span);
                 self.free_to(base);
             }
             ExprKind::Name(name) => match self.var(name)? {
@@ -1487,7 +1513,12 @@ impl Compiler<'_> {
             && n <= i16::MAX as f64
             && !(n == 0.0 && n.is_sign_negative());
         if small {
-            self.emit(Instr::asbx(Op::LoadN, target, n as i16), span);
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "whole and in range, checked above"
+            )]
+            let n = n as i16;
+            self.emit(Instr::asbx(Op::LoadN, target, n), span);
         } else {
             let k = self.number_constant(n, span)?;
             self.emit(Instr::abx(Op::LoadK, target, k), span);
@@ -1711,7 +1742,7 @@ fn upvalue_index(
     res: &Resolution,
 ) -> Option<Result<u8, ()>> {
     if let Some(i) = fs.upvalue_ids.iter().position(|&u| u == id) {
-        return Some(Ok(i as u8));
+        return Some(u8::try_from(i).map_err(|_| ()));
     }
     let (parent, rest) = parents.split_last_mut()?;
     let (in_stack, index) = match parent.local_regs.get(&id) {
@@ -1730,5 +1761,5 @@ fn upvalue_index(
         index,
         name: res.locals[id as usize].name.clone(),
     });
-    Some(Ok((fs.upvalue_ids.len() - 1) as u8))
+    Some(u8::try_from(fs.upvalue_ids.len() - 1).map_err(|_| ()))
 }

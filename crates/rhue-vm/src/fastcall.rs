@@ -14,6 +14,11 @@
 //! results), and then the full native runs instead. So behaviour, every error
 //! message included, comes from one place, the full native in `stdlib`.
 
+#![expect(
+    clippy::cast_possible_truncation,
+    reason = "script numbers as indices, checked to be whole and in range first"
+)]
+
 use crate::heap::{Fast, FastFn, FnRef};
 use crate::meta::Event;
 use crate::{Value, Vm};

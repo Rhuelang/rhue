@@ -13,7 +13,7 @@
 
 use std::rc::Rc;
 
-use rhue_common::{Diagnostic, Span};
+use rhue_common::{Diagnostic, Span, offset};
 use rhue_parser::ast::*;
 
 pub type LocalId = u32;
@@ -115,7 +115,7 @@ impl Resolver {
     }
 
     fn declare(&mut self, name: &Name) {
-        let id = self.out.locals.len() as LocalId;
+        let id = offset(self.out.locals.len());
         let function = self.func().id;
         self.out.locals.push(LocalInfo {
             name: name.text.clone(),
@@ -299,7 +299,7 @@ impl Resolver {
             }
             StmtKind::Repeat { body, cond } => {
                 self.scoped(|r| {
-                    let first_local = r.out.locals.len() as LocalId;
+                    let first_local = offset(r.out.locals.len());
                     let ctx = r.in_loop(true, |r| r.block_body(body));
                     // the condition can see the body's locals
                     r.expr(cond);
@@ -377,7 +377,7 @@ impl Resolver {
                 }
             }
             StmtKind::Continue => {
-                let locals_now = self.out.locals.len() as LocalId;
+                let locals_now = offset(self.out.locals.len());
                 match self.func().loops.last_mut() {
                     None => self.errors.push(
                         Diagnostic::error("`continue` outside a loop", stmt.span)

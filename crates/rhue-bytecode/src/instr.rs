@@ -43,17 +43,17 @@ impl Instr {
     /// The opcode, or `None` if the instruction's corrupt.
     #[inline]
     pub fn op(self) -> Option<Op> {
-        Op::from_u8(self.0 as u8)
+        Op::from_u8(self.0.to_le_bytes()[0])
     }
 
     #[inline]
     pub const fn a(self) -> u8 {
-        (self.0 >> 8) as u8
+        self.0.to_le_bytes()[1]
     }
 
     #[inline]
     pub const fn b(self) -> u8 {
-        (self.0 >> 16) as u8
+        self.0.to_le_bytes()[2]
     }
 
     #[inline]
@@ -136,7 +136,7 @@ mod tests {
     fn every_opcode_roundtrips_through_u8() {
         for (i, op) in Op::ALL.iter().enumerate() {
             assert_eq!(*op as usize, i);
-            assert_eq!(Op::from_u8(i as u8), Some(*op));
+            assert_eq!(Op::from_u8(u8::try_from(i).unwrap()), Some(*op));
         }
     }
 }

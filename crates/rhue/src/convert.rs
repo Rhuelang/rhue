@@ -9,6 +9,11 @@
 //! parameter won't take a number, an integer parameter won't take `1.5`.
 //! `Option<T>` takes `nil` (and a missing argument).
 
+#![expect(
+    clippy::cast_possible_truncation,
+    reason = "converting script numbers into Rust's integer types follows `as` on purpose (saturating, like Luau)"
+)]
+
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;

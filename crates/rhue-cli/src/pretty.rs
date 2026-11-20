@@ -73,6 +73,10 @@ impl Printer<'_, '_> {
         }
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a whole, non-negative number checked first"
+    )]
     fn table(&mut self, t: &Table, depth: usize) -> String {
         // a `__tostring` says how it wants to look
         if let Ok(s) = self

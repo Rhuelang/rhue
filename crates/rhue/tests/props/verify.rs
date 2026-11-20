@@ -55,6 +55,10 @@ enum Damage {
     MaxStack(u8),
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "there are well under 256 opcodes"
+)]
 fn damage() -> impl Strategy<Value = Damage> {
     prop_oneof![
         (0..Op::ALL.len() as u8 + 2).prop_map(Damage::Opcode),

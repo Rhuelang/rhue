@@ -42,8 +42,8 @@ fn decode_escaped(body: &str, base: u32, interp: bool) -> Result<String, Diagnos
     let mut bytes: Vec<u8> = Vec::with_capacity(body.len());
     let src = body.as_bytes();
     let err = |at: usize, len: usize, msg: &str| {
-        let s = base + at as u32;
-        Diagnostic::error(msg.to_string(), Span::new(s, s + len as u32))
+        let s = base + rhue_common::offset(at);
+        Diagnostic::error(msg.to_string(), Span::new(s, s + rhue_common::offset(len)))
     };
 
     let mut i = 0;
@@ -121,10 +121,10 @@ fn decode_escaped(body: &str, base: u32, interp: bool) -> Result<String, Diagnos
                     i += 1;
                     n += 1;
                 }
-                if value > 255 {
+                let Ok(byte) = u8::try_from(value) else {
                     return Err(err(start, i - start, "decimal escape is larger than 255"));
-                }
-                bytes.push(value as u8);
+                };
+                bytes.push(byte);
             }
             _ => return Err(err(start, 2, "invalid escape sequence")),
         }
@@ -133,7 +133,7 @@ fn decode_escaped(body: &str, base: u32, interp: bool) -> Result<String, Diagnos
     String::from_utf8(bytes).map_err(|_| {
         Diagnostic::error(
             "string is not valid UTF-8",
-            Span::new(base - 1, base + body.len() as u32 + 1),
+            Span::new(base - 1, base + rhue_common::offset(body.len()) + 1),
         )
         .with_label("an escape in this string produces invalid UTF-8")
         .with_note("Rhue strings are UTF-8; use `\\u{...}` for non-ASCII characters")
@@ -145,11 +145,11 @@ mod tests {
     use super::*;
 
     fn d(raw: &str) -> String {
-        decode(raw, Span::new(0, raw.len() as u32)).unwrap()
+        decode(raw, Span::new(0, rhue_common::offset(raw.len()))).unwrap()
     }
 
     fn e(raw: &str) -> String {
-        decode(raw, Span::new(0, raw.len() as u32))
+        decode(raw, Span::new(0, rhue_common::offset(raw.len())))
             .unwrap_err()
             .message
     }

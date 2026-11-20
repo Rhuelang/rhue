@@ -403,6 +403,7 @@ fn the_memory_limit_stops_runaway_allocation() {
 }
 
 #[test]
+#[expect(clippy::cast_possible_truncation, reason = "test values are small")]
 fn natives_can_check_the_memory_limit() {
     let mut e = Engine::new();
     e.set_memory_limit(Some(1 << 20));

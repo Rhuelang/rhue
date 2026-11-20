@@ -6,6 +6,11 @@
 //! `strpat.rs`. Not here at all: `io` and the bits of `os` that touch the
 //! system.
 
+#![expect(
+    clippy::cast_possible_truncation,
+    reason = "script numbers become indices and counts all over here, each one range-checked or clamped first"
+)]
+
 use std::cell::Cell;
 use std::rc::Rc;
 

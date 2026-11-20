@@ -10,5 +10,5 @@ mod suggest;
 
 pub use diagnostic::{Diagnostic, Fix, Label, Severity};
 pub use source::SourceFile;
-pub use span::Span;
+pub use span::{Span, offset};
 pub use suggest::closest;

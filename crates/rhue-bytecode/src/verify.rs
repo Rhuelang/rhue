@@ -103,7 +103,7 @@ fn verify_one(proto: &Proto, is_main: bool) -> Result<(), VerifyError> {
     if proto.spans.len() != code.len() {
         return Err(fail(None, "needs one source span per instruction".into()));
     }
-    let text_len = proto.source.text.len() as u32;
+    let text_len = rhue_common::offset(proto.source.text.len());
     if let Some(pc) =
         (proto.spans.iter().chain([&proto.span])).position(|s| s.start > s.end || s.end > text_len)
     {
@@ -153,7 +153,7 @@ fn verify_one(proto: &Proto, is_main: bool) -> Result<(), VerifyError> {
     for (pc, &ins) in code.iter().enumerate() {
         let err = |message: String| fail(Some(pc), message);
         let Some(op) = ins.op() else {
-            return Err(err(format!("invalid opcode {:#04x}", ins.0 as u8)));
+            return Err(err(format!("invalid opcode {:#04x}", ins.0 & 0xff)));
         };
         let (a, b, c) = (ins.a() as usize, ins.b() as usize, ins.c() as usize);
         let reg = |r: usize, what: &str| {
@@ -191,10 +191,10 @@ fn verify_one(proto: &Proto, is_main: bool) -> Result<(), VerifyError> {
         };
         let mut jump = |by: i32| {
             let target = pc as i64 + 1 + by as i64;
-            if target < 0 || target >= code.len() as i64 {
-                return Err(err(format!("jump to {target} is outside the code")));
-            }
-            let target = target as usize;
+            let target = match usize::try_from(target) {
+                Ok(t) if t < code.len() => t,
+                _ => return Err(err(format!("jump to {target} is outside the code"))),
+            };
             if code[target].op() == Some(Op::Data) {
                 return Err(err(format!("jump to {target} lands on a DATA word")));
             }

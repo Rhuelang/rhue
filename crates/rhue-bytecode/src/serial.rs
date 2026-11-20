@@ -306,7 +306,8 @@ impl Reader<'_> {
         if n.saturating_mul(min_size as u64) > left {
             return Err(self.fail("length runs past the end of the chunk"));
         }
-        Ok(n as usize)
+        // no bigger than what's left, which is a usize
+        usize::try_from(n).map_err(|_| self.fail("length runs past the end of the chunk"))
     }
 
     fn str(&mut self) -> Result<Rc<str>, LoadError> {
@@ -334,7 +335,7 @@ impl Reader<'_> {
         if depth > MAX_NESTING {
             return Err(self.fail("functions nested too deeply"));
         }
-        let text_len = source.text.len() as u32;
+        let text_len = rhue_common::offset(source.text.len());
         let flags = self.u8()?;
         if flags & !0b111 != 0 {
             return Err(self.fail("unknown prototype flags"));

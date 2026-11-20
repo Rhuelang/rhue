@@ -194,7 +194,7 @@ impl Proto {
         let _ = writeln!(out, ")");
         for (pc, ins) in self.code.iter().enumerate() {
             let Some(op) = ins.op() else {
-                let _ = writeln!(out, "  {pc:>4}  <bad opcode {:#04x}>", ins.0 as u8);
+                let _ = writeln!(out, "  {pc:>4}  <bad opcode {:#04x}>", ins.0 & 0xff);
                 continue;
             };
             let (a, b, c) = (ins.a(), ins.b(), ins.c());

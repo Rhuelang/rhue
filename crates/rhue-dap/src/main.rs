@@ -347,6 +347,10 @@ impl Session {
 impl State {
     /// Requests that make sense whether the script's stopped or not. Returns
     /// `false` for ones it doesn't handle.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "frame and variable ids come from us and are small"
+    )]
     fn common(&mut self, msg: &Json, dbg: Option<&mut Debugger<'_, '_>>) -> bool {
         let out = self.out.clone();
         let args = &msg["arguments"];
@@ -442,6 +446,10 @@ impl State {
     }
 
     /// The requests that poke at a stopped script.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "frame and variable ids come from us and are small"
+    )]
     fn inspect(&mut self, msg: &Json, dbg: &mut Debugger<'_, '_>) {
         let out = self.out.clone();
         let args = &msg["arguments"];

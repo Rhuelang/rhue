@@ -720,6 +720,10 @@ impl Engine {
     /// The type the checker gives an expression, as text (`number`, `{ name:
     /// string }`...), checked strictly against the engine's globals, like a
     /// REPL's `:type` shows it. A type error in the expression is an `Err`.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "an offset into a short constant string"
+    )]
     pub fn expression_type(&mut self, expr: &str) -> Result<String, Error> {
         // bound to a local, whose recorded type is the expression's
         const PREFIX: &str = "--!strict\nlocal __type = (";

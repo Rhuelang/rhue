@@ -323,6 +323,10 @@ impl Walker<'_, '_> {
         }
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "offsets in a source, which the lexer caps at 4 GiB"
+    )]
     fn stmt(&mut self, s: &Stmt) {
         match &s.kind {
             StmtKind::Local {
@@ -528,6 +532,10 @@ impl Walker<'_, '_> {
             .truncate(self.generics.len() - f.generics.len());
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "offsets in a source, which the lexer caps at 4 GiB"
+    )]
     fn open_generics(&mut self, generics: &[GenericParam]) {
         for g in generics {
             let end = g.span.start + g.name.len() as u32;
@@ -651,6 +659,10 @@ impl Walker<'_, '_> {
         }
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "offsets in a source, which the lexer caps at 4 GiB"
+    )]
     fn ty(&mut self, t: &TypeExpr) {
         match &t.kind {
             TypeKind::Name { name, args } => {

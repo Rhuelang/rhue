@@ -56,6 +56,10 @@ pub fn floor(x: f64) -> f64 {
     // from 2^52 up every double is already an integer (and the cast below would
     // saturate), so only smaller ones need work
     if x.abs() < 4_503_599_627_370_496.0 {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "under 2^52, checked just above"
+        )]
         let t = x as i64 as f64;
         // truncation rounds toward zero, so negative non-integers need one
         // less. the only zero result from a negative input is floor(-0.0) =

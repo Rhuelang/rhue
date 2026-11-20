@@ -235,6 +235,10 @@ impl DebugCtx<'_> {
 
     /// The locals in scope in frame `level`, in declaration order (a local
     /// shadowed by a later one with the same name gets left out).
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "pcs stay far under u32, code is capped"
+    )]
     pub fn locals(&self, level: usize) -> Vec<(Rc<str>, Value)> {
         let Some(f) = self.frames().nth(level) else {
             return Vec::new();

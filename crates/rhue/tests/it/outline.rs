@@ -236,6 +236,7 @@ return M
 }
 
 #[test]
+#[expect(clippy::cast_possible_truncation, reason = "test offsets are small")]
 fn outlines_track_module_fields() {
     let src = "local lib = require('lib')
 local M = { a = 1 }

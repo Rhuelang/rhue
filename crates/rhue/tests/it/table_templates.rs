@@ -169,6 +169,7 @@ fn templates_survive_saved_chunks() {
 }
 
 #[test]
+#[expect(clippy::cast_possible_truncation, reason = "test values are small")]
 fn the_verifier_checks_templates() {
     let mut e = Engine::new();
     let good = e

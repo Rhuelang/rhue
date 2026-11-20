@@ -146,6 +146,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(clippy::cast_possible_truncation, reason = "test indices are small")]
     fn growing_past_the_small_limit_keeps_order_and_positions() {
         let mut h = HashPart::default();
         for i in 0..20u64 {

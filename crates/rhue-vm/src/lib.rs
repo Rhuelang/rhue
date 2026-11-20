@@ -614,6 +614,10 @@ impl Meter {
     /// Takes up to a chunk of steps out at once, for a loop that keeps its own
     /// count (give back what it doesn't use with [`give_back`](Self::give_back)).
     /// Fails like [`tick`](Self::tick) when there's nothing left.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "stack slots and pcs stay far under u32 (the stack and code are capped), opcodes are a byte"
+    )]
     pub fn take_chunk(&self) -> Result<u32, String> {
         if self.chunk.get() == 0 {
             self.next_chunk()?;
@@ -1553,6 +1557,10 @@ impl Vm {
     /// closure.
     #[inline]
     #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "stack slots and pcs stay far under u32 (the stack and code are capped), opcodes are a byte"
+    )]
     fn enter_closure(
         &mut self,
         callee: FnRef,
@@ -1624,6 +1632,10 @@ impl Vm {
         }
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "stack slots and pcs stay far under u32 (the stack and code are capped), opcodes are a byte"
+    )]
     fn find_upvalue(&mut self, index: usize) -> UpvalRef {
         match self.open_upvalues.binary_search_by_key(&index, |&(i, _)| i) {
             Ok(at) => self.open_upvalues[at].1.clone(),
@@ -2216,6 +2228,10 @@ impl Vm {
     /// result slot, still protected if this frame was), so tail recursion runs
     /// in constant stack. Anything else is a normal call whose results the
     /// `RETURN` after it passes on.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "stack slots and pcs stay far under u32 (the stack and code are capped), opcodes are a byte"
+    )]
     fn tail_call(
         &mut self,
         f: &mut Frame,
@@ -2257,6 +2273,10 @@ impl Vm {
 
     /// `pcall(g, ...)`, calls `g` so errors come back as `false, value` instead
     /// of propagating.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "stack slots and pcs stay far under u32 (the stack and code are capped), opcodes are a byte"
+    )]
     fn pcall(
         &mut self,
         f: &mut Frame,
@@ -2396,7 +2416,7 @@ impl Vm {
                 };
                 pc += 1;
                 let Some(op) = ins.op() else {
-                    fail!(at, "invalid opcode {:#04x}", ins.0 as u8);
+                    fail!(at, "invalid opcode {:#04x}", ins.0 & 0xff);
                 };
                 // operands index a fixed-size window over the frame's
                 // registers. a `u8` (plus a small offset) always fits, so the
@@ -2506,7 +2526,7 @@ impl Vm {
                             Some((&key, &v)) if key == name => v,
                             _ => match self.globals.get_full(&name) {
                                 Some((i, _, &v)) => {
-                                    hint.set(i as u32);
+                                    hint.set(u32::try_from(i).unwrap_or(u32::MAX));
                                     v
                                 }
                                 None => Value::Nil,
@@ -3050,6 +3070,10 @@ impl Vm {
 }
 
 #[inline]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "stack slots and pcs stay far under u32 (the stack and code are capped), opcodes are a byte"
+)]
 fn offset(pc: usize, by: i32) -> usize {
     (pc as i64 + by as i64) as usize
 }
@@ -3076,6 +3100,10 @@ fn arith_values(op: ArithOp, l: Value, r: Value) -> Result<Value, String> {
 /// Arithmetic with vectors, the way Luau defines it: componentwise between two
 /// vectors (`+ - * / //`), and scaling by a number (`v * n`, `n * v`, `v / n`,
 /// `n / v`, `v // n`). Done in `f32`.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "stack slots and pcs stay far under u32 (the stack and code are capped), opcodes are a byte"
+)]
 fn vector_arith(op: ArithOp, l: Value, r: Value) -> Result<Value, String> {
     let apply = |x: f32, y: f32| -> f32 {
         match op {

@@ -26,10 +26,14 @@ impl SourceFile {
     pub fn line(&self, offset: u32) -> u32 {
         let starts = self.line_starts.get_or_init(|| {
             let mut v = vec![0u32];
-            v.extend(self.text.match_indices('\n').map(|(i, _)| i as u32 + 1));
+            v.extend(
+                self.text
+                    .match_indices('\n')
+                    .map(|(i, _)| crate::offset(i) + 1),
+            );
             v
         });
-        starts.partition_point(|&s| s <= offset) as u32
+        crate::offset(starts.partition_point(|&s| s <= offset))
     }
 
     /// 1-based line and column (in characters) of a byte offset.

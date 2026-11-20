@@ -3,6 +3,11 @@
 //! `debug.info`/`debug.traceback`, 2 is its caller and so on. Level 0 is the
 //! native itself.
 
+#![expect(
+    clippy::cast_possible_truncation,
+    reason = "stack levels are script numbers, checked against the stack first"
+)]
+
 use std::rc::Rc;
 
 use smallvec::{SmallVec, smallvec};

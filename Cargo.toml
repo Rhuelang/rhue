@@ -37,5 +37,10 @@ proc-macro2 = "1"
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
+[workspace.lints.clippy]
+# an `as` that drops bits is fine when the value can't be that big, say why with
+# an #[expect]. otherwise use try_from and handle it
+cast_possible_truncation = "warn"
+
 [profile.release]
 debug = 1

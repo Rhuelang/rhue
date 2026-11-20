@@ -3,6 +3,11 @@
 //! environment, so it's safe in a sandbox. Dates are UTC (there's no time zone
 //! database), and `os.clock` counts seconds since the VM was made.
 
+#![expect(
+    clippy::cast_possible_truncation,
+    reason = "dates and utf8 positions are script numbers turned into indices, range-checked first"
+)]
+
 use std::rc::Rc;
 
 use smallvec::smallvec;

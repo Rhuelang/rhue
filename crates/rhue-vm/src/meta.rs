@@ -196,6 +196,7 @@ impl Vm {
     /// `f`, the caller waits in `frames`), which delivers its first result to
     /// `dest` when it returns. Anything else (a native, a callable table) runs
     /// now and its result gets delivered right away.
+    #[expect(clippy::cast_possible_truncation, reason = "registers are a byte")]
     pub(crate) fn meta_call(
         &mut self,
         f: &mut Frame,

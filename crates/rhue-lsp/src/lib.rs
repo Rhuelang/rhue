@@ -44,6 +44,10 @@ impl<'a> LineIndex<'a> {
         LineIndex { text, starts }
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "positions in a source, capped at 4 GiB by the lexer"
+    )]
     pub fn position(&self, offset: usize) -> Position {
         let offset = offset.min(self.text.len());
         let line = self.starts.partition_point(|&s| s <= offset) - 1;
@@ -54,6 +58,10 @@ impl<'a> LineIndex<'a> {
         Position::new(line as u32, col as u32)
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "positions in a source, capped at 4 GiB by the lexer"
+    )]
     pub fn offset(&self, pos: Position) -> usize {
         let Some(&start) = self.starts.get(pos.line as usize) else {
             return self.text.len();
@@ -502,6 +510,10 @@ fn kind_of(ty: &str) -> CompletionItemKind {
 
 /// What can go at the cursor: members after `expr.` / `expr:`, otherwise locals
 /// declared above, globals and keywords.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "positions in a source, capped at 4 GiB by the lexer"
+)]
 pub fn completion(docs: &Docs, uri: &Url, text: &str, pos: Position) -> Vec<CompletionItem> {
     let idx = LineIndex::new(text);
     let offset = idx.offset(pos);
@@ -641,6 +653,10 @@ fn is_identifier(name: &str) -> bool {
 /// and fields (other files might use them), for names that aren't identifiers,
 /// and when the new name would change what some name points at (shadowing, or
 /// getting shadowed by, another variable).
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "positions in a source, capped at 4 GiB by the lexer"
+)]
 pub fn rename(
     docs: &Docs,
     uri: &Url,
@@ -856,6 +872,10 @@ fn parameter_names(text: &str, callee: &str) -> Option<Vec<String>> {
 }
 
 /// The signature of the call the cursor's in, with the argument it's at.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "positions in a source, capped at 4 GiB by the lexer"
+)]
 pub fn signature_help(docs: &Docs, uri: &Url, text: &str, pos: Position) -> Option<SignatureHelp> {
     let idx = LineIndex::new(text);
     let offset = idx.offset(pos);

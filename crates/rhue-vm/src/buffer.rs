@@ -4,6 +4,11 @@
 //! Rhue strings are UTF-8, so `tostring` and `readstring` refuse bytes that
 //! aren't.
 
+#![expect(
+    clippy::cast_possible_truncation,
+    reason = "offsets and values are script numbers turned into bytes and indices, each range-checked or wrapped on purpose like Luau's"
+)]
+
 use std::rc::Rc;
 
 use smallvec::smallvec;

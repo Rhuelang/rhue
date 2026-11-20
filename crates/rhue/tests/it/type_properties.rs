@@ -84,6 +84,7 @@ fn access_follows_variance() {
 
 #[cfg(feature = "tooling")]
 #[test]
+#[expect(clippy::cast_possible_truncation, reason = "test offsets are small")]
 fn access_shows_in_types() {
     let mut e = Engine::new();
     let src = "--!strict\nlocal acct: { read id: number, write audit: string } = { id = 1, audit = '' }\n";
@@ -148,6 +149,7 @@ fn flow_locals_are_typed_inside_loops() {
 
 #[cfg(feature = "tooling")]
 #[test]
+#[expect(clippy::cast_possible_truncation, reason = "test offsets are small")]
 fn silent_passes_leave_no_trace() {
     // one error, reported once (not once per pass), and hover types aren't
     // duplicated

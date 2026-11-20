@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use rhue::{Engine, Function, Value};
 
+#[expect(clippy::cast_possible_truncation, reason = "test values are small")]
 fn engine() -> Engine {
     let mut e = Engine::new();
     e.open_tasks();

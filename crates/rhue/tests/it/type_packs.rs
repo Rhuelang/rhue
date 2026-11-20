@@ -35,6 +35,7 @@ fn fails(src: &str, needle: &str) {
 }
 
 #[cfg(feature = "tooling")]
+#[expect(clippy::cast_possible_truncation, reason = "test offsets are small")]
 fn type_of(src: &str, name: &str) -> String {
     let mut e = Engine::new();
     let a = e.analyze(src, None);

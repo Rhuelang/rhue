@@ -2,6 +2,11 @@
 //! - * / //`, unary `-`) and reading `v.x` live in the interpreter. Components
 //! are 32-bit floats, so results get rounded to `f32`.
 
+#![expect(
+    clippy::cast_possible_truncation,
+    reason = "vectors are f32, narrowing script numbers into them is the point"
+)]
+
 use std::rc::Rc;
 
 use smallvec::smallvec;
