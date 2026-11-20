@@ -9,6 +9,11 @@ updates:
       # of a 0.x crate can break things, CI catches those
       minor:
         update-types: [minor, patch]
+    ignore:
+      # 18 and up need a newer Rust than our 1.88 (File::lock, cfg_select!).
+      # drop this when the MSRV goes up
+      - dependency-name: rustyline
+        versions: [">=18"]
 
   - package-ecosystem: cargo
     directory: /bench/compare
