@@ -655,7 +655,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "rhue"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "proptest",
  "regex",
@@ -674,14 +674,14 @@ dependencies = [
 
 [[package]]
 name = "rhue-bytecode"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "rhue-common",
 ]
 
 [[package]]
 name = "rhue-cli"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "rhue",
  "rhue-fmt",
@@ -690,14 +690,14 @@ dependencies = [
 
 [[package]]
 name = "rhue-common"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "ariadne",
 ]
 
 [[package]]
 name = "rhue-compiler"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "rhue-bytecode",
  "rhue-common",
@@ -707,7 +707,7 @@ dependencies = [
 
 [[package]]
 name = "rhue-dap"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "rhue",
  "serde_json",
@@ -715,7 +715,7 @@ dependencies = [
 
 [[package]]
 name = "rhue-derive"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -724,7 +724,7 @@ dependencies = [
 
 [[package]]
 name = "rhue-fmt"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "proptest",
  "rhue-common",
@@ -734,7 +734,7 @@ dependencies = [
 
 [[package]]
 name = "rhue-lexer"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "logos",
  "rhue-common",
@@ -742,7 +742,7 @@ dependencies = [
 
 [[package]]
 name = "rhue-lsp"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "lsp-server",
  "lsp-types",
@@ -756,7 +756,7 @@ dependencies = [
 
 [[package]]
 name = "rhue-parser"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "rhue-common",
  "rhue-lexer",
@@ -765,7 +765,7 @@ dependencies = [
 
 [[package]]
 name = "rhue-types"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "foldhash",
  "rhue-common",
@@ -776,7 +776,7 @@ dependencies = [
 
 [[package]]
 name = "rhue-vm"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "foldhash",
  "hashbrown",

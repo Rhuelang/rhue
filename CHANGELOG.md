@@ -4,6 +4,17 @@ Everything that changed in Rhue. It got built in milestones before the first rel
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow [Semantic Versioning](https://semver.org/). Only the `rhue` crate's API is meant to be stable, the other crates are its insides.
 
+## [2.1.0] - 2026-11-19
+
+Fixes from reviewing 2.0.0. It's a minor and not a patch since `is_module_name` is new API.
+
+- Fix: An interrupt reaches a loop that keeps calling pattern functions now. Each call used to hand the VM a fresh slice, so it never ran dry and never looked at the flag.
+- Fix: `string.rep("", 1e12)` returns `""` instead of taking the host down trying to build it.
+- Fix: `table.concat` with a huge `j` is an error `pcall` catches again, instead of using up the instruction limit before it even looks at the table.
+- Feat: `rhue::is_module_name`. `module_paths` doesn't check names, so `require("/etc/passwd")` could reach outside the scripts folder. The CLI, test runner, language server, debugger and hot reload example all check first now.
+- Fix: The README says which parts of the standard library count against the instruction limit, instead of all of it.
+- Fix: CI tests `rhue` with its default features too.
+
 ## [2.0.0] - 2026-11-19
 
 ### Breaking

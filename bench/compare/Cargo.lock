@@ -546,7 +546,7 @@ dependencies = [
 
 [[package]]
 name = "rhue"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "rhue-bytecode",
  "rhue-common",
@@ -560,14 +560,14 @@ dependencies = [
 
 [[package]]
 name = "rhue-bytecode"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "rhue-common",
 ]
 
 [[package]]
 name = "rhue-common"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "ariadne",
 ]
@@ -583,7 +583,7 @@ dependencies = [
 
 [[package]]
 name = "rhue-compiler"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "rhue-bytecode",
  "rhue-common",
@@ -593,7 +593,7 @@ dependencies = [
 
 [[package]]
 name = "rhue-derive"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -602,7 +602,7 @@ dependencies = [
 
 [[package]]
 name = "rhue-lexer"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "logos",
  "rhue-common",
@@ -610,7 +610,7 @@ dependencies = [
 
 [[package]]
 name = "rhue-parser"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "rhue-common",
  "rhue-lexer",
@@ -619,7 +619,7 @@ dependencies = [
 
 [[package]]
 name = "rhue-types"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "foldhash",
  "rhue-common",
@@ -630,7 +630,7 @@ dependencies = [
 
 [[package]]
 name = "rhue-vm"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "foldhash",
  "hashbrown",

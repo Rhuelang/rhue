@@ -259,7 +259,7 @@ engine.eval(r#"--!strict
 
 ```bash
 $ rhue
-Rhue 2.0.0. Globals persist between entries; :help for commands, Ctrl-D to exit.
+Rhue 2.1.0. Globals persist between entries; :help for commands, Ctrl-D to exit.
 > local function fib(n)
     if n < 2 then return n end
     return fib(n - 1) + fib(n - 2)
@@ -642,7 +642,7 @@ Measured at M23. Luau's had years of tuning and it shows, though plain arithmeti
 ## 🛠️ Development
 
 ```bash
-cargo test             # 578 tests, 583 with --all-features
+cargo test             # 582 tests, 587 with --all-features
 cargo clippy --all-targets
 cargo run --release -p rhue --example bench
 cargo run -p rhue-cli  # REPL
