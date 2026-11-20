@@ -60,6 +60,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Format
         run: cargo fmt --all --check
+      # CHANGELOG.md and the README's benchmark table come from other files
+      - name: Generated files
+        run: cargo xtask gen --check
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - name: Docs
@@ -80,6 +83,36 @@ jobs:
   # callgrind instruction counts for the base commit and this one, on the same
   # runner since counts change between machines. fails if a benchmark got more
   # than 2% worse
+  # no clock on plain wasm, this catches anything that'd panic there at build
+  # time (and anything that doesn't build at all)
+  wasm:
+    name: WebAssembly
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Build rhue for wasm32
+        run: cargo build -p rhue --all-features --locked --target wasm32-unknown-unknown
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
+        with:
+          tool: cargo-llvm-cov
+      # just the numbers in the log for now, per crate
+      - name: Coverage
+        run: cargo llvm-cov --workspace --all-features --locked --summary-only
+
   bench:
     name: Benchmarks
     runs-on: ubuntu-latest
