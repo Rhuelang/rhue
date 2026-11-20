@@ -376,8 +376,9 @@ pub(crate) fn install(vm: &mut Vm) {
         let f = vm.special_function(name, special, Value::Nil);
         let _ = table.set(key, f);
     }
-    let t = Value::Table(vm.heap_mut().alloc_table(table));
-    vm.set_global("coroutine", t);
+    let t = vm.heap_mut().alloc_table(table);
+    vm.add_library(t);
+    vm.set_global("coroutine", Value::Table(t));
 }
 
 fn thread_arg(args: &[Value], fname: &str) -> Result<ThreadRef, NativeError> {

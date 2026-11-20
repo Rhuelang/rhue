@@ -96,6 +96,10 @@
 //! let b = engine.create_environment();
 //! engine.eval_in(&a, "secret = 42").unwrap();
 //! assert_eq!(engine.eval_in(&b, "return secret").unwrap(), [rhue::Value::Nil]);
+//!
+//! // but they share `math` and `string`, so lock those down
+//! engine.freeze_libraries();
+//! assert!(engine.eval_in(&a, "math.floor = nil").is_err());
 //! ```
 //!
 //! ## Modules and compiled chunks
@@ -539,6 +543,16 @@ impl Engine {
     /// refused before they're built. `None` means no limit.
     pub fn set_memory_limit(&mut self, limit: Option<usize>) {
         self.vm.set_memory_limit(limit);
+    }
+
+    /// Freezes the library tables (`math`, `string`, `table`, `task` and the
+    /// rest) and the metatable strings share. Environments keep their own
+    /// globals but share these, so without this one script can do
+    /// `math.floor = nil` and break it for everyone. Libraries opened after
+    /// this get frozen too, there's no undo, and tables you added yourself are
+    /// left alone (`table.freeze` them if you want).
+    pub fn freeze_libraries(&mut self) {
+        self.vm.freeze_libraries();
     }
 
     /// How much memory scripts are holding right now, as the collector counts

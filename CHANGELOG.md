@@ -6,6 +6,10 @@ This file is generated from [`changelog/`](changelog/) by `cargo xtask gen`, edi
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow [Semantic Versioning](https://semver.org/). Only the `rhue` crate's API is meant to be stable, the other crates are its insides.
 
+## [Unreleased]
+
+- Feat: `Engine::freeze_libraries` makes `math`, `string`, `table` and the other library tables read-only, along with the metatable strings share. Without it a script in one environment could replace `math.floor` or `string.format` for every other environment and the host. It's opt-in until 3.0.
+
 ## [2.2.0] - 2026-11-20
 
 The rest of the tech debt audit. It's a minor since `Engine::set_clock` and the two new libraries are new API.

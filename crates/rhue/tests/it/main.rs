@@ -21,6 +21,7 @@ mod native_budget;
 #[cfg(feature = "tooling")]
 mod outline;
 mod patterns_and_modules;
+mod sandbox;
 mod statements;
 mod stdlib;
 mod table_templates;
