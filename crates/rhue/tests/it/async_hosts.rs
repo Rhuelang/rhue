@@ -15,6 +15,13 @@ fn engine() -> Engine {
     let mut e = Engine::new();
     e.open_tasks();
     e.set_sleep(tokio::time::sleep);
+    // read tokio's clock too, std's keeps going while tokio's is paused and
+    // the waits come out a millisecond short when the machine is busy
+    let epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap();
+    let start = tokio::time::Instant::now();
+    e.set_clock(move || epoch + start.elapsed());
     e.register_async("wait_ms", |ms: f64| async move {
         tokio::time::sleep(Duration::from_millis(ms as u64)).await;
         ms
