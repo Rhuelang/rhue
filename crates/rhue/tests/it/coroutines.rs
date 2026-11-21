@@ -615,3 +615,62 @@ fn coroutine_library_types() {
         ]
     );
 }
+
+// ─ Yield Errors That Say What to Do ──────────────────────────────────────────
+
+#[test]
+fn a_yield_error_names_the_native_in_the_way() {
+    let mut e = Engine::new();
+    e.register("pause", || -> Result<(), ScriptError> {
+        Err(ScriptError::yield_with(vec![]))
+    });
+    let cases = [
+        // coroutine.yield inside a callback
+        (
+            "table.sort({3, 1, 2}, function(a, b) coroutine.yield() return a < b end)",
+            "sort",
+        ),
+        (
+            "string.gsub('a', 'a', function() coroutine.yield() end)",
+            "gsub",
+        ),
+        // a native that waits, called from inside a callback
+        (
+            "table.sort({2, 1}, function(a, b) pause() return a < b end)",
+            "sort",
+        ),
+        // a script function in between doesn't hide it
+        (
+            "local function inner() coroutine.yield() end
+             table.sort({2, 1}, function(a, b) inner() return a < b end)",
+            "sort",
+        ),
+    ];
+    for (body, native) in cases {
+        let src = format!(
+            "local co = coroutine.create(function() {body} end)
+             local ok, err = coroutine.resume(co)
+             return ok, err"
+        );
+        let got = e.eval(&src).unwrap();
+        assert_eq!(got[0], Value::Bool(false), "{body}");
+        let err = got[1].to_string();
+        assert!(err.contains("C-call boundary"), "{err}");
+        assert!(
+            err.contains(&format!("'{native}' called this")),
+            "{body}: {err}"
+        );
+        assert!(err.contains("before or after"), "{err}");
+    }
+}
+
+#[test]
+fn yielding_outside_a_coroutine_says_what_to_do() {
+    let mut e = Engine::new();
+    let err = fails(&mut e, "coroutine.yield(1)");
+    assert!(
+        err.contains("attempt to yield from outside a coroutine"),
+        "{err}"
+    );
+    assert!(err.contains("coroutine.wrap"), "{err}");
+}

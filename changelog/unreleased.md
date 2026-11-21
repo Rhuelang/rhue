@@ -1,0 +1,1 @@
+- Fix: The "attempt to yield across a C-call boundary" error names the native in the way (`table.sort`'s comparator says 'sort') and says to wait before or after calling it. Yielding outside a coroutine says what to use instead.

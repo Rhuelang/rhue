@@ -6,6 +6,10 @@ This file is generated from [`changelog/`](changelog/) by `cargo xtask gen`, edi
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow [Semantic Versioning](https://semver.org/). Only the `rhue` crate's API is meant to be stable, the other crates are its insides.
 
+## [Unreleased]
+
+- Fix: The "attempt to yield across a C-call boundary" error names the native in the way (`table.sort`'s comparator says 'sort') and says to wait before or after calling it. Yielding outside a coroutine says what to use instead.
+
 ## [2.2.0] - 2026-11-20
 
 The rest of the tech debt audit. It's a minor since `Engine::set_clock` and the two new libraries are new API.
