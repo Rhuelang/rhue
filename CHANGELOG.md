@@ -6,6 +6,10 @@ This file is generated from [`changelog/`](changelog/) by `cargo xtask gen`, edi
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow [Semantic Versioning](https://semver.org/). Only the `rhue` crate's API is meant to be stable, the other crates are its insides.
 
+## [Unreleased]
+
+- Feat: Hosts can hang their own data on threads (`Context::set_thread_data`) and environments (`Environment::set_data`), and a native can find the environment its caller runs in with `Context::caller_environment`. `Thread` works as a map key now.
+
 ## [2.2.0] - 2026-11-20
 
 The rest of the tech debt audit. It's a minor since `Engine::set_clock` and the two new libraries are new API.

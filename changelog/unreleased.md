@@ -1,0 +1,1 @@
+- Feat: Hosts can hang their own data on threads (`Context::set_thread_data`) and environments (`Environment::set_data`), and a native can find the environment its caller runs in with `Context::caller_environment`. `Thread` works as a map key now.

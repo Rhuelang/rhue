@@ -134,6 +134,29 @@ impl<'a> Context<'a> {
         self.vm.thread_status(co.r).name()
     }
 
+    /// Hangs `data` on a thread, replacing what was there, so a native can
+    /// tell which script is calling (see [`thread_data`](Self::thread_data)).
+    /// It goes away with the thread. Don't put the thread's own handle in it,
+    /// that keeps the thread alive.
+    pub fn set_thread_data<T: std::any::Any>(&mut self, co: &Thread, data: T) {
+        self.check_owner(&co.pin);
+        self.vm.set_thread_data(co.r, Some(Rc::new(data)));
+    }
+
+    /// What [`set_thread_data`](Self::set_thread_data) hung on a thread, if
+    /// it's a `T`.
+    pub fn thread_data<T: std::any::Any>(&self, co: &Thread) -> Option<Rc<T>> {
+        self.vm.thread_data(co.r)?.downcast().ok()
+    }
+
+    /// The environment of the script function that called this native, if it
+    /// runs in one (see [`Engine::create_environment`](crate::Engine::create_environment)).
+    /// `None` on the engine's own globals, or outside a native.
+    pub fn caller_environment(&mut self) -> Option<crate::Environment> {
+        let table = self.vm.caller_env()?;
+        crate::environment::find(self, table)
+    }
+
     /// [`Engine::reload_module`](crate::Engine::reload_module) from inside a
     /// native or a debug hook, so a host can reload a module without waiting
     /// for the script to finish. The new module code runs nested here.

@@ -58,6 +58,30 @@ impl Vm {
         self.current != self.main_thread && self.heap.thread(self.current).by_host
     }
 
+    /// Hangs a value on thread `t` for the host (which script it's running,
+    /// say), replacing what was there. It goes away with the thread. A value
+    /// that pins the thread itself keeps it alive.
+    pub fn set_thread_data(&mut self, t: ThreadRef, data: Option<Rc<dyn std::any::Any>>) {
+        self.heap.thread_mut(t).host = data;
+    }
+
+    /// What [`set_thread_data`](Self::set_thread_data) hung on thread `t`.
+    pub fn thread_data(&self, t: ThreadRef) -> Option<Rc<dyn std::any::Any>> {
+        self.heap.thread(t).host.clone()
+    }
+
+    /// The environment table of the innermost script function that's
+    /// running, which inside a native is the function that called it. `None`
+    /// for one on the VM's own globals, or with no script running.
+    pub fn caller_env(&self) -> Option<crate::TableRef> {
+        let frame = self
+            .frames
+            .iter()
+            .rev()
+            .find(|f| !Rc::ptr_eq(&f.cl, &self.placeholder))?;
+        frame.cl.env
+    }
+
     /// `coroutine.status`, from the running thread's point of view.
     pub fn thread_status(&self, t: ThreadRef) -> CoStatus {
         self.heap.thread(t).status()

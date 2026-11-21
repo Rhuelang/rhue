@@ -173,6 +173,22 @@ engine.eval_in(&plugin_b, "name = 'B'")?;     // its own `name`; `greet` is nil 
 engine.eval_in(&plugin_a, "greet()")?;         // hi from A
 ```
 
+A native can tell who's calling it. `env.set_data(...)` hangs anything on an environment and `cx.caller_environment()` finds the one the calling function runs in (the one it was defined in, wherever it's called from). Threads get the same with `cx.set_thread_data` and `cx.thread_data`, and a `Thread` works as a map key if you'd rather keep your own table.
+
+```rust
+plugin_a.set_data(Permissions::Trusted);
+engine.register("delete_save", |cx: &mut Context<'_>| -> Result<(), ScriptError> {
+    let trusted = cx
+        .caller_environment()
+        .and_then(|env| env.data::<Permissions>())
+        .is_some_and(|p| *p == Permissions::Trusted);
+    if !trusted {
+        return Err(ScriptError::new("not allowed"));
+    }
+    Ok(())
+});
+```
+
 ## serde
 
 With the `serde` feature on, `rhue::serde::to_value` and `from_value` convert anything `Serialize`/`Deserialize`, mapped about the way JSON would.
