@@ -12,7 +12,9 @@
 //! pops that frame, drops the resume arguments where the `yield` call's results
 //! go, and keeps going. Yielding from inside a native's callback (like a
 //! `table.sort` comparator) raises "attempt to yield across a C-call boundary".
-//! Metamethods run in the same dispatch loop, so they can yield.
+//! Metamethods run in the same dispatch loop, so they can yield. So can a
+//! native right inside `pcall` or `xpcall`, since those call it from the
+//! dispatch loop too and the [`Parked`] record says to add the `true`.
 
 use std::rc::Rc;
 
@@ -25,6 +27,27 @@ use crate::{
 };
 
 type R = Result<Rets, NativeError>;
+
+/// Where a parked call's results go when its thread resumes.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Parked {
+    /// The call's slot, its results land here.
+    pub(crate) slot: usize,
+    /// How many results the caller wants (`None` is all of them).
+    pub(crate) want: Option<usize>,
+    /// Whether `pcall` or `xpcall` sits right around the call.
+    pub(crate) catch: Catch,
+}
+
+/// What catches errors for a parked call.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Catch {
+    None,
+    /// `pcall`, so the results get a leading `true`.
+    Pcall,
+    /// `xpcall`, the same, and its handler waits at the call's slot.
+    Xpcall,
+}
 
 impl Vm {
     /// A new suspended coroutine that will run `body`.
@@ -169,11 +192,7 @@ impl Vm {
     }
 
     /// Starts the loaded coroutine, or continues it from its `yield`.
-    fn run_thread(
-        &mut self,
-        pending: Option<(usize, Option<usize>)>,
-        args: &[Value],
-    ) -> Result<Rets, Thrown> {
+    fn run_thread(&mut self, pending: Option<Parked>, args: &[Value]) -> Result<Rets, Thrown> {
         match pending {
             None => {
                 let n = args.len();
@@ -196,10 +215,17 @@ impl Vm {
                     Function::Native(_) => self.invoke_at(0, n, false),
                 }
             }
-            Some((dest, want)) => {
+            Some(parked) => {
                 let f = self.frames.pop().expect("a suspended coroutine's frame");
-                let end = self.place_results(dest, args, want);
-                self.run(f, if want.is_none() { end } else { 0 })
+                let end = if parked.catch == Catch::None {
+                    self.place_results(parked.slot, args, parked.want)
+                } else {
+                    let mut values = Rets::with_capacity(args.len() + 1);
+                    values.push(Value::Bool(true));
+                    values.extend_from_slice(args);
+                    self.place_results(parked.slot, &values, parked.want)
+                };
+                self.run(f, if parked.want.is_none() { end } else { 0 })
             }
         }
     }
@@ -218,7 +244,11 @@ impl Vm {
             return Err(self.throw(f, pc, m));
         }
         self.yielded = Rets::from_slice(&self.stack[func_slot + 1..func_slot + 1 + nargs]);
-        self.yield_dest = Some((func_slot, want));
+        self.yield_dest = Some(Parked {
+            slot: func_slot,
+            want,
+            catch: Catch::None,
+        });
         Err(Thrown::yield_signal())
     }
 

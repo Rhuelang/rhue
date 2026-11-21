@@ -109,9 +109,8 @@ pub(crate) struct ThreadState {
     pub(crate) frames: Vec<crate::Frame>,
     pub(crate) open_upvalues: Vec<(usize, UpvalRef)>,
     pub(crate) boundary: usize,
-    /// For a coroutine stopped in `yield`: where that call's results go (the
-    /// call's slot, how many it wants).
-    pub(crate) pending: Option<(usize, Option<usize>)>,
+    /// For a coroutine stopped in `yield`: where that call's results go.
+    pub(crate) pending: Option<crate::coroutine::Parked>,
 }
 
 /// A coroutine (or the main thread).
@@ -180,6 +179,8 @@ pub type NativeFn = Rc<dyn Fn(&mut NativeCtx<'_>, &[Value]) -> Result<Rets, Nati
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Special {
     Pcall,
+    /// `xpcall`. Its `func` is what runs when a native or the host calls it.
+    Xpcall,
     /// `coroutine.resume`.
     Resume,
     /// `coroutine.yield`.

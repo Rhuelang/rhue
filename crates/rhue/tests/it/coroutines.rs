@@ -179,12 +179,12 @@ fn yield_crosses_pcall_but_not_native_callbacks() {
             end)
             local ok, err = coroutine.resume(q)
             local r = coroutine.create(function() return pcall(coroutine.yield, 1) end)
-            local _, rok, rerr = coroutine.resume(r)
-            return a, b, c, d, ok, err:find('C-call boundary', 1, true) ~= nil, rok,
-                rerr:find('C-call boundary', 1, true) ~= nil";
+            local _, y = coroutine.resume(r)
+            local _, rok, rv = coroutine.resume(r, 'back')
+            return a, b, c, d, ok, err:find('C-call boundary', 1, true) ~= nil, y, rok, rv";
         assert_eq!(
             run(e, src),
-            "in pcall false after resume end false true false true"
+            "in pcall false after resume end false true 1 true back"
         );
         assert!(
             fails(e, "coroutine.yield(1)").contains("attempt to yield from outside a coroutine")

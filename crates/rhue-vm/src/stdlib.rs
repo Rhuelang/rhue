@@ -41,7 +41,7 @@ pub(crate) fn install(vm: &mut Vm) {
     vm.register_native("unpack", Rc::new(unpack));
     vm.register_native("collectgarbage", Rc::new(collectgarbage));
     vm.register_special("pcall", Special::Pcall);
-    vm.register_native("xpcall", Rc::new(xpcall));
+    vm.register_special_native("xpcall", Special::Xpcall, Rc::new(xpcall));
 
     let next_fn = vm.native("next", Rc::new(next));
     vm.keep_alive(next_fn);
@@ -209,7 +209,7 @@ pub(crate) fn bad_arg(n: usize, fname: &str, expected: &str, got: Value) -> Nati
     ))
 }
 
-fn arg(args: &[Value], i: usize, fname: &str) -> Result<Value, NativeError> {
+pub(crate) fn arg(args: &[Value], i: usize, fname: &str) -> Result<Value, NativeError> {
     args.get(i)
         .copied()
         .ok_or_else(|| NativeError::Message(format!("missing argument #{} to '{fname}'", i + 1)))

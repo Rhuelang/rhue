@@ -393,6 +393,9 @@ pub(crate) struct Frame {
     /// Started by `pcall`. Errors stop here, and normal results get a leading
     /// `true`.
     protected: bool,
+    /// Started by `xpcall` (and protected): an error goes through the handler
+    /// waiting at `ret_to` first.
+    xpcall: bool,
     is_main: bool,
     /// A metamethod frame for `__eq`/`__lt`/`__le`. When it returns, its first
     /// result decides the caller's jump (`Some(expected)`).
@@ -794,7 +797,7 @@ pub struct Vm {
     /// The values a `yield` passes out, on their way to `resume`.
     yielded: Rets,
     /// Where the suspended `yield` call's results go.
-    yield_dest: Option<(usize, Option<usize>)>,
+    yield_dest: Option<coroutine::Parked>,
     /// The debug hook, if any (see [`Vm::set_debug_hook`]).
     hooks: debug::HookState,
     /// Stands in for the current frame while it sits in `frames` during a
@@ -948,6 +951,19 @@ impl Vm {
 
     pub(crate) fn register_special(&mut self, name: &str, special: Special) {
         let f = self.special_function(name, special, Value::Nil);
+        self.set_global(name, f);
+    }
+
+    /// A global the VM runs itself when a script calls it, and that runs as
+    /// `func` when a native or the host does.
+    pub(crate) fn register_special_native(&mut self, name: &str, special: Special, func: NativeFn) {
+        let f = Value::Function(self.heap.alloc_function(Function::Native(Native {
+            name: name.into(),
+            func,
+            fast: None,
+            special: Some(special),
+            bound: Value::Nil,
+        })));
         self.set_global(name, f);
     }
 
@@ -1516,6 +1532,7 @@ impl Vm {
             ret_to: 0,
             ret_want: ALL_RESULTS,
             protected: false,
+            xpcall: false,
             is_main: false,
             cond: None,
             call_reported: false,
@@ -1603,6 +1620,7 @@ impl Vm {
             ret_to: func_slot as u32,
             ret_want: want.map_or(ALL_RESULTS, |w| w as u32),
             protected,
+            xpcall: false,
             is_main,
             cond: None,
             call_reported: false,
@@ -2104,12 +2122,18 @@ impl Vm {
         loop {
             self.close_upvalues(f.base);
             if f.protected {
-                let (dest, want) = (f.ret_to(), f.ret_want());
+                let (dest, want, xpcall) = (f.ret_to(), f.ret_want(), f.xpcall);
                 *f = self
                     .frames
                     .pop()
                     .expect("a protected frame always has a caller");
-                let end = self.place_results(dest, &[Value::Bool(false), thrown.value], want);
+                let values = if xpcall {
+                    let handler = self.stack[dest];
+                    self.run_handler(f, handler, thrown.value)?
+                } else {
+                    smallvec![Value::Bool(false), thrown.value]
+                };
+                let end = self.place_results(dest, &values, want);
                 if want.is_none() {
                     *top = end;
                 }
@@ -2159,6 +2183,9 @@ impl Vm {
             Function::Native(native) if native.special == Some(Special::Pcall) => {
                 self.pcall(f, pc, func_slot, nargs, want, top)
             }
+            Function::Native(native) if native.special == Some(Special::Xpcall) => {
+                self.xpcall(f, pc, func_slot, nargs, want, top)
+            }
             Function::Native(Native {
                 special: Some(Special::Yield),
                 ..
@@ -2205,7 +2232,11 @@ impl Vm {
                             return Err(self.throw(f, pc, m));
                         }
                         self.yielded = values;
-                        self.yield_dest = Some((func_slot, want));
+                        self.yield_dest = Some(coroutine::Parked {
+                            slot: func_slot,
+                            want,
+                            catch: coroutine::Catch::None,
+                        });
                         Err(Thrown::yield_signal())
                     }
                     Ok(mut results) => {
@@ -2259,6 +2290,7 @@ impl Vm {
         frame.ret_to = f.ret_to;
         frame.ret_want = f.ret_want;
         frame.protected = f.protected;
+        frame.xpcall = f.xpcall;
         frame.cond = f.cond;
         let mut trail = f.trail.take().unwrap_or_default();
         trail.push(TailSite {
@@ -2273,10 +2305,6 @@ impl Vm {
 
     /// `pcall(g, ...)`, calls `g` so errors come back as `false, value` instead
     /// of propagating.
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "stack slots and pcs stay far under u32 (the stack and code are capped), opcodes are a byte"
-    )]
     fn pcall(
         &mut self,
         f: &mut Frame,
@@ -2289,55 +2317,184 @@ impl Vm {
         if nargs == 0 {
             return Err(self.throw(f, pc, "missing argument #1 to 'pcall'".into()));
         }
-        let protected_slot = func_slot + 1;
-        // a callable table runs through its `__call`, like any call
-        let nargs = match self.resolve_call(protected_slot, nargs - 1) {
-            Ok(n) => n + 1,
-            Err(_) => nargs,
+        let catch = coroutine::Catch::Pcall;
+        self.protected_call(f, pc, func_slot, nargs - 1, want, top, catch)
+    }
+
+    /// `xpcall(g, handler, ...)`, `pcall` with the error value going through
+    /// `handler` first. Unlike Lua, the handler runs after the stack's
+    /// unwound, so it can't look at the failing frames.
+    fn xpcall(
+        &mut self,
+        f: &mut Frame,
+        pc: usize,
+        func_slot: usize,
+        nargs: usize,
+        want: Option<usize>,
+        top: &mut usize,
+    ) -> Result<(), Thrown> {
+        let args = &self.stack[func_slot + 1..func_slot + 1 + nargs];
+        let checked = match (stdlib::arg(args, 0, "xpcall"), args.get(1)) {
+            (Err(e), _) => Err(e),
+            (Ok(_), Some(&h @ Value::Function(_))) => Ok(h),
+            (Ok(_), Some(&other)) => Err(stdlib::bad_arg(2, "xpcall", "function", other)),
+            (Ok(_), None) => Err("missing argument #2 to 'xpcall'".into()),
         };
-        let target = self.stack[protected_slot];
+        let handler = checked.map_err(|e| self.native_throw(f, pc, e))?;
+        // the handler waits in xpcall's own slot, where the results go, so it
+        // stays on the stack (and alive) while `g` runs or sits parked
+        self.stack[func_slot] = handler;
+        self.stack
+            .copy_within(func_slot + 3..func_slot + 1 + nargs, func_slot + 2);
+        let catch = coroutine::Catch::Xpcall;
+        self.protected_call(f, pc, func_slot, nargs - 2, want, top, catch)
+    }
+
+    /// The shared part of `pcall` and `xpcall`: calls the function at
+    /// `func_slot + 1` with `nargs` arguments above it, and puts `true` and its
+    /// results, or what the error turned into, at `func_slot`. Lua functions
+    /// and plain natives run right here, so they can yield like any call.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "stack slots and pcs stay far under u32 (the stack and code are capped), opcodes are a byte"
+    )]
+    #[allow(clippy::too_many_arguments)]
+    fn protected_call(
+        &mut self,
+        f: &mut Frame,
+        pc: usize,
+        func_slot: usize,
+        nargs: usize,
+        want: Option<usize>,
+        top: &mut usize,
+        catch: coroutine::Catch,
+    ) -> Result<(), Thrown> {
+        let target_slot = func_slot + 1;
+        // a callable table runs through its `__call`, like any call
+        let nargs = self.resolve_call(target_slot, nargs).unwrap_or(nargs);
+        let target = self.stack[target_slot];
         let finish = |vm: &mut Vm, values: &[Value], top: &mut usize| {
             let end = vm.place_results(func_slot, values, want);
             if want.is_none() {
                 *top = end;
             }
         };
-        match target {
+        let caught = match target {
             // a Lua function runs in this dispatch loop, in a protected frame
-            // whose results go to pcall's own slot
+            // whose results go to the protected call's own slot
             Value::Function(r) if matches!(self.heap.function(r), Function::Lua(_)) => {
-                let r = self.call(f, pc, protected_slot, nargs - 1, want, top, true);
+                let r = self.call(f, pc, target_slot, nargs, want, top, true);
                 if r.is_ok() {
                     f.ret_to = func_slot as u32;
+                    f.xpcall = catch == coroutine::Catch::Xpcall;
                 }
-                r
+                return r;
             }
-            // a native (pcall itself included) runs nested, to the end
-            Value::Function(_) => {
-                let placeholder = self.placeholder_frame(f.closure);
-                self.frames.push(std::mem::replace(f, placeholder));
-                let result = self.invoke_at(protected_slot, nargs - 1, false);
-                *f = self.frames.pop().expect("pcall's caller");
-                match result {
-                    Ok(mut values) => {
-                        values.insert(0, Value::Bool(true));
-                        finish(self, &values, top);
-                        Ok(())
+            Value::Function(r) => match self.heap.function(r) {
+                // `pcall(coroutine.yield, ...)` yields, and resuming it gives
+                // `true` and the resume's values
+                Function::Native(Native {
+                    special: Some(Special::Yield),
+                    ..
+                }) => match self.check_yield() {
+                    Ok(()) => {
+                        let args = &self.stack[target_slot + 1..target_slot + 1 + nargs];
+                        self.yielded = Rets::from_slice(args);
+                        self.yield_dest = Some(coroutine::Parked {
+                            slot: func_slot,
+                            want,
+                            catch,
+                        });
+                        return Err(Thrown::yield_signal());
                     }
-                    Err(t) if t.catchable => {
-                        finish(self, &[Value::Bool(false), t.value], top);
-                        Ok(())
+                    Err(m) => self.throw(f, pc, m),
+                },
+                // a plain native runs the way any call runs it, with nothing
+                // nested in between, so it can yield
+                Function::Native(native) if native.special.is_none() => {
+                    let func = native.func.clone();
+                    let args =
+                        ArgBuf::from_slice(&self.stack[target_slot + 1..target_slot + 1 + nargs]);
+                    match self.native_from(f, &func, &args) {
+                        Ok(mut values) => {
+                            values.insert(0, Value::Bool(true));
+                            finish(self, &values, top);
+                            return Ok(());
+                        }
+                        Err(NativeError::Yield(values)) => match self.check_yield() {
+                            Ok(()) => {
+                                self.yielded = values;
+                                self.yield_dest = Some(coroutine::Parked {
+                                    slot: func_slot,
+                                    want,
+                                    catch,
+                                });
+                                return Err(Thrown::yield_signal());
+                            }
+                            Err(m) => self.throw(f, pc, m),
+                        },
+                        // like a native that called it, so `pcall(error, "x")`
+                        // gets no position
+                        Err(e) => {
+                            let error = self.error_at(f, pc, String::new());
+                            self.raise(error, e, 1)
+                        }
                     }
-                    Err(t) => Err(t),
                 }
-            }
+                // the other specials (pcall itself included) run nested, to
+                // the end
+                _ => {
+                    let placeholder = self.placeholder_frame(f.closure);
+                    self.frames.push(std::mem::replace(f, placeholder));
+                    let result = self.invoke_at(target_slot, nargs, false);
+                    *f = self.frames.pop().expect("pcall's caller");
+                    match result {
+                        Ok(mut values) => {
+                            values.insert(0, Value::Bool(true));
+                            finish(self, &values, top);
+                            return Ok(());
+                        }
+                        Err(t) => t,
+                    }
+                }
+            },
             other => {
+                // a plain message, like the nested call used to give
                 let msg = format!("attempt to call a {} value", other.type_name());
                 let v = self.string(&msg);
-                finish(self, &[Value::Bool(false), v], top);
-                Ok(())
+                let mut t = self.throw(f, pc, msg);
+                t.value = v;
+                t
             }
+        };
+        if !caught.catchable {
+            return Err(caught);
         }
+        let values = if catch == coroutine::Catch::Xpcall {
+            let handler = self.stack[func_slot];
+            self.run_handler(f, handler, caught.value)?
+        } else {
+            smallvec![Value::Bool(false), caught.value]
+        };
+        finish(self, &values, top);
+        Ok(())
+    }
+
+    /// `xpcall`'s handler on error value `value`, nested. Gives back what
+    /// `xpcall` returns: `false` and the handler's results, or `false` and the
+    /// handler's own error if it failed too.
+    fn run_handler(&mut self, f: &mut Frame, handler: Value, value: Value) -> Result<Rets, Thrown> {
+        let placeholder = self.placeholder_frame(f.closure);
+        self.frames.push(std::mem::replace(f, placeholder));
+        let result = self.call_top_thrown(handler, &[value], false);
+        *f = self.frames.pop().expect("xpcall's caller");
+        let mut out = smallvec![Value::Bool(false)];
+        match result {
+            Ok(values) => out.extend(values),
+            Err(t) if t.catchable => out.push(t.value),
+            Err(t) => return Err(t),
+        }
+        Ok(out)
     }
 
     fn dispatch(&mut self, f: &mut Frame, top: &mut usize) -> Result<Rets, Thrown> {
