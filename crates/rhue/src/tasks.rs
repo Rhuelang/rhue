@@ -144,6 +144,13 @@ fn thread_of(cx: &mut Context<'_>, v: &Value, f: &str) -> Result<Thread, ScriptE
     }
 }
 
+/// What a waiting thread gets when it's woken: results for the call it's
+/// waiting in, or an error for that call to raise.
+pub(crate) enum ResumeWith {
+    With(Vec<Value>),
+    Error(Value),
+}
+
 /// Resumes `t`, recording an error instead of raising it, and updating the
 /// host's [`Task`] for it if there is one.
 pub(crate) fn run(
@@ -152,10 +159,23 @@ pub(crate) fn run(
     t: &Thread,
     args: Vec<Value>,
 ) {
+    run_with(cx, sched, t, ResumeWith::With(args));
+}
+
+/// [`run`], with an error for the waiting call to raise as the other choice.
+pub(crate) fn run_with(
+    cx: &mut Context<'_>,
+    sched: &Rc<RefCell<Scheduler>>,
+    t: &Thread,
+    wake: ResumeWith,
+) {
     if cx.thread_status(t) != "suspended" {
         return;
     }
-    let result = cx.resume::<Variadic<Value>>(t, Variadic(args));
+    let result = match wake {
+        ResumeWith::With(args) => cx.resume::<Variadic<Value>>(t, Variadic(args)),
+        ResumeWith::Error(e) => cx.resume_error::<Variadic<Value>>(t, e),
+    };
     let dead = cx.thread_status(t) == "dead";
     let mut st = sched.borrow_mut();
     let state = st

@@ -66,6 +66,20 @@ async fn async_natives_return_and_raise() {
         .await
         .unwrap_err();
     assert_eq!(err.to_string(), "/missing not found");
+    // raised at the script's own call, with no wrapper frame in between
+    let src = "local x = 1
+local page = fetch('/missing')
+return page";
+    let err = e.eval_async(src).await.unwrap_err();
+    assert_eq!(err.diagnostic().span().text(src), "fetch('/missing')");
+    let r = err.render(false);
+    assert!(!r.contains("[async"), "{r}");
+    // xpcall sees it too
+    let v = e
+        .eval_async("return xpcall(fetch, function(err) return 'handled ' .. err end, '/missing')")
+        .await
+        .unwrap();
+    assert_eq!(text(&v), "false | handled <eval>:1: /missing not found");
     assert!(err.render(false).contains(":2:"), "{}", err.render(false));
 }
 
