@@ -94,6 +94,16 @@ engine.resume(&mut dialog, vec![Value::from("Aalto")])?;
 // dialog.state() == Finished(["Nice to meet you, Aalto"])
 ```
 
+If whatever it was waiting on fails, `resume_error` makes the call raise instead. A `pcall` around it gets `false, err` and the script carries on, otherwise the task dies and you get the error back. A string gets the position of the call, like `error("msg")` there would.
+
+```rust
+let mut load = engine.spawn("load.rhue", r#"
+    local ok, err = pcall(fetch, "/save")
+    if not ok then print("couldn't load: " .. err) end
+"#)?;
+engine.resume_error(&mut load, "not found")?; // couldn't load: load.rhue:2: not found
+```
+
 `engine.open_tasks()` adds Roblox's `task` library (`wait`, `delay`, `spawn`, `defer`, `cancel`). Time only moves when you call `engine.step(dt)`, and one task erroring doesn't take the rest down with it.
 
 ```rust

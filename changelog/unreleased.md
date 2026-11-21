@@ -1,1 +1,2 @@
 - Feat: `pcall` and `xpcall` work directly around a native that yields, so `pcall(require, m)` can wait on the host. `pcall(coroutine.yield, x)` yields now too, instead of erroring.
+- Feat: `Engine::resume_error` and `Context::resume_error` resume a waiting script so the call it waited in raises instead. Under `pcall` that gives `false, err`, for a native that waited on the host and then failed.

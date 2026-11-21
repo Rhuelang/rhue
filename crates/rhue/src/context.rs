@@ -112,6 +112,26 @@ impl<'a> Context<'a> {
         R::from_values(results, self).map_err(ScriptError::result)
     }
 
+    /// [`resume`](Self::resume), but the call the coroutine is waiting in
+    /// raises `error` instead of returning. A `pcall` around it gets `false,
+    /// error`, otherwise it unwinds like any error. A string gets the call's
+    /// position. A coroutine that hasn't started yet can't take one.
+    pub fn resume_error<R: FromValues>(
+        &mut self,
+        co: &Thread,
+        error: impl IntoValue,
+    ) -> Result<R, ScriptError> {
+        self.check_owner(&co.pin);
+        let error = error.into_value(self);
+        let error = self.lower(error);
+        let results = self
+            .vm
+            .resume_error(co.r, error)
+            .map_err(|r| ScriptError(Repr::Thrown(Box::new(r))))?;
+        let results = results.into_iter().map(|v| self.lift(v)).collect();
+        R::from_values(results, self).map_err(ScriptError::result)
+    }
+
     /// The coroutine running right now, or `None` on the main thread (where
     /// nothing can yield).
     pub fn current_thread(&mut self) -> Option<Thread> {

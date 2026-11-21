@@ -63,6 +63,29 @@ impl Vm {
     /// Resumes coroutine `co` from the host (or a native). Gives back its
     /// yielded or returned values, or the error that killed it.
     pub fn resume(&mut self, co: ThreadRef, args: &[Value]) -> Result<Vec<Value>, Rethrown> {
+        self.resume_host(co, args)
+    }
+
+    /// [`resume`](Self::resume), but the call `co` is parked in raises `error`
+    /// instead of returning. Under `pcall` that's `false, error`, otherwise it
+    /// unwinds like any error and kills `co` if nothing catches it. A string
+    /// gets the call's position, like `error("msg")` there would.
+    pub fn resume_error(&mut self, co: ThreadRef, error: Value) -> Result<Vec<Value>, Rethrown> {
+        // nothing's parked yet, so there's no call to raise at
+        let t = self.heap.thread(co);
+        if t.status == CoStatus::Suspended && self.heap.thread_state_mut(co).pending.is_none() {
+            let m = "cannot resume a coroutine that hasn't started with an error";
+            return Err(Rethrown(self.throw_here(m.into())));
+        }
+        // run_thread takes it. it's a field and not an argument so a plain
+        // resume doesn't pay for carrying it
+        self.raise_on_resume = Some(error);
+        let result = self.resume_host(co, &[]);
+        self.raise_on_resume = None;
+        result
+    }
+
+    fn resume_host(&mut self, co: ThreadRef, args: &[Value]) -> Result<Vec<Value>, Rethrown> {
         if !self.is_running() {
             self.reset_budget();
         }
@@ -191,7 +214,8 @@ impl Vm {
         Ok(result)
     }
 
-    /// Starts the loaded coroutine, or continues it from its `yield`.
+    /// Starts the loaded coroutine, or continues it from its `yield` (raising
+    /// there instead if `resume_error` left an error).
     fn run_thread(&mut self, pending: Option<Parked>, args: &[Value]) -> Result<Rets, Thrown> {
         match pending {
             None => {
@@ -217,6 +241,9 @@ impl Vm {
             }
             Some(parked) => {
                 let f = self.frames.pop().expect("a suspended coroutine's frame");
+                if let Some(value) = self.raise_on_resume.take() {
+                    return self.raise_parked(f, parked, value);
+                }
                 let end = if parked.catch == Catch::None {
                     self.place_results(parked.slot, args, parked.want)
                 } else {
@@ -228,6 +255,33 @@ impl Vm {
                 self.run(f, if parked.want.is_none() { end } else { 0 })
             }
         }
+    }
+
+    /// Raises `value` at the call frame `f` is parked in, then carries on from
+    /// wherever that lands.
+    fn raise_parked(&mut self, mut f: Frame, parked: Parked, value: Value) -> Result<Rets, Thrown> {
+        // the frame resumes after the call, so the call is the one before
+        let pc = f.pc.saturating_sub(1);
+        let error = self.error_at(&f, pc, String::new());
+        // level 1 so a string gets the call's position, like error("msg")
+        let thrown = self.raise(error, NativeError::Raise { value, level: 1 }, 0);
+        let mut top = 0;
+        match parked.catch {
+            Catch::None => self.unwind(&mut f, &mut top, thrown)?,
+            catch => {
+                let values = if catch == Catch::Xpcall {
+                    let handler = self.stack[parked.slot];
+                    self.run_handler(&mut f, handler, thrown.value)?
+                } else {
+                    smallvec![Value::Bool(false), thrown.value]
+                };
+                let end = self.place_results(parked.slot, &values, parked.want);
+                if parked.want.is_none() {
+                    top = end;
+                }
+            }
+        }
+        self.run(f, top)
     }
 
     /// `coroutine.yield(...)` called from `f`. Hands the arguments to the

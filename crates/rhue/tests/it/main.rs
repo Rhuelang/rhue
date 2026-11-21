@@ -22,6 +22,7 @@ mod native_budget;
 mod outline;
 mod patterns_and_modules;
 mod protected_yields;
+mod resume_errors;
 mod statements;
 mod stdlib;
 mod table_templates;

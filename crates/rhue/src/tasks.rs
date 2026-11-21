@@ -13,7 +13,7 @@
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
-use crate::{Context, Engine, Error, Function, ScriptError, Thread, Value, Variadic};
+use crate::{Context, Engine, Error, Function, IntoValue, ScriptError, Thread, Value, Variadic};
 
 /// A script or function running as a coroutine (see [`Engine::spawn`]).
 #[derive(Clone, Debug)]
@@ -228,6 +228,24 @@ impl Engine {
     pub fn resume(&mut self, task: &mut Task, args: Vec<Value>) -> Result<(), Error> {
         let mut cx = self.context();
         let result = cx.resume::<Variadic<Value>>(&task.thread, Variadic(args));
+        self.after_resume(task, result)
+    }
+
+    /// [`resume`](Self::resume), but the call the task is waiting in raises
+    /// `error` instead of returning, for a native that waited and then failed.
+    /// Under `pcall` the script gets `false, error` and carries on.
+    pub fn resume_error(&mut self, task: &mut Task, error: impl IntoValue) -> Result<(), Error> {
+        let mut cx = self.context();
+        let result = cx.resume_error::<Variadic<Value>>(&task.thread, error);
+        self.after_resume(task, result)
+    }
+
+    fn after_resume(
+        &mut self,
+        task: &mut Task,
+        result: Result<Variadic<Value>, ScriptError>,
+    ) -> Result<(), Error> {
+        let cx = self.context();
         let values = match result {
             Ok(v) => v.0,
             Err(e) => {
