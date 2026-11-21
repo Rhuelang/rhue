@@ -53,6 +53,7 @@ let mut engine = Engine::new();
 engine.set_global("name", "Aalto");
 engine.set_instruction_limit(Some(1_000_000)); // stop runaway scripts
 engine.set_memory_limit(Some(64 << 20));       // and runaway allocation (64 MB)
+engine.set_max_call_depth(200);                // and runaway recursion (10,000 by default)
 engine.on_print(|line| eprintln!("[script] {line}")); // route `print`
 
 let values = engine.eval(r#"

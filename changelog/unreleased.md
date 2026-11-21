@@ -1,0 +1,1 @@
+- Feat: `Engine::set_max_call_depth` lowers how deep script calls can nest before `stack overflow`. It's 10,000 by default, which is also the most.

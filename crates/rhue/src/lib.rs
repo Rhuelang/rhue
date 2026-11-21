@@ -532,6 +532,13 @@ impl Engine {
         self.vm.set_instruction_limit(limit);
     }
 
+    /// Caps how deep script calls can nest before `stack overflow` (a normal
+    /// error, `pcall` catches it). The default and the most is 10,000, and
+    /// each coroutine gets its own count.
+    pub fn set_max_call_depth(&mut self, depth: usize) {
+        self.vm.set_max_call_depth(depth);
+    }
+
     /// Caps how much memory scripts can keep allocated, in bytes as the
     /// collector counts them (an approximation of the real heap). Hitting it
     /// stops the script with `not enough memory`, which `pcall` can't catch. A
