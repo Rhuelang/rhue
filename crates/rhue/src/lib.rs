@@ -204,7 +204,7 @@ pub use userdata::{IntoMethod, TypeBuilder, Ud, UserData};
 pub use value::{AnyUserData, Buffer, Function, Table, Thread, Value};
 
 /// Memory statistics; see [`Engine::heap_stats`].
-pub use rhue_vm::HeapStats;
+pub use rhue_vm::{HeapStats, ThreadEnd};
 
 /// Where `require(name)` looks for a module under `dir`, in order: `a.b` is
 /// `dir/a/b.rhue`, then `dir/a/b/init.rhue`. The CLI, the language server and
@@ -310,6 +310,16 @@ impl Error {
                 .diagnostics
                 .first()
                 .is_some_and(|d| d.message == rhue_vm::INTERRUPTED)
+    }
+
+    /// Whether a thread got killed or cancelled (see
+    /// [`Context::kill_thread`]) rather than failing.
+    pub fn is_killed(&self) -> bool {
+        self.kind == ErrorKind::Runtime
+            && self
+                .diagnostics
+                .first()
+                .is_some_and(|d| d.message == rhue_vm::KILLED || d.message == rhue_vm::CANCELLED)
     }
 
     /// An error from Rust-side work (a conversion, a native) or a script.

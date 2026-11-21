@@ -99,6 +99,32 @@ impl CoStatus {
     }
 }
 
+/// A stop the host asked for that hasn't happened yet (see
+/// [`Vm::kill_thread`](crate::Vm::kill_thread)).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Mark {
+    #[default]
+    None,
+    /// Dies the next time it runs, wherever it is.
+    Kill,
+    /// Dies the next time it tries to pause.
+    Cancel,
+}
+
+/// How a dead thread ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ThreadEnd {
+    /// Returned.
+    Finished,
+    /// An error nothing caught.
+    Failed,
+    /// [`Vm::kill_thread`](crate::Vm::kill_thread), or `coroutine.close`.
+    Killed,
+    /// [`Vm::cancel_thread`](crate::Vm::cancel_thread).
+    Cancelled,
+}
+
 /// A thread's execution state while it isn't the one running: its value stack,
 /// call frames and open upvalues. The running thread's state lives in the VM
 /// itself, and resuming and yielding swap these.
@@ -125,11 +151,20 @@ pub struct Thread {
     /// Last resumed by the host instead of a script (see
     /// [`Vm::resumed_by_host`](crate::Vm::resumed_by_host)).
     pub(crate) by_host: bool,
+    /// A kill or cancel waiting to happen.
+    pub(crate) mark: Mark,
+    /// How it ended, once it's dead.
+    pub(crate) end: Option<ThreadEnd>,
 }
 
 impl Thread {
     pub fn status(&self) -> CoStatus {
         self.status
+    }
+
+    /// How it ended, or `None` while it's alive.
+    pub fn end(&self) -> Option<ThreadEnd> {
+        self.end
     }
 }
 
@@ -641,6 +676,8 @@ impl Heap {
             base_depth: 0,
             bytes,
             by_host: false,
+            mark: Mark::None,
+            end: None,
         });
         ThreadRef { index, generation }
     }

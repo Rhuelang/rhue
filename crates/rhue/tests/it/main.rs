@@ -28,6 +28,7 @@ mod stdlib;
 mod table_templates;
 mod tables;
 mod tasks_and_environments;
+mod thread_kills;
 mod type_packs;
 mod type_properties;
 mod vectors;

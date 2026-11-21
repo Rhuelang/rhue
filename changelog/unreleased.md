@@ -1,3 +1,4 @@
 - Feat: `pcall` and `xpcall` work directly around a native that yields, so `pcall(require, m)` can wait on the host. `pcall(coroutine.yield, x)` yields now too, instead of erroring.
 - Feat: `Engine::resume_error` and `Context::resume_error` resume a waiting script so the call it waited in raises instead. Under `pcall` that gives `false, err`, for a native that waited on the host and then failed.
 - Fix: Async natives are plain natives now, without the script wrapper they used to sit in. Tracebacks lose the `[async name]` frame, and an error from one is raised at the script's own call.
+- Feat: `Context::kill_thread` and `cancel_thread` stop a thread in any state, and scripts can't catch it. `coroutine.resume` sees a dead coroutine, the host gets an error with `is_killed()`, and a killed task isn't an error `step()` reports. `Context::thread_end` says how a thread ended.

@@ -20,10 +20,10 @@ use std::rc::Rc;
 
 use smallvec::smallvec;
 
-use crate::heap::{CoStatus, ThreadRef, ThreadState};
+use crate::heap::{CoStatus, Mark, ThreadEnd, ThreadRef, ThreadState};
 use crate::{
-    Frame, Function, MAX_NATIVE_DEPTH, NativeCtx, NativeError, Rethrown, Rets, Special, Table,
-    Thrown, Upvalue, Value, Vm,
+    CANCELLED, Frame, Function, KILLED, MAX_NATIVE_DEPTH, NativeCtx, NativeError, Rethrown, Rets,
+    Special, Table, Thrown, Upvalue, Value, Vm,
 };
 
 type R = Result<Rets, NativeError>;
@@ -90,7 +90,12 @@ impl Vm {
             self.reset_budget();
         }
         self.heap.thread_mut(co).by_host = true;
-        match self.resume_thread(co, args) {
+        let outcome = self.resume_thread(co, args);
+        // a native resumed it, and something killed that native's thread
+        if self.current_mark() == Mark::Kill {
+            return Err(Rethrown(self.stop_thrown(None)));
+        }
+        match outcome {
             Ok(Ok(values)) => Ok(values.into_vec()),
             Ok(Err(t)) => Err(Rethrown(t)),
             Err(m) => Err(Rethrown(self.throw_here(m))),
@@ -189,23 +194,41 @@ impl Vm {
         });
         self.depth -= 1;
 
-        let (result, status) = match outcome {
+        // `None` while it's only suspended
+        let (result, end) = match outcome {
             Err(t) if t.yielding => {
                 let values = std::mem::take(&mut self.yielded);
-                (Ok(values), CoStatus::Suspended)
+                (Ok(values), None)
             }
-            Ok(values) => (Ok(values), CoStatus::Dead),
-            Err(t) => (Err(t), CoStatus::Dead),
+            // marked by a native it called and returned before its next call
+            // or back-edge, it still counts as killed
+            Ok(_) if self.marked != 0 && self.current_mark() == Mark::Kill => {
+                (Err(self.stop_thrown(None)), Some(ThreadEnd::Killed))
+            }
+            Ok(values) => (Ok(values), Some(ThreadEnd::Finished)),
+            Err(t) => {
+                let end = match () {
+                    () if !t.is_kill() => ThreadEnd::Failed,
+                    () if t.error.message == CANCELLED => ThreadEnd::Cancelled,
+                    () => ThreadEnd::Killed,
+                };
+                (Err(t), Some(end))
+            }
         };
-        if status == CoStatus::Dead {
-            self.close_upvalues(0);
-            self.take_state();
-        } else {
-            self.swap_state(co);
-            self.heap.thread_state_mut(co).pending = self.yield_dest.take();
+        match end {
+            Some(end) => {
+                self.close_upvalues(0);
+                self.take_state();
+                self.heap.account_thread(co);
+                self.finish_thread(co, end);
+            }
+            None => {
+                self.swap_state(co);
+                self.heap.thread_state_mut(co).pending = self.yield_dest.take();
+                self.heap.account_thread(co);
+                self.heap.thread_mut(co).status = CoStatus::Suspended;
+            }
         }
-        self.heap.account_thread(co);
-        self.heap.thread_mut(co).status = status;
 
         self.resumers.pop();
         self.swap_state(prev);
@@ -295,6 +318,7 @@ impl Vm {
         want: Option<usize>,
     ) -> Result<(), Thrown> {
         if let Err(m) = self.check_yield() {
+            self.stop_at_pause(f, pc)?;
             return Err(self.throw(f, pc, m));
         }
         self.yielded = Rets::from_slice(&self.stack[func_slot + 1..func_slot + 1 + nargs]);
@@ -357,6 +381,8 @@ impl Vm {
         self.frames.push(std::mem::replace(f, placeholder));
         let outcome = self.resume_thread(co, &args);
         *f = self.frames.pop().expect("resume's caller");
+        // a resumer killed while it waited dies at its next charge, since
+        // budget slices are one charge long while a kill's waiting
         self.finish_resume(special, outcome)
             .map_err(|e| e.unwrap_or_else(|m| self.throw(f, pc, m)))
     }
@@ -383,6 +409,9 @@ impl Vm {
             return Err(self.throw_here(m));
         };
         let outcome = self.resume_thread(co, &args);
+        if self.current_mark() == Mark::Kill {
+            return Err(self.stop_thrown(None));
+        }
         self.finish_resume(special, outcome)
             .map_err(|e| e.unwrap_or_else(|m| self.throw_here(m)))
     }
@@ -404,8 +433,12 @@ impl Vm {
                 Ok(values)
             }
             (_, Err(m)) => Ok(smallvec![Value::Bool(false), self.string(&m)]),
+            // a killed coroutine is just dead to whoever resumed it
+            (Special::Wrapped, Ok(Err(t))) if t.is_kill() => Err(Err(t.error.message)),
             (Special::Wrapped, Ok(Err(t))) => Err(Ok(t)),
-            (_, Ok(Err(t))) if t.catchable => Ok(smallvec![Value::Bool(false), t.value]),
+            (_, Ok(Err(t))) if t.catchable || t.is_kill() => {
+                Ok(smallvec![Value::Bool(false), t.value])
+            }
             (_, Ok(Err(t))) => Err(Ok(t)),
         }
     }
@@ -414,18 +447,162 @@ impl Vm {
     /// upvalues still open on its stack.
     pub fn close_thread(&mut self, co: ThreadRef) -> Result<(), String> {
         match self.heap.thread(co).status {
-            CoStatus::Suspended | CoStatus::Dead => {}
+            CoStatus::Suspended => self.end_parked(co, ThreadEnd::Killed),
+            CoStatus::Dead => {
+                let end = self.heap.thread(co).end.unwrap_or(ThreadEnd::Killed);
+                self.end_parked(co, end);
+            }
             s => return Err(format!("cannot close a {} coroutine", s.name())),
         }
-        let st = self.heap.unpark_thread(co);
+        Ok(())
+    }
+
+    /// Kills thread `t`, in any state. A suspended one dies right away without
+    /// running any of its code. One that's running (a native killing its own
+    /// thread), or waiting on a coroutine it resumed, dies the next time it
+    /// runs: at its next call, loop back-edge or pause, or when it returns, so
+    /// only straight-line code can run in between. Scripts can't
+    /// catch it, and it stops at the thread's edge: `coroutine.resume` gives
+    /// `false, "thread killed"`, a `coroutine.wrap` function raises that in
+    /// its caller, and the host gets an error whose [`Rethrown::killed`] is
+    /// `true`. A native killing its own thread should also return
+    /// `NativeError::Uncatchable(KILLED)` so nothing runs after it.
+    ///
+    /// `false` for the main thread (there's
+    /// [`interrupt_handle`](Self::interrupt_handle) for that) or one that's
+    /// already dead.
+    pub fn kill_thread(&mut self, t: ThreadRef) -> bool {
+        self.stop_thread(t, Mark::Kill)
+    }
+
+    /// [`kill_thread`](Self::kill_thread), but a thread that's running gets to
+    /// keep going until it next pauses (a `yield` or a native that waits), and
+    /// dies there instead. One that finishes without pausing just finishes. A
+    /// suspended one dies right away.
+    pub fn cancel_thread(&mut self, t: ThreadRef) -> bool {
+        self.stop_thread(t, Mark::Cancel)
+    }
+
+    /// How thread `t` ended, or `None` while it's alive.
+    pub fn thread_end(&self, t: ThreadRef) -> Option<ThreadEnd> {
+        self.heap.thread(t).end
+    }
+
+    fn stop_thread(&mut self, t: ThreadRef, mark: Mark) -> bool {
+        if t == self.main_thread {
+            return false;
+        }
+        match self.heap.thread(t).status {
+            CoStatus::Dead => false,
+            CoStatus::Suspended => {
+                let end = if mark == Mark::Cancel {
+                    ThreadEnd::Cancelled
+                } else {
+                    ThreadEnd::Killed
+                };
+                self.end_parked(t, end);
+                true
+            }
+            CoStatus::Running | CoStatus::Normal => {
+                let th = self.heap.thread_mut(t);
+                // its next yield fails check_yield, which is where a pause
+                // looks for the mark, so plain yields don't pay for it
+                th.base_depth = usize::MAX;
+                match (th.mark, mark) {
+                    (Mark::None, _) => {
+                        th.mark = mark;
+                        self.marked += 1;
+                        if mark == Mark::Kill {
+                            self.kills += 1;
+                        }
+                    }
+                    // a kill wins over a cancel
+                    (Mark::Cancel, Mark::Kill) => {
+                        th.mark = Mark::Kill;
+                        self.kills += 1;
+                    }
+                    _ => {}
+                }
+                // whoever runs next charges straight away, and from then on
+                // slices are one charge long until the kill happens
+                if mark == Mark::Kill {
+                    self.drain_slice();
+                }
+                true
+            }
+        }
+    }
+
+    /// A parked (or dead) thread dies on the spot: its upvalues close, its
+    /// frames go, and none of its code runs.
+    fn end_parked(&mut self, t: ThreadRef, end: ThreadEnd) {
+        let st = self.heap.unpark_thread(t);
         for (i, u) in &st.open_upvalues {
             let i = *i;
             let v = st.stack.get(i).copied().unwrap_or(Value::Nil);
             u.set(Upvalue::Closed(v));
         }
-        self.heap.park_thread(co, ThreadState::default());
-        self.heap.thread_mut(co).status = CoStatus::Dead;
-        Ok(())
+        self.heap.park_thread(t, ThreadState::default());
+        self.finish_thread(t, end);
+    }
+
+    /// Records that `t` is dead and how, and clears its mark.
+    fn finish_thread(&mut self, t: ThreadRef, end: ThreadEnd) {
+        let th = self.heap.thread_mut(t);
+        th.status = CoStatus::Dead;
+        th.end = Some(end);
+        if th.mark != Mark::None {
+            if th.mark == Mark::Kill {
+                self.kills -= 1;
+            }
+            th.mark = Mark::None;
+            self.marked -= 1;
+        }
+    }
+
+    /// The running thread's mark. A compare while no thread has one.
+    #[inline]
+    pub(crate) fn current_mark(&self) -> Mark {
+        if self.marked == 0 {
+            Mark::None
+        } else {
+            self.heap.thread(self.current).mark
+        }
+    }
+
+    /// A thread about to park with a kill or cancel waiting dies instead.
+    #[inline]
+    pub(crate) fn stop_at_pause(&mut self, f: &Frame, pc: usize) -> Result<(), Thrown> {
+        if self.current_mark() == Mark::None {
+            return Ok(());
+        }
+        Err(self.stop_thrown(Some((f, pc))))
+    }
+
+    /// The error the running thread dies with, raised at `f`'s `pc` (or
+    /// wherever it is). The value scripts see is the plain message.
+    #[cold]
+    pub(crate) fn stop_thrown(&mut self, at: Option<(&Frame, usize)>) -> Thrown {
+        let m = if self.current_mark() == Mark::Cancel {
+            CANCELLED
+        } else {
+            KILLED
+        };
+        let mut t = match at {
+            Some((f, pc)) => self.throw(f, pc, m.into()),
+            None => self.throw_here(m.into()),
+        };
+        t.catchable = false;
+        t.value = Value::String(self.heap.intern(m));
+        self.drain_slice();
+        t
+    }
+
+    /// Hands the current budget slice back to the reserve, so the next charge
+    /// refills and looks for a kill. The instruction limit stays exact.
+    pub(crate) fn drain_slice(&mut self) {
+        self.reserve = self.reserve.saturating_add(self.budget);
+        self.budget = 0;
     }
 }
 
