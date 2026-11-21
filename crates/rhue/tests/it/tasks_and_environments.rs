@@ -534,3 +534,79 @@ return `{s.name} {s.layers} {s.offset[1]},{s.offset[2]} {table.concat(kinds, '/'
         );
     }
 }
+
+// ─ One Chunk, Many Tasks ─────────────────────────────────────────────────────
+
+fn waiter() -> Engine {
+    let mut e = Engine::new();
+    e.register("pause", || -> Result<(), ScriptError> {
+        Err(ScriptError::yield_with(vec![]))
+    });
+    e
+}
+
+#[test]
+fn one_chunk_spawns_in_many_environments() {
+    let mut e = waiter();
+    let envs: Vec<_> = (0..3).map(|_| e.create_environment()).collect();
+    for (i, env) in envs.iter().enumerate() {
+        e.context()
+            .set(env.globals(), "script", Value::from(format!("script {i}")))
+            .unwrap();
+    }
+    // compiled once, against the first environment
+    let chunk = e
+        .compile_in(
+            &envs[0],
+            "per.rhue",
+            "seen = script pause() return seen .. ' done'",
+        )
+        .unwrap();
+    let mut tasks: Vec<_> = envs
+        .iter()
+        .map(|env| e.spawn_chunk_in(env, &chunk).unwrap())
+        .collect();
+    for t in &mut tasks {
+        assert!(!t.is_finished());
+        e.resume(t, vec![]).unwrap();
+    }
+    let done: Vec<_> = tasks.iter().map(|t| t.state()).collect();
+    assert_eq!(
+        done,
+        (0..3)
+            .map(|i| TaskState::Finished(vec![Value::from(format!("script {i} done"))]))
+            .collect::<Vec<_>>()
+    );
+    // each kept its own `seen`, and none of them leaked into the engine
+    for (i, env) in envs.iter().enumerate() {
+        let seen: Value = e.context().get(env.globals(), "seen").unwrap();
+        assert_eq!(seen, Value::from(format!("script {i}")));
+    }
+    assert_eq!(e.global("seen"), Value::Nil);
+}
+
+#[test]
+fn spawn_chunk_runs_on_the_engine_globals() {
+    let mut e = waiter();
+    let chunk = e
+        .compile(
+            "count.rhue",
+            "count = (count or 0) + 1 pause() return count",
+        )
+        .unwrap();
+    let mut a = e.spawn_chunk(&chunk).unwrap();
+    let mut b = e.spawn_chunk(&chunk).unwrap();
+    e.resume(&mut a, vec![]).unwrap();
+    e.resume(&mut b, vec![]).unwrap();
+    // two tasks, one set of globals
+    assert_eq!(a.state(), TaskState::Finished(vec![Value::Number(2.0)]));
+    assert_eq!(b.state(), TaskState::Finished(vec![Value::Number(2.0)]));
+    // and a chunk loaded from bytes works the same
+    let bytes = e.compile_to_bytes("b.rhue", "return 'from bytes'").unwrap();
+    let loaded = e.load(&bytes).unwrap();
+    let t = e.spawn_chunk(&loaded).unwrap();
+    assert_eq!(
+        t.state(),
+        TaskState::Finished(vec![Value::from("from bytes")])
+    );
+}

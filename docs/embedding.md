@@ -173,6 +173,17 @@ engine.eval_in(&plugin_b, "name = 'B'")?;     // its own `name`; `greet` is nil 
 engine.eval_in(&plugin_a, "greet()")?;         // hi from A
 ```
 
+One script that runs once per player (or per anything) only needs compiling once. `spawn_chunk_in` starts it as a task in an environment, each on its own thread, and the chunk isn't tied to the environment it was compiled for. `spawn_chunk` does the same on the engine's globals.
+
+```rust
+let chunk = engine.compile("character.rhue", &source)?;
+for player in players {
+    let env = engine.create_environment();
+    engine.context().set(env.globals(), "player", player)?;
+    engine.spawn_chunk_in(&env, &chunk)?;
+}
+```
+
 ## serde
 
 With the `serde` feature on, `rhue::serde::to_value` and `from_value` convert anything `Serialize`/`Deserialize`, mapped about the way JSON would.

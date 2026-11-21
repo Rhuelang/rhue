@@ -1,0 +1,1 @@
+- Feat: `Engine::spawn_chunk` and `spawn_chunk_in` start an already compiled chunk as a task, so one script can run as many tasks (in as many environments) without compiling it each time.

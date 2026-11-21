@@ -198,8 +198,16 @@ impl Engine {
     /// finishes. Yielding works anywhere in it, including at the top level and
     /// inside `pcall`'d functions.
     pub fn spawn(&mut self, name: &str, source: &str) -> Result<Task, Error> {
-        let proto = self.compile(name, source)?;
-        let f = self.vm.load(&proto.0);
+        let chunk = self.compile(name, source)?;
+        self.spawn_chunk(&chunk)
+    }
+
+    /// [`spawn`](Self::spawn) for a chunk that's already compiled (or
+    /// [loaded](Self::load)), so one script can start many tasks without
+    /// compiling it each time. Each gets its own thread.
+    pub fn spawn_chunk(&mut self, chunk: &crate::Chunk) -> Result<Task, Error> {
+        self.verify(&chunk.0)?;
+        let f = self.vm.load(&chunk.0);
         let Value::Function(f) = self.context().lift(f) else {
             unreachable!("loading a chunk gives a function")
         };
