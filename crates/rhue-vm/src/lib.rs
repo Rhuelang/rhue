@@ -758,6 +758,10 @@ pub struct Vm {
     string_methods: Option<TableRef>,
     /// The metatable every string shares (`{__index = string}`).
     string_meta: Option<TableRef>,
+    /// Every library table (`math`, `string`, `task`...), for `freeze_libraries`.
+    libraries: Vec<TableRef>,
+    /// Set once `freeze_libraries` ran, so libraries added later get frozen too.
+    libraries_frozen: bool,
     /// Interned metamethod names (`__index`, …).
     events: meta::Events,
     /// Values the standard library holds on the Rust side (like the `next` that
@@ -863,6 +867,8 @@ impl Vm {
             heap,
             events,
             string_meta: None,
+            libraries: Vec::new(),
+            libraries_frozen: false,
             globals: FxIndexMap::default(),
             stack: Vec::new(),
             stack_top: 0,
@@ -993,6 +999,31 @@ impl Vm {
         self.string_meta = Some(meta);
     }
 
+    /// Marks `t` as a library table for [`freeze_libraries`](Self::freeze_libraries).
+    pub fn add_library(&mut self, t: TableRef) {
+        if self.libraries_frozen {
+            self.heap.table_mut(t).freeze();
+        }
+        self.libraries.push(t);
+    }
+
+    /// Freezes every library table and the string metatable. Libraries added
+    /// later get frozen as they're added, and there's no undo.
+    pub fn freeze_libraries(&mut self) {
+        self.libraries_frozen = true;
+        for &t in &self.libraries {
+            self.heap.table_mut(t).freeze();
+        }
+        if let Some(meta) = self.string_meta {
+            self.heap.table_mut(meta).freeze();
+        }
+    }
+
+    /// Whether [`freeze_libraries`](Self::freeze_libraries) has run.
+    pub fn libraries_frozen(&self) -> bool {
+        self.libraries_frozen
+    }
+
     pub(crate) fn keep_alive(&mut self, v: Value) {
         self.internal_roots.push(v);
     }
@@ -1106,6 +1137,12 @@ impl Vm {
         if let Some(t) = self.string_meta {
             roots.push(GcRoot::Value(Value::Table(t)));
         }
+        // a host can drop a library's global, but the handle stays in `libraries`
+        roots.extend(
+            self.libraries
+                .iter()
+                .map(|&t| GcRoot::Value(Value::Table(t))),
+        );
         roots.extend(self.events.all().map(|s| GcRoot::Value(Value::String(s))));
         roots.extend(self.internal_roots.iter().map(|&v| GcRoot::Value(v)));
         roots.extend(self.native_roots.iter().map(|&v| GcRoot::Value(v)));

@@ -104,7 +104,7 @@ $ bench/counts.sh --save     # make these the new baseline
 
 ### Compared with Luau and Rhai
 
-`bench/compare` runs the same scripts on Rhue, Luau 0.709 (the interpreter, through `mlua`) and Rhai 1.27 (hand ports of six of them), fastest of five runs:
+`bench/compare` runs the same scripts on Rhue, Luau 0.709 (the interpreter, through `mlua`) and Rhai 1.27 (hand ports of seven of them), fastest of five runs:
 
 ```bash
 $ cargo run --release --manifest-path bench/compare/Cargo.toml

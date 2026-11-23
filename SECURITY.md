@@ -4,6 +4,7 @@ Rhue is meant to run scripts you don't trust, so anything that lets one get past
 
 - reaching the filesystem, network, processes or anything else the host didn't hand it
 - getting around the instruction, memory or recursion limits, or an interrupt
+- one environment changing what another one sees, like the libraries they share once `Engine::freeze_libraries` is on
 - panicking the host, or hanging it in a way none of the limits can stop
 - loaded bytecode that passes the verifier and then does something it shouldn't
 
