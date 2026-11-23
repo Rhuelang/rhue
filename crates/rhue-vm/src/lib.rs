@@ -802,6 +802,9 @@ pub struct Vm {
     yielded: Rets,
     /// Where the suspended `yield` call's results go.
     yield_dest: Option<coroutine::Parked>,
+    /// The error `resume_error` wants raised at the parked call, until the
+    /// thread's resume takes it.
+    raise_on_resume: Option<Value>,
     /// The debug hook, if any (see [`Vm::set_debug_hook`]).
     hooks: debug::HookState,
     /// Stands in for the current frame while it sits in `frames` during a
@@ -858,6 +861,7 @@ impl Vm {
             depth: 0,
             yielded: Rets::new(),
             yield_dest: None,
+            raise_on_resume: None,
             hooks: debug::HookState::default(),
             id: NEXT_VM_ID.fetch_add(1, Ordering::Relaxed),
             heap,

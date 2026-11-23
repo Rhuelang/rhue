@@ -9,6 +9,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ## [Unreleased]
 
 - Feat: `pcall` and `xpcall` work directly around a native that yields, so `pcall(require, m)` can wait on the host. `pcall(coroutine.yield, x)` yields now too, instead of erroring.
+- Feat: `Engine::resume_error` and `Context::resume_error` resume a waiting script so the call it waited in raises instead. Under `pcall` that gives `false, err`, for a native that waited on the host and then failed.
+- Fix: Async natives are plain natives now, without the script wrapper they used to sit in. Tracebacks lose the `[async name]` frame, and an error from one is raised at the script's own call.
 - Feat: `Engine::freeze_libraries` makes `math`, `string`, `table` and the other library tables read-only, along with the metatable strings share. Without it a script in one environment could replace `math.floor` or `string.format` for every other environment and the host. It's opt-in until 3.0.
 
 ## [2.2.0] - 2026-11-20

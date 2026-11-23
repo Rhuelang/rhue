@@ -19,7 +19,7 @@ use std::task::Poll;
 use std::time::Duration;
 
 use crate::context::Repr;
-use crate::tasks::{Scheduler, Task, TaskState};
+use crate::tasks::{ResumeWith, Scheduler, Task, TaskState};
 use crate::{
     Context, Engine, Error, FromValues, Function, IntoValues, ScriptError, Thread, Value, Variadic,
 };
@@ -84,18 +84,6 @@ pub(crate) fn suspend(
     state.borrow_mut().pending.push(Pending { thread, future });
     Err(ScriptError::yield_with(Vec::new()))
 }
-
-/// The Lua side of every async native. The raw native yields, gets resumed with
-/// `true, results...` or `false, error`, and this turns the second one into an
-/// error raised where the script called it.
-const WRAPPER: &str = "local raw, pack, unpack, raise = ...
-return function(...)
-    local r = pack(raw(...))
-    if r[1] then
-        return unpack(r, 2, r.n)
-    end
-    raise(r[2], 2)
-end";
 
 /// Stops a script from another task or thread. Cheap to clone, and it's `Send +
 /// Sync`.
@@ -172,37 +160,16 @@ impl Engine {
     pub fn register_async<M, F: crate::native::IntoAsyncNative<M>>(&mut self, name: &str, f: F) {
         F::declare_types(&mut self.vm);
         let sig = F::signature();
+        // the native itself, no script wrapper: a failed future resumes the
+        // script with resume_error, which raises at the call, and pcall(native)
+        // works since pcall can wrap a native that waits
         let raw = f.into_async_native(Rc::from(name), self.asyncs.clone());
-        let raw = self.vm.native(name, raw);
-        let wrapper = self.make_async_wrapper(raw, name);
-        self.vm.set_global(name, wrapper);
+        let native = self.vm.native(name, raw);
+        self.vm.set_global(name, native);
         crate::userdata::declare(
             crate::type_env(&mut self.vm).declare_global(name, &sig),
             &sig,
         );
-    }
-
-    fn make_async_wrapper(&mut self, raw: rhue_vm::Value, name: &str) -> rhue_vm::Value {
-        let proto = self
-            .compile(&format!("[async {name}]"), WRAPPER)
-            .expect("the async wrapper compiles");
-        let chunk = self.vm.load(&proto.0);
-        let table = self.vm.global("table");
-        let field = |vm: &mut rhue_vm::Vm, k: &str| match table {
-            rhue_vm::Value::Table(t) => {
-                let key = vm.heap_mut().intern(k);
-                vm.heap().table(t).get_str(key)
-            }
-            _ => rhue_vm::Value::Nil,
-        };
-        let pack = field(&mut self.vm, "pack");
-        let unpack = field(&mut self.vm, "unpack");
-        let raise = self.vm.global("error");
-        self.vm
-            .call_function(chunk, &[raw, pack, unpack, raise])
-            .ok()
-            .and_then(|v| v.first().copied())
-            .expect("the async wrapper builds")
     }
 
     /// The function the drivers use to wait for `task.wait` and
@@ -419,17 +386,11 @@ impl Engine {
             };
             yielded_to_host = false;
             for (thread, finish) in finished {
-                let args = {
-                    let mut cx = self.context();
-                    match finish(&mut cx) {
-                        Ok(mut values) => {
-                            values.insert(0, Value::Bool(true));
-                            values
-                        }
-                        Err(e) => vec![Value::Bool(false), error_value(e)],
-                    }
+                let wake = match finish(&mut self.context()) {
+                    Ok(values) => ResumeWith::With(values),
+                    Err(e) => ResumeWith::Error(error_value(e)),
                 };
-                self.resume_waiting(&thread, args, &mut main)?;
+                self.resume_waiting(&thread, wake, &mut main)?;
             }
             if main_yielded
                 && let Some(t) = main.as_deref_mut()
@@ -455,23 +416,30 @@ impl Engine {
     fn resume_waiting(
         &mut self,
         thread: &Thread,
-        args: Vec<Value>,
+        wake: ResumeWith,
         main: &mut Option<&mut Task>,
     ) -> Result<(), Error> {
         if let Some(t) = main.as_deref_mut()
             && t.thread() == thread
         {
-            return self.resume(t, args);
+            return match wake {
+                ResumeWith::With(values) => self.resume(t, values),
+                ResumeWith::Error(e) => self.resume_error(t, e),
+            };
         }
         if self.context().thread_status(thread) != "suspended" {
             return Ok(());
         }
         match self.tasks.clone() {
-            Some(s) => crate::tasks::run(&mut self.context(), &s, thread, args),
+            Some(s) => crate::tasks::run_with(&mut self.context(), &s, thread, wake),
             None => {
-                let result = self
-                    .context()
-                    .resume::<Variadic<Value>>(thread, Variadic(args));
+                let mut cx = self.context();
+                let result = match wake {
+                    ResumeWith::With(values) => {
+                        cx.resume::<Variadic<Value>>(thread, Variadic(values))
+                    }
+                    ResumeWith::Error(e) => cx.resume_error::<Variadic<Value>>(thread, e),
+                };
                 if let Err(e) = result {
                     self.asyncs.borrow_mut().errors.push(Error::from_script(e));
                 }
