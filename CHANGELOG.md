@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+- Feat: `pcall` and `xpcall` work directly around a native that yields, so `pcall(require, m)` can wait on the host. `pcall(coroutine.yield, x)` yields now too, instead of erroring.
 - Feat: `Engine::freeze_libraries` makes `math`, `string`, `table` and the other library tables read-only, along with the metatable strings share. Without it a script in one environment could replace `math.floor` or `string.format` for every other environment and the host. It's opt-in until 3.0.
 
 ## [2.2.0] - 2026-11-20

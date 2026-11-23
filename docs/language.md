@@ -110,7 +110,7 @@ print(coroutine.resume(co, 1))         -- true  6
 print(coroutine.status(co))            -- dead
 ```
 
-The whole `coroutine` library's there. You can yield inside `pcall` and metamethods, just not inside a callback a native is running (a `table.sort` comparator, for example). Hosts can drive them too:
+The whole `coroutine` library's there. You can yield inside `pcall` and metamethods, just not inside a callback a native is running (a `table.sort` comparator, for example). A native that yields right inside `pcall` or `xpcall` is fine too, and so is `pcall(coroutine.yield, x)`. Hosts can drive them too:
 
 ```rust
 let worker: Function = engine.get("worker")?;
