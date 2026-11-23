@@ -1,0 +1,1 @@
+- Feat: `Engine::freeze_libraries` makes `math`, `string`, `table` and the other library tables read-only, along with the metatable strings share. Without it a script in one environment could replace `math.floor` or `string.format` for every other environment and the host. It's opt-in until 3.0.
