@@ -18,9 +18,9 @@ use crate::{NativeCtx, NativeError, Rets, Table, Value, Vm};
 type R = Result<Rets, NativeError>;
 
 pub(crate) fn install(vm: &mut Vm) {
-    let os = lib(
+    let os = crate::stdlib::library(
         vm,
-        vec![
+        &[
             ("time", Rc::new(os_time)),
             ("clock", Rc::new(os_clock)),
             ("date", Rc::new(os_date)),
@@ -28,9 +28,9 @@ pub(crate) fn install(vm: &mut Vm) {
         ],
     );
     vm.set_global("os", os);
-    let utf8 = lib(
+    let utf8 = crate::stdlib::library(
         vm,
-        vec![
+        &[
             ("char", Rc::new(utf8_char)),
             ("codepoint", Rc::new(utf8_codepoint)),
             ("len", Rc::new(utf8_len)),
@@ -39,16 +39,6 @@ pub(crate) fn install(vm: &mut Vm) {
         ],
     );
     vm.set_global("utf8", utf8);
-}
-
-fn lib(vm: &mut Vm, entries: Vec<(&str, crate::NativeFn)>) -> Value {
-    let mut table = Table::default();
-    for (name, func) in entries {
-        let key = vm.string(name);
-        let f = vm.native(name, func);
-        let _ = table.set(key, f);
-    }
-    Value::Table(vm.heap_mut().alloc_table(table))
 }
 
 // ─ os ────────────────────────────────────────────────────────────────────────
