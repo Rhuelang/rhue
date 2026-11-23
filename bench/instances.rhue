@@ -1,0 +1,39 @@
+-- expect: 188176 1391 15 27750
+-- A frame of a host-heavy game script: properties on host objects read and
+-- written every frame, method calls, vector math on what comes back,
+-- objects passed to natives and kept as table keys. `Body` comes from
+-- `register_host` in the bench runner.
+local bodies = {}
+for i = 1, 16 do
+	bodies[i] = Body.new(i, 0, -i, 2 ^ (i % 3))
+end
+local target = Body.new(0, 0, 0, 1)
+local near = {}
+local dt = 0.5
+local hits, weight = 0, 0
+for frame = 1, 6000 do
+	-- pushes flip direction every 8 frames, so speeds stay small
+	local force = if frame % 16 < 8 then vector.create(1, 0, -1) else vector.create(-1, 0, 1)
+	for i = 1, #bodies do
+		local b = bodies[i]
+		b.position += b.velocity * dt
+		if frame % 8 == i % 8 then
+			b:push(force)
+			weight += weigh(b)
+		end
+		local d = b:offset(target)
+		if vector.dot(d, d) < 400 then
+			hits += 1
+			near[b] = (near[b] or 0) + 1
+		end
+	end
+end
+local sum, distinct = 0, 0
+for i = 1, #bodies do
+	local p = bodies[i].position
+	sum += p.x - p.z
+end
+for _ in near do
+	distinct += 1
+end
+return math.floor(sum * 8), hits, distinct, weight
