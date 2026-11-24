@@ -28,6 +28,7 @@ jobs:
       - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
         with:
           tool: cargo-fuzz
+      # binstall hands us a musl cargo-fuzz, which builds for musl unless told otherwise
       - name: Fuzz
         run: |
           mkdir -p fuzz/corpus/${{ matrix.target }}
@@ -35,7 +36,7 @@ jobs:
           if [ "${{ matrix.target }}" = compile ] || [ "${{ matrix.target }}" = run ]; then
             seeds="examples bench"
           fi
-          cargo fuzz run ${{ matrix.target }} fuzz/corpus/${{ matrix.target }} $seeds -- -max_total_time=300 -timeout=10
+          cargo fuzz run --target x86_64-unknown-linux-gnu ${{ matrix.target }} fuzz/corpus/${{ matrix.target }} $seeds -- -max_total_time=300 -timeout=10
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: failure()
         with:

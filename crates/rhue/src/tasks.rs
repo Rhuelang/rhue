@@ -396,6 +396,8 @@ impl Engine {
         ] {
             cx.set(&lib, name, f).expect("a string key");
         }
+        let r = cx.table_ref_of(&lib);
+        cx.vm.add_library(r);
         cx.set_global("task", lib);
         self.declare("task", TASK_TYPE)
             .expect("the task library's type parses");

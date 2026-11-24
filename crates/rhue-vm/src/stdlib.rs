@@ -197,7 +197,9 @@ pub(crate) fn library(vm: &mut Vm, entries: &[(&str, crate::NativeFn)]) -> Value
         let f = vm.native(name, func.clone());
         let _ = table.set(key, f);
     }
-    Value::Table(vm.heap_mut().alloc_table(table))
+    let t = vm.heap_mut().alloc_table(table);
+    vm.add_library(t);
+    Value::Table(t)
 }
 
 // ─ Argument Helpers ──────────────────────────────────────────────────────────
