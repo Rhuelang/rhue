@@ -7,8 +7,8 @@
 //! function pushes a `Frame` whose registers start right above the callee's
 //! slot (`base`), so the arguments are already where the callee's parameters
 //! are. Results get copied back down to the callee's slot. Calls never recurse
-//! on the Rust stack, so deep Lua recursion is bounded by [`MAX_FRAMES`] and
-//! not the host's stack size.
+//! on the Rust stack, so deep Lua recursion is bounded by [`MAX_FRAMES`] (or a
+//! lower cap from [`Vm::set_max_call_depth`]) and not the host's stack size.
 //!
 //! **Upvalues.** While a captured variable's register is live, closures reach
 //! it through an *open* upvalue (a stack index). `CLOSE`, or returning from the
@@ -67,7 +67,8 @@ pub use value::{Value, vector_text};
 use rhue_bytecode::{ArithOp, Constant, Instr, Op, Proto, arith, format_number};
 use rhue_common::{Diagnostic, SourceFile, Span};
 
-/// Max call depth before `stack overflow`.
+/// Max call depth before `stack overflow`, unless a host sets a lower one
+/// with [`Vm::set_max_call_depth`].
 pub const MAX_FRAMES: usize = 10_000;
 /// Max stack slots across all frames.
 pub const MAX_STACK: usize = 1_000_000;
@@ -772,6 +773,8 @@ pub struct Vm {
     /// the old ones, so it's a push).
     open_upvalues: Vec<(usize, UpvalRef)>,
     instruction_limit: Option<u64>,
+    /// How deep calls can nest in one thread ([`Vm::set_max_call_depth`]).
+    max_frames: usize,
     output: Box<dyn FnMut(&str)>,
     pins: PinTable,
     /// The table string methods are looked up in (`("x"):upper()`).
@@ -904,6 +907,7 @@ impl Vm {
             frames: Vec::new(),
             open_upvalues: Vec::new(),
             instruction_limit: None,
+            max_frames: MAX_FRAMES,
             output: Box::new(|line| println!("{line}")),
             pins: Rc::new(RefCell::new(HashMap::new())),
             string_methods: None,
@@ -1096,6 +1100,14 @@ impl Vm {
     pub fn set_instruction_limit(&mut self, limit: Option<u64>) {
         self.instruction_limit = limit;
         self.meter.limit.set(limit);
+    }
+
+    /// Caps how deep script calls can nest in one thread before `stack
+    /// overflow`, which `pcall` can catch like it always could. Anything from
+    /// 2 (the chunk and one call under it) to [`MAX_FRAMES`], the default.
+    /// Outside that it gets clamped.
+    pub fn set_max_call_depth(&mut self, depth: usize) {
+        self.max_frames = depth.clamp(2, MAX_FRAMES);
     }
 
     /// Formats a value like Luau's `tostring`.
@@ -1658,7 +1670,7 @@ impl Vm {
         protected: bool,
         is_main: bool,
     ) -> Result<Frame, String> {
-        if self.frames.len() + 1 >= MAX_FRAMES {
+        if self.frames.len() + 1 >= self.max_frames {
             return Err("stack overflow".into());
         }
         let new_base = func_slot + 1;

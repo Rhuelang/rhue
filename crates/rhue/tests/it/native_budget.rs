@@ -152,13 +152,19 @@ fn concat_is_charged_for_what_it_joins() {
     // it goes, not by the table's length
     let mut e = Engine::new();
     e.set_instruction_limit(Some(5_000_000));
-    let t = Instant::now();
+    // count the calls rather than time them: each joins about 200k pieces,
+    // so the limit allows about 25, and undercharging let it run thousands
     let err = e
         .eval(
             "local t = {} for i = 2, 200000 do t[i] = 'x' end \
-             while true do table.concat(t, '', 2, 200000) end",
+             calls = 0 \
+             while true do calls += 1 table.concat(t, '', 2, 200000) end",
         )
         .unwrap_err();
     assert!(err.to_string().contains("instruction limit"), "{err}");
-    assert!(t.elapsed() < Duration::from_secs(10), "{:?}", t.elapsed());
+    let calls = e.eval("return calls").unwrap();
+    let rhue::Value::Number(calls) = calls[0] else {
+        panic!("{calls:?}")
+    };
+    assert!((1.0..=40.0).contains(&calls), "{calls} calls");
 }
