@@ -56,8 +56,8 @@ use std::task::Waker;
 pub use debug::{DebugCtx, DebugEvent, DebugHook, FrameInfo, HookMask};
 pub use heap::{
     BufRef, CoStatus, Constants, Fast, FastFn, FnRef, Function, GcRoot, Heap, HeapStats,
-    LuaClosure, Native, NativeFn, Rets, Special, StrRef, TableRef, Thread, ThreadRef, UdRef,
-    UpvalRef, Upvalue, UserData,
+    LuaClosure, Native, NativeFn, Rets, Special, StrRef, TableRef, Thread, ThreadEnd, ThreadRef,
+    UdRef, UpvalRef, Upvalue, UserData,
 };
 pub use reload::SwapStats;
 pub use smallvec::{SmallVec, smallvec};
@@ -198,6 +198,12 @@ impl Rethrown {
     /// `false` for errors scripts can't catch (the instruction limit).
     pub fn catchable(&self) -> bool {
         self.0.catchable
+    }
+
+    /// Whether this is a thread being killed or cancelled (see
+    /// [`Vm::kill_thread`]) rather than an error.
+    pub fn killed(&self) -> bool {
+        self.0.is_kill()
     }
 }
 
@@ -394,6 +400,9 @@ pub(crate) struct Frame {
     /// Started by `pcall`. Errors stop here, and normal results get a leading
     /// `true`.
     protected: bool,
+    /// Started by `xpcall` (and protected): an error goes through the handler
+    /// waiting at `ret_to` first.
+    xpcall: bool,
     is_main: bool,
     /// A metamethod frame for `__eq`/`__lt`/`__le`. When it returns, its first
     /// result decides the caller's jump (`Some(expected)`).
@@ -475,6 +484,13 @@ struct Thrown {
 }
 
 impl Thrown {
+    /// A thread being killed or cancelled, which stops at the thread's edge.
+    fn is_kill(&self) -> bool {
+        !self.catchable
+            && !self.yielding
+            && (self.error.message == KILLED || self.error.message == CANCELLED)
+    }
+
     fn yield_signal() -> Thrown {
         thread_local! {
             // made once, a yield happens on every generator step
@@ -525,6 +541,13 @@ const BUDGET_SLICE: u64 = 1 << 14;
 
 /// The error a script stops with when it gets interrupted.
 pub const INTERRUPTED: &str = "script interrupted";
+
+/// The error a thread dies with when [`Vm::kill_thread`] gets it. Scripts
+/// can't catch it, and it stops at the thread's edge.
+pub const KILLED: &str = "thread killed";
+
+/// The same for [`Vm::cancel_thread`].
+pub const CANCELLED: &str = "thread cancelled";
 
 fn limit_message(limit: Option<u64>) -> String {
     format!(
@@ -758,6 +781,10 @@ pub struct Vm {
     string_methods: Option<TableRef>,
     /// The metatable every string shares (`{__index = string}`).
     string_meta: Option<TableRef>,
+    /// Every library table (`math`, `string`, `task`...), for `freeze_libraries`.
+    libraries: Vec<TableRef>,
+    /// Set once `freeze_libraries` ran, so libraries added later get frozen too.
+    libraries_frozen: bool,
     /// Interned metamethod names (`__index`, …).
     events: meta::Events,
     /// Values the standard library holds on the Rust side (like the `next` that
@@ -797,7 +824,17 @@ pub struct Vm {
     /// The values a `yield` passes out, on their way to `resume`.
     yielded: Rets,
     /// Where the suspended `yield` call's results go.
-    yield_dest: Option<(usize, Option<usize>)>,
+    yield_dest: Option<coroutine::Parked>,
+    /// How many live threads have a kill or cancel waiting, so the places that
+    /// look for one cost a compare while there are none.
+    marked: u32,
+    /// How many of those are kills. While there are any, budget slices are
+    /// one charge long, so a thread waiting on a coroutine it resumed finds
+    /// its kill as soon as it charges again.
+    kills: u32,
+    /// The error `resume_error` wants raised at the parked call, until the
+    /// thread's resume takes it.
+    raise_on_resume: Option<Value>,
     /// The debug hook, if any (see [`Vm::set_debug_hook`]).
     hooks: debug::HookState,
     /// Stands in for the current frame while it sits in `frames` during a
@@ -854,11 +891,16 @@ impl Vm {
             depth: 0,
             yielded: Rets::new(),
             yield_dest: None,
+            marked: 0,
+            kills: 0,
+            raise_on_resume: None,
             hooks: debug::HookState::default(),
             id: NEXT_VM_ID.fetch_add(1, Ordering::Relaxed),
             heap,
             events,
             string_meta: None,
+            libraries: Vec::new(),
+            libraries_frozen: false,
             globals: FxIndexMap::default(),
             stack: Vec::new(),
             stack_top: 0,
@@ -955,6 +997,19 @@ impl Vm {
         self.set_global(name, f);
     }
 
+    /// A global the VM runs itself when a script calls it, and that runs as
+    /// `func` when a native or the host does.
+    pub(crate) fn register_special_native(&mut self, name: &str, special: Special, func: NativeFn) {
+        let f = Value::Function(self.heap.alloc_function(Function::Native(Native {
+            name: name.into(),
+            func,
+            fast: None,
+            special: Some(special),
+            bound: Value::Nil,
+        })));
+        self.set_global(name, f);
+    }
+
     /// A function the VM runs itself (see [`Special`]).
     pub(crate) fn special_function(&mut self, name: &str, special: Special, bound: Value) -> Value {
         let func: NativeFn = Rc::new(|_, _| unreachable!("special natives are run by the VM"));
@@ -975,6 +1030,31 @@ impl Vm {
             .heap
             .with_table(meta, |m| m.set(index, Value::Table(t)));
         self.string_meta = Some(meta);
+    }
+
+    /// Marks `t` as a library table for [`freeze_libraries`](Self::freeze_libraries).
+    pub fn add_library(&mut self, t: TableRef) {
+        if self.libraries_frozen {
+            self.heap.table_mut(t).freeze();
+        }
+        self.libraries.push(t);
+    }
+
+    /// Freezes every library table and the string metatable. Libraries added
+    /// later get frozen as they're added, and there's no undo.
+    pub fn freeze_libraries(&mut self) {
+        self.libraries_frozen = true;
+        for &t in &self.libraries {
+            self.heap.table_mut(t).freeze();
+        }
+        if let Some(meta) = self.string_meta {
+            self.heap.table_mut(meta).freeze();
+        }
+    }
+
+    /// Whether [`freeze_libraries`](Self::freeze_libraries) has run.
+    pub fn libraries_frozen(&self) -> bool {
+        self.libraries_frozen
     }
 
     pub(crate) fn keep_alive(&mut self, v: Value) {
@@ -1098,6 +1178,12 @@ impl Vm {
         if let Some(t) = self.string_meta {
             roots.push(GcRoot::Value(Value::Table(t)));
         }
+        // a host can drop a library's global, but the handle stays in `libraries`
+        roots.extend(
+            self.libraries
+                .iter()
+                .map(|&t| GcRoot::Value(Value::Table(t))),
+        );
         roots.extend(self.events.all().map(|s| GcRoot::Value(Value::String(s))));
         roots.extend(self.internal_roots.iter().map(|&v| GcRoot::Value(v)));
         roots.extend(self.native_roots.iter().map(|&v| GcRoot::Value(v)));
@@ -1528,6 +1614,7 @@ impl Vm {
             ret_to: 0,
             ret_want: ALL_RESULTS,
             protected: false,
+            xpcall: false,
             is_main: false,
             cond: None,
             call_reported: false,
@@ -1615,6 +1702,7 @@ impl Vm {
             ret_to: func_slot as u32,
             ret_want: want.map_or(ALL_RESULTS, |w| w as u32),
             protected,
+            xpcall: false,
             is_main,
             cond: None,
             call_reported: false,
@@ -1905,11 +1993,15 @@ impl Vm {
             t.catchable = false;
             return Err(t);
         }
+        if self.current_mark() == heap::Mark::Kill {
+            return Err(self.stop_thrown(Some((f, pc))));
+        }
+        let slice = if self.kills == 0 { BUDGET_SLICE } else { n };
         while self.budget < n {
             if self.reserve == 0 {
                 return Err(self.limit_reached(f, pc));
             }
-            let take = self.reserve.min(BUDGET_SLICE);
+            let take = self.reserve.min(slice);
             self.reserve -= take;
             self.budget += take;
         }
@@ -1935,13 +2027,22 @@ impl Vm {
         if self.interrupt.flag.swap(false, Ordering::AcqRel) {
             return Err(NativeError::Uncatchable(INTERRUPTED.into()));
         }
+        if self.current_mark() == heap::Mark::Kill {
+            self.drain_slice();
+            return Err(NativeError::Uncatchable(KILLED.into()));
+        }
         while self.budget < n {
             if self.reserve == 0 {
                 return Err(NativeError::Uncatchable(limit_message(
                     self.instruction_limit,
                 )));
             }
-            let take = self.reserve.min(BUDGET_SLICE.max(n));
+            let slice = if self.kills == 0 {
+                BUDGET_SLICE.max(n)
+            } else {
+                n
+            };
+            let take = self.reserve.min(slice);
             self.reserve -= take;
             self.budget += take;
         }
@@ -2116,12 +2217,18 @@ impl Vm {
         loop {
             self.close_upvalues(f.base);
             if f.protected {
-                let (dest, want) = (f.ret_to(), f.ret_want());
+                let (dest, want, xpcall) = (f.ret_to(), f.ret_want(), f.xpcall);
                 *f = self
                     .frames
                     .pop()
                     .expect("a protected frame always has a caller");
-                let end = self.place_results(dest, &[Value::Bool(false), thrown.value], want);
+                let values = if xpcall {
+                    let handler = self.stack[dest];
+                    self.run_handler(f, handler, thrown.value)?
+                } else {
+                    smallvec![Value::Bool(false), thrown.value]
+                };
+                let end = self.place_results(dest, &values, want);
                 if want.is_none() {
                     *top = end;
                 }
@@ -2171,6 +2278,9 @@ impl Vm {
             Function::Native(native) if native.special == Some(Special::Pcall) => {
                 self.pcall(f, pc, func_slot, nargs, want, top)
             }
+            Function::Native(native) if native.special == Some(Special::Xpcall) => {
+                self.xpcall(f, pc, func_slot, nargs, want, top)
+            }
             Function::Native(Native {
                 special: Some(Special::Yield),
                 ..
@@ -2214,10 +2324,15 @@ impl Vm {
                 match self.native_from(f, &func, &args) {
                     Err(NativeError::Yield(values)) if !protected => {
                         if let Err(m) = self.check_yield() {
+                            self.stop_at_pause(f, pc)?;
                             return Err(self.throw(f, pc, m));
                         }
                         self.yielded = values;
-                        self.yield_dest = Some((func_slot, want));
+                        self.yield_dest = Some(coroutine::Parked {
+                            slot: func_slot,
+                            want,
+                            catch: coroutine::Catch::None,
+                        });
                         Err(Thrown::yield_signal())
                     }
                     Ok(mut results) => {
@@ -2271,6 +2386,7 @@ impl Vm {
         frame.ret_to = f.ret_to;
         frame.ret_want = f.ret_want;
         frame.protected = f.protected;
+        frame.xpcall = f.xpcall;
         frame.cond = f.cond;
         let mut trail = f.trail.take().unwrap_or_default();
         trail.push(TailSite {
@@ -2285,10 +2401,6 @@ impl Vm {
 
     /// `pcall(g, ...)`, calls `g` so errors come back as `false, value` instead
     /// of propagating.
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "stack slots and pcs stay far under u32 (the stack and code are capped), opcodes are a byte"
-    )]
     fn pcall(
         &mut self,
         f: &mut Frame,
@@ -2301,55 +2413,190 @@ impl Vm {
         if nargs == 0 {
             return Err(self.throw(f, pc, "missing argument #1 to 'pcall'".into()));
         }
-        let protected_slot = func_slot + 1;
-        // a callable table runs through its `__call`, like any call
-        let nargs = match self.resolve_call(protected_slot, nargs - 1) {
-            Ok(n) => n + 1,
-            Err(_) => nargs,
+        let catch = coroutine::Catch::Pcall;
+        self.protected_call(f, pc, func_slot, nargs - 1, want, top, catch)
+    }
+
+    /// `xpcall(g, handler, ...)`, `pcall` with the error value going through
+    /// `handler` first. Unlike Lua, the handler runs after the stack's
+    /// unwound, so it can't look at the failing frames.
+    fn xpcall(
+        &mut self,
+        f: &mut Frame,
+        pc: usize,
+        func_slot: usize,
+        nargs: usize,
+        want: Option<usize>,
+        top: &mut usize,
+    ) -> Result<(), Thrown> {
+        let args = &self.stack[func_slot + 1..func_slot + 1 + nargs];
+        let checked = match (stdlib::arg(args, 0, "xpcall"), args.get(1)) {
+            (Err(e), _) => Err(e),
+            (Ok(_), Some(&h @ Value::Function(_))) => Ok(h),
+            (Ok(_), Some(&other)) => Err(stdlib::bad_arg(2, "xpcall", "function", other)),
+            (Ok(_), None) => Err("missing argument #2 to 'xpcall'".into()),
         };
-        let target = self.stack[protected_slot];
+        let handler = checked.map_err(|e| self.native_throw(f, pc, e))?;
+        // the handler waits in xpcall's own slot, where the results go, so it
+        // stays on the stack (and alive) while `g` runs or sits parked
+        self.stack[func_slot] = handler;
+        self.stack
+            .copy_within(func_slot + 3..func_slot + 1 + nargs, func_slot + 2);
+        let catch = coroutine::Catch::Xpcall;
+        self.protected_call(f, pc, func_slot, nargs - 2, want, top, catch)
+    }
+
+    /// The shared part of `pcall` and `xpcall`: calls the function at
+    /// `func_slot + 1` with `nargs` arguments above it, and puts `true` and its
+    /// results, or what the error turned into, at `func_slot`. Lua functions
+    /// and plain natives run right here, so they can yield like any call.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "stack slots and pcs stay far under u32 (the stack and code are capped), opcodes are a byte"
+    )]
+    #[allow(clippy::too_many_arguments)]
+    fn protected_call(
+        &mut self,
+        f: &mut Frame,
+        pc: usize,
+        func_slot: usize,
+        nargs: usize,
+        want: Option<usize>,
+        top: &mut usize,
+        catch: coroutine::Catch,
+    ) -> Result<(), Thrown> {
+        let target_slot = func_slot + 1;
+        // a callable table runs through its `__call`, like any call
+        let nargs = self.resolve_call(target_slot, nargs).unwrap_or(nargs);
+        let target = self.stack[target_slot];
         let finish = |vm: &mut Vm, values: &[Value], top: &mut usize| {
             let end = vm.place_results(func_slot, values, want);
             if want.is_none() {
                 *top = end;
             }
         };
-        match target {
+        let caught = match target {
             // a Lua function runs in this dispatch loop, in a protected frame
-            // whose results go to pcall's own slot
+            // whose results go to the protected call's own slot
             Value::Function(r) if matches!(self.heap.function(r), Function::Lua(_)) => {
-                let r = self.call(f, pc, protected_slot, nargs - 1, want, top, true);
+                let r = self.call(f, pc, target_slot, nargs, want, top, true);
                 if r.is_ok() {
                     f.ret_to = func_slot as u32;
+                    f.xpcall = catch == coroutine::Catch::Xpcall;
                 }
-                r
+                return r;
             }
-            // a native (pcall itself included) runs nested, to the end
-            Value::Function(_) => {
-                let placeholder = self.placeholder_frame(f.closure);
-                self.frames.push(std::mem::replace(f, placeholder));
-                let result = self.invoke_at(protected_slot, nargs - 1, false);
-                *f = self.frames.pop().expect("pcall's caller");
-                match result {
-                    Ok(mut values) => {
-                        values.insert(0, Value::Bool(true));
-                        finish(self, &values, top);
-                        Ok(())
+            Value::Function(r) => match self.heap.function(r) {
+                // `pcall(coroutine.yield, ...)` yields, and resuming it gives
+                // `true` and the resume's values
+                Function::Native(Native {
+                    special: Some(Special::Yield),
+                    ..
+                }) => match self.check_yield() {
+                    Ok(()) => {
+                        let args = &self.stack[target_slot + 1..target_slot + 1 + nargs];
+                        self.yielded = Rets::from_slice(args);
+                        self.yield_dest = Some(coroutine::Parked {
+                            slot: func_slot,
+                            want,
+                            catch,
+                        });
+                        return Err(Thrown::yield_signal());
                     }
-                    Err(t) if t.catchable => {
-                        finish(self, &[Value::Bool(false), t.value], top);
-                        Ok(())
+                    Err(m) => {
+                        self.stop_at_pause(f, pc)?;
+                        self.throw(f, pc, m)
                     }
-                    Err(t) => Err(t),
+                },
+                // a plain native runs the way any call runs it, with nothing
+                // nested in between, so it can yield
+                Function::Native(native) if native.special.is_none() => {
+                    let func = native.func.clone();
+                    let args =
+                        ArgBuf::from_slice(&self.stack[target_slot + 1..target_slot + 1 + nargs]);
+                    match self.native_from(f, &func, &args) {
+                        Ok(mut values) => {
+                            values.insert(0, Value::Bool(true));
+                            finish(self, &values, top);
+                            return Ok(());
+                        }
+                        Err(NativeError::Yield(values)) => match self.check_yield() {
+                            Ok(()) => {
+                                self.yielded = values;
+                                self.yield_dest = Some(coroutine::Parked {
+                                    slot: func_slot,
+                                    want,
+                                    catch,
+                                });
+                                return Err(Thrown::yield_signal());
+                            }
+                            Err(m) => {
+                                self.stop_at_pause(f, pc)?;
+                                self.throw(f, pc, m)
+                            }
+                        },
+                        // like a native that called it, so `pcall(error, "x")`
+                        // gets no position
+                        Err(e) => {
+                            let error = self.error_at(f, pc, String::new());
+                            self.raise(error, e, 1)
+                        }
+                    }
                 }
-            }
+                // the other specials (pcall itself included) run nested, to
+                // the end
+                _ => {
+                    let placeholder = self.placeholder_frame(f.closure);
+                    self.frames.push(std::mem::replace(f, placeholder));
+                    let result = self.invoke_at(target_slot, nargs, false);
+                    *f = self.frames.pop().expect("pcall's caller");
+                    match result {
+                        Ok(mut values) => {
+                            values.insert(0, Value::Bool(true));
+                            finish(self, &values, top);
+                            return Ok(());
+                        }
+                        Err(t) => t,
+                    }
+                }
+            },
             other => {
+                // a plain message, like the nested call used to give
                 let msg = format!("attempt to call a {} value", other.type_name());
                 let v = self.string(&msg);
-                finish(self, &[Value::Bool(false), v], top);
-                Ok(())
+                let mut t = self.throw(f, pc, msg);
+                t.value = v;
+                t
             }
+        };
+        if !caught.catchable {
+            return Err(caught);
         }
+        let values = if catch == coroutine::Catch::Xpcall {
+            let handler = self.stack[func_slot];
+            self.run_handler(f, handler, caught.value)?
+        } else {
+            smallvec![Value::Bool(false), caught.value]
+        };
+        finish(self, &values, top);
+        Ok(())
+    }
+
+    /// `xpcall`'s handler on error value `value`, nested. Gives back what
+    /// `xpcall` returns: `false` and the handler's results, or `false` and the
+    /// handler's own error if it failed too.
+    fn run_handler(&mut self, f: &mut Frame, handler: Value, value: Value) -> Result<Rets, Thrown> {
+        let placeholder = self.placeholder_frame(f.closure);
+        self.frames.push(std::mem::replace(f, placeholder));
+        let result = self.call_top_thrown(handler, &[value], false);
+        *f = self.frames.pop().expect("xpcall's caller");
+        let mut out = smallvec![Value::Bool(false)];
+        match result {
+            Ok(values) => out.extend(values),
+            Err(t) if t.catchable => out.push(t.value),
+            Err(t) => return Err(t),
+        }
+        Ok(out)
     }
 
     fn dispatch(&mut self, f: &mut Frame, top: &mut usize) -> Result<Rets, Thrown> {
