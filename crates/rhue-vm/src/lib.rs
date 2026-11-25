@@ -56,8 +56,8 @@ use std::task::Waker;
 pub use debug::{DebugCtx, DebugEvent, DebugHook, FrameInfo, HookMask};
 pub use heap::{
     BufRef, CoStatus, Constants, Fast, FastFn, FnRef, Function, GcRoot, Heap, HeapStats,
-    LuaClosure, Native, NativeFn, Rets, Special, StrRef, TableRef, Thread, ThreadRef, UdRef,
-    UpvalRef, Upvalue, UserData,
+    LuaClosure, Native, NativeFn, Rets, Special, StrRef, TableRef, Thread, ThreadEnd, ThreadRef,
+    UdRef, UpvalRef, Upvalue, UserData,
 };
 pub use reload::SwapStats;
 pub use smallvec::{SmallVec, smallvec};
@@ -197,6 +197,12 @@ impl Rethrown {
     /// `false` for errors scripts can't catch (the instruction limit).
     pub fn catchable(&self) -> bool {
         self.0.catchable
+    }
+
+    /// Whether this is a thread being killed or cancelled (see
+    /// [`Vm::kill_thread`]) rather than an error.
+    pub fn killed(&self) -> bool {
+        self.0.is_kill()
     }
 }
 
@@ -477,6 +483,13 @@ struct Thrown {
 }
 
 impl Thrown {
+    /// A thread being killed or cancelled, which stops at the thread's edge.
+    fn is_kill(&self) -> bool {
+        !self.catchable
+            && !self.yielding
+            && (self.error.message == KILLED || self.error.message == CANCELLED)
+    }
+
     fn yield_signal() -> Thrown {
         thread_local! {
             // made once, a yield happens on every generator step
@@ -527,6 +540,13 @@ const BUDGET_SLICE: u64 = 1 << 14;
 
 /// The error a script stops with when it gets interrupted.
 pub const INTERRUPTED: &str = "script interrupted";
+
+/// The error a thread dies with when [`Vm::kill_thread`] gets it. Scripts
+/// can't catch it, and it stops at the thread's edge.
+pub const KILLED: &str = "thread killed";
+
+/// The same for [`Vm::cancel_thread`].
+pub const CANCELLED: &str = "thread cancelled";
 
 fn limit_message(limit: Option<u64>) -> String {
     format!(
@@ -802,6 +822,13 @@ pub struct Vm {
     yielded: Rets,
     /// Where the suspended `yield` call's results go.
     yield_dest: Option<coroutine::Parked>,
+    /// How many live threads have a kill or cancel waiting, so the places that
+    /// look for one cost a compare while there are none.
+    marked: u32,
+    /// How many of those are kills. While there are any, budget slices are
+    /// one charge long, so a thread waiting on a coroutine it resumed finds
+    /// its kill as soon as it charges again.
+    kills: u32,
     /// The error `resume_error` wants raised at the parked call, until the
     /// thread's resume takes it.
     raise_on_resume: Option<Value>,
@@ -861,6 +888,8 @@ impl Vm {
             depth: 0,
             yielded: Rets::new(),
             yield_dest: None,
+            marked: 0,
+            kills: 0,
             raise_on_resume: None,
             hooks: debug::HookState::default(),
             id: NEXT_VM_ID.fetch_add(1, Ordering::Relaxed),
@@ -1952,11 +1981,15 @@ impl Vm {
             t.catchable = false;
             return Err(t);
         }
+        if self.current_mark() == heap::Mark::Kill {
+            return Err(self.stop_thrown(Some((f, pc))));
+        }
+        let slice = if self.kills == 0 { BUDGET_SLICE } else { n };
         while self.budget < n {
             if self.reserve == 0 {
                 return Err(self.limit_reached(f, pc));
             }
-            let take = self.reserve.min(BUDGET_SLICE);
+            let take = self.reserve.min(slice);
             self.reserve -= take;
             self.budget += take;
         }
@@ -1982,13 +2015,22 @@ impl Vm {
         if self.interrupt.flag.swap(false, Ordering::AcqRel) {
             return Err(NativeError::Uncatchable(INTERRUPTED.into()));
         }
+        if self.current_mark() == heap::Mark::Kill {
+            self.drain_slice();
+            return Err(NativeError::Uncatchable(KILLED.into()));
+        }
         while self.budget < n {
             if self.reserve == 0 {
                 return Err(NativeError::Uncatchable(limit_message(
                     self.instruction_limit,
                 )));
             }
-            let take = self.reserve.min(BUDGET_SLICE.max(n));
+            let slice = if self.kills == 0 {
+                BUDGET_SLICE.max(n)
+            } else {
+                n
+            };
+            let take = self.reserve.min(slice);
             self.reserve -= take;
             self.budget += take;
         }
@@ -2270,6 +2312,7 @@ impl Vm {
                 match self.native_from(f, &func, &args) {
                     Err(NativeError::Yield(values)) if !protected => {
                         if let Err(m) = self.check_yield() {
+                            self.stop_at_pause(f, pc)?;
                             return Err(self.throw(f, pc, m));
                         }
                         self.yielded = values;
@@ -2448,7 +2491,10 @@ impl Vm {
                         });
                         return Err(Thrown::yield_signal());
                     }
-                    Err(m) => self.throw(f, pc, m),
+                    Err(m) => {
+                        self.stop_at_pause(f, pc)?;
+                        self.throw(f, pc, m)
+                    }
                 },
                 // a plain native runs the way any call runs it, with nothing
                 // nested in between, so it can yield
@@ -2472,7 +2518,10 @@ impl Vm {
                                 });
                                 return Err(Thrown::yield_signal());
                             }
-                            Err(m) => self.throw(f, pc, m),
+                            Err(m) => {
+                                self.stop_at_pause(f, pc)?;
+                                self.throw(f, pc, m)
+                            }
                         },
                         // like a native that called it, so `pcall(error, "x")`
                         // gets no position

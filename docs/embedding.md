@@ -104,6 +104,13 @@ let mut load = engine.spawn("load.rhue", r#"
 engine.resume_error(&mut load, "not found")?; // couldn't load: load.rhue:2: not found
 ```
 
+To stop a thread for good, `cx.kill_thread(&thread)` works on it in any state, and scripts can't `pcall` their way out of it. A waiting one dies on the spot. One that's waiting on a coroutine it resumed dies when that hands back, and a native killing its own thread should return `ScriptError::killed()` so nothing else runs. Whoever resumed it sees it as dead: `coroutine.resume` gives `false, "thread killed"`, and the host gets an error where `is_killed()` is `true`. `cx.cancel_thread` is the polite one, the thread keeps going and dies the next time it waits. `cx.thread_end(&thread)` says how a dead one went (finished, failed, killed or cancelled).
+
+```rust
+// the script's been disabled, stop whatever it was doing
+engine.context().kill_thread(task.thread());
+```
+
 `engine.open_tasks()` adds Roblox's `task` library (`wait`, `delay`, `spawn`, `defer`, `cancel`). Time only moves when you call `engine.step(dt)`, and one task erroring doesn't take the rest down with it.
 
 ```rust

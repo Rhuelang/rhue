@@ -197,7 +197,10 @@ pub(crate) fn run_with(
             if let Some(state) = state {
                 *state.borrow_mut() = TaskState::Finished(Vec::new());
             }
-            st.errors.push(Error::from_script(e));
+            // a killed task just finished, it isn't an error step() reports
+            if !e.is_killed() {
+                st.errors.push(Error::from_script(e));
+            }
         }
     }
     if dead {
