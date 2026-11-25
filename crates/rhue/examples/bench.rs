@@ -9,14 +9,50 @@
 //! Each script gets compiled once and run `N` times (default 5) in a fresh
 //! engine, and the report shows the fastest and the median run. `--save`
 //! writes the medians to a file, `--baseline` compares against one of
-//! those. Every engine has two natives registered from Rust (`add` and
-//! `count`) for `host.rhue` to call.
+//! those. Every engine gets what `register_host` sets up: two natives (`add`
+//! and `count`) for `host.rhue`, and a `Body` type for `instances.rhue`.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use rhue::Engine;
+use rhue::{Engine, Ud, UserData};
+
+/// A host object, the kind a game engine hands its scripts.
+#[derive(UserData, Clone)]
+struct Body {
+    position: [f32; 3],
+    velocity: [f32; 3],
+    mass: f32,
+}
+
+// ─ Host ──────────────────────────────────────────────────────────────────────
+/// Everything the scripts can call into. Kept in one place so a new way of
+/// registering types can replace it without touching the scripts.
+fn register_host(engine: &mut Engine) {
+    // for `host.rhue`, natives registered through the typed API
+    engine.register("add", |a: f64, b: f64| a + b);
+    engine.register("count", |n: i64| n + 1);
+    // for `instances.rhue`
+    engine
+        .register_type::<Body>()
+        .function("new", |x: f32, y: f32, z: f32, mass: f32| Body {
+            position: [x, y, z],
+            velocity: [0.0; 3],
+            mass,
+        })
+        .method("push", |b: &mut Body, force: [f32; 3]| {
+            let m = b.mass;
+            for (v, f) in b.velocity.iter_mut().zip(force) {
+                *v += f / m;
+            }
+        })
+        .method("offset", |b: &mut Body, other: Ud<Body>| {
+            let o = other.borrow().position;
+            [0, 1, 2].map(|k| b.position[k] - o[k])
+        });
+    engine.register("weigh", |b: Ud<Body>| b.borrow().mass);
+}
 
 fn main() {
     let mut runs = 5usize;
@@ -66,9 +102,7 @@ fn main() {
         let mut times = Vec::with_capacity(runs);
         for _ in 0..runs {
             let mut engine = Engine::new();
-            // for `host.rhue`, natives registered through the typed API
-            engine.register("add", |a: f64, b: f64| a + b);
-            engine.register("count", |n: i64| n + 1);
+            register_host(&mut engine);
             let proto = match engine.compile(&name, &source) {
                 Ok(p) => p,
                 Err(e) => panic!("{}", e.render(false)),

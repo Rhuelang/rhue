@@ -20,7 +20,7 @@ limit="${RHUE_BENCH_LIMIT:-2}"
 
 command -v valgrind >/dev/null || { echo "needs valgrind" >&2; exit 1; }
 cargo build -q --release -p rhue --example bench
-bin=target/release/examples/bench
+bin="${CARGO_TARGET_DIR:-target}/release/examples/bench"
 out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT
 
