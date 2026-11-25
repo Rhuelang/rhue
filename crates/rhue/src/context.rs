@@ -112,6 +112,26 @@ impl<'a> Context<'a> {
         R::from_values(results, self).map_err(ScriptError::result)
     }
 
+    /// [`resume`](Self::resume), but the call the coroutine is waiting in
+    /// raises `error` instead of returning. A `pcall` around it gets `false,
+    /// error`, otherwise it unwinds like any error. A string gets the call's
+    /// position. A coroutine that hasn't started yet can't take one.
+    pub fn resume_error<R: FromValues>(
+        &mut self,
+        co: &Thread,
+        error: impl IntoValue,
+    ) -> Result<R, ScriptError> {
+        self.check_owner(&co.pin);
+        let error = error.into_value(self);
+        let error = self.lower(error);
+        let results = self
+            .vm
+            .resume_error(co.r, error)
+            .map_err(|r| ScriptError(Repr::Thrown(Box::new(r))))?;
+        let results = results.into_iter().map(|v| self.lift(v)).collect();
+        R::from_values(results, self).map_err(ScriptError::result)
+    }
+
     /// The coroutine running right now, or `None` on the main thread (where
     /// nothing can yield).
     pub fn current_thread(&mut self) -> Option<Thread> {
@@ -155,6 +175,37 @@ impl<'a> Context<'a> {
     pub fn caller_environment(&mut self) -> Option<crate::Environment> {
         let table = self.vm.caller_env()?;
         crate::environment::find(self, table)
+    }
+
+    /// Kills a thread in any state. A suspended one dies right away without
+    /// running any more of its code. One that's running, or waiting on a
+    /// coroutine it resumed, dies at its next call, loop back-edge or pause,
+    /// or when it returns. Scripts can't
+    /// catch it, and it stops at the thread's edge: `coroutine.resume` gives
+    /// `false, "thread killed"`, and the host gets an error whose
+    /// [`is_killed`](crate::Error::is_killed) is `true`. A native killing its
+    /// own thread should return [`ScriptError::killed`] so nothing runs after
+    /// it.
+    ///
+    /// `false` for the main thread (use an
+    /// [`InterruptHandle`](crate::InterruptHandle)) or one that's already dead.
+    pub fn kill_thread(&mut self, co: &Thread) -> bool {
+        self.check_owner(&co.pin);
+        self.vm.kill_thread(co.r)
+    }
+
+    /// [`kill_thread`](Self::kill_thread), but a thread that's running keeps
+    /// going until it next pauses (a `yield`, or a native that waits) and dies
+    /// there. One that finishes without pausing just finishes. A suspended one
+    /// dies right away.
+    pub fn cancel_thread(&mut self, co: &Thread) -> bool {
+        self.check_owner(&co.pin);
+        self.vm.cancel_thread(co.r)
+    }
+
+    /// How a thread ended, or `None` while it's alive.
+    pub fn thread_end(&self, co: &Thread) -> Option<crate::ThreadEnd> {
+        self.vm.thread_end(co.r)
     }
 
     /// [`Engine::reload_module`](crate::Engine::reload_module) from inside a
@@ -451,6 +502,22 @@ impl ScriptError {
         ScriptError(Repr::Yield(values))
     }
 
+    /// What a native returns after [`Context::kill_thread`] on its own thread,
+    /// so the thread dies right there instead of at its next call.
+    pub fn killed() -> Self {
+        ScriptError(Repr::Uncatchable(rhue_vm::KILLED.to_string()))
+    }
+
+    /// Whether this is a thread being killed or cancelled rather than an
+    /// error (see [`Context::kill_thread`]).
+    pub fn is_killed(&self) -> bool {
+        match &self.0 {
+            Repr::Thrown(r) => r.killed(),
+            Repr::Uncatchable(m) => m == rhue_vm::KILLED || m == rhue_vm::CANCELLED,
+            _ => false,
+        }
+    }
+
     fn result(e: ArgError) -> Self {
         ScriptError::new(format!("invalid result #{} ({})", e.index, e.error))
     }
@@ -470,7 +537,7 @@ impl ScriptError {
             Repr::Value(v) => v.to_string(),
             Repr::OutOfMemory => rhue_vm::OUT_OF_MEMORY.to_string(),
             Repr::Uncatchable(m) => m.clone(),
-            Repr::Yield(_) => "attempt to yield across a C-call boundary".to_string(),
+            Repr::Yield(_) => "attempt to yield across an R-call boundary".to_string(),
         }
     }
 

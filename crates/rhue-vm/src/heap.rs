@@ -99,6 +99,32 @@ impl CoStatus {
     }
 }
 
+/// A stop the host asked for that hasn't happened yet (see
+/// [`Vm::kill_thread`](crate::Vm::kill_thread)).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Mark {
+    #[default]
+    None,
+    /// Dies the next time it runs, wherever it is.
+    Kill,
+    /// Dies the next time it tries to pause.
+    Cancel,
+}
+
+/// How a dead thread ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ThreadEnd {
+    /// Returned.
+    Finished,
+    /// An error nothing caught.
+    Failed,
+    /// [`Vm::kill_thread`](crate::Vm::kill_thread), or `coroutine.close`.
+    Killed,
+    /// [`Vm::cancel_thread`](crate::Vm::cancel_thread).
+    Cancelled,
+}
+
 /// A thread's execution state while it isn't the one running: its value stack,
 /// call frames and open upvalues. The running thread's state lives in the VM
 /// itself, and resuming and yielding swap these.
@@ -109,9 +135,8 @@ pub(crate) struct ThreadState {
     pub(crate) frames: Vec<crate::Frame>,
     pub(crate) open_upvalues: Vec<(usize, UpvalRef)>,
     pub(crate) boundary: usize,
-    /// For a coroutine stopped in `yield`: where that call's results go (the
-    /// call's slot, how many it wants).
-    pub(crate) pending: Option<(usize, Option<usize>)>,
+    /// For a coroutine stopped in `yield`: where that call's results go.
+    pub(crate) pending: Option<crate::coroutine::Parked>,
 }
 
 /// A coroutine (or the main thread).
@@ -129,11 +154,20 @@ pub struct Thread {
     /// Whatever the host hung on it (see
     /// [`Vm::set_thread_data`](crate::Vm::set_thread_data)).
     pub(crate) host: Option<Rc<dyn std::any::Any>>,
+    /// A kill or cancel waiting to happen.
+    pub(crate) mark: Mark,
+    /// How it ended, once it's dead.
+    pub(crate) end: Option<ThreadEnd>,
 }
 
 impl Thread {
     pub fn status(&self) -> CoStatus {
         self.status
+    }
+
+    /// How it ended, or `None` while it's alive.
+    pub fn end(&self) -> Option<ThreadEnd> {
+        self.end
     }
 }
 
@@ -183,6 +217,8 @@ pub type NativeFn = Rc<dyn Fn(&mut NativeCtx<'_>, &[Value]) -> Result<Rets, Nati
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Special {
     Pcall,
+    /// `xpcall`. Its `func` is what runs when a native or the host calls it.
+    Xpcall,
     /// `coroutine.resume`.
     Resume,
     /// `coroutine.yield`.
@@ -644,6 +680,8 @@ impl Heap {
             bytes,
             by_host: false,
             host: None,
+            mark: Mark::None,
+            end: None,
         });
         ThreadRef { index, generation }
     }

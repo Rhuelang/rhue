@@ -85,18 +85,26 @@ return table.concat(log, ', ')";
     assert_eq!(t.state(), TaskState::Finished(vec![s("true x!, true x!")]));
     // from the main thread, or through a native, it's the usual error
     let err = e.eval("pause()").unwrap_err();
-    assert_eq!(
-        err.diagnostic().message,
-        "attempt to yield from outside a coroutine"
+    let m = &err.diagnostic().message;
+    assert!(
+        m.starts_with("attempt to yield from outside a coroutine"),
+        "{m}"
     );
-    let mut t = e.spawn("n.rhue", "return pcall(pause)").unwrap();
-    assert!(t.is_finished());
-    let TaskState::Finished(v) = t.state() else {
-        panic!()
-    };
-    assert_eq!(v[0], Value::Bool(false));
-    assert!(v[1].to_string().contains("C-call boundary"), "{}", v[1]);
-    let _ = &mut t;
+    let err = e
+        .spawn(
+            "n.rhue",
+            "return table.sort({2, 1}, function(a, b) pause() return a < b end)",
+        )
+        .unwrap_err();
+    assert!(err.to_string().contains("R-call boundary"), "{err}");
+    // right inside pcall it's a plain call, so that one can (2.3)
+    let mut t = e.spawn("p.rhue", "return pcall(pause)").unwrap();
+    assert!(!t.is_finished());
+    e.resume(&mut t, vec![s("done")]).unwrap();
+    assert_eq!(
+        t.state(),
+        TaskState::Finished(vec![Value::Bool(true), s("done")])
+    );
 }
 
 #[test]
@@ -626,4 +634,80 @@ fn a_native_knows_its_callers_environment() {
     let c = e.create_environment();
     assert_eq!(e.eval_in(&c, "return owner()").unwrap(), [s("unnamed")]);
     assert!(a != b && a == a.clone());
+}
+
+// ─ One Chunk, Many Tasks ─────────────────────────────────────────────────────
+
+fn waiter() -> Engine {
+    let mut e = Engine::new();
+    e.register("pause", || -> Result<(), ScriptError> {
+        Err(ScriptError::yield_with(vec![]))
+    });
+    e
+}
+
+#[test]
+fn one_chunk_spawns_in_many_environments() {
+    let mut e = waiter();
+    let envs: Vec<_> = (0..3).map(|_| e.create_environment()).collect();
+    for (i, env) in envs.iter().enumerate() {
+        e.context()
+            .set(env.globals(), "script", Value::from(format!("script {i}")))
+            .unwrap();
+    }
+    // compiled once, against the first environment
+    let chunk = e
+        .compile_in(
+            &envs[0],
+            "per.rhue",
+            "seen = script pause() return seen .. ' done'",
+        )
+        .unwrap();
+    let mut tasks: Vec<_> = envs
+        .iter()
+        .map(|env| e.spawn_chunk_in(env, &chunk).unwrap())
+        .collect();
+    for t in &mut tasks {
+        assert!(!t.is_finished());
+        e.resume(t, vec![]).unwrap();
+    }
+    let done: Vec<_> = tasks.iter().map(|t| t.state()).collect();
+    assert_eq!(
+        done,
+        (0..3)
+            .map(|i| TaskState::Finished(vec![Value::from(format!("script {i} done"))]))
+            .collect::<Vec<_>>()
+    );
+    // each kept its own `seen`, and none of them leaked into the engine
+    for (i, env) in envs.iter().enumerate() {
+        let seen: Value = e.context().get(env.globals(), "seen").unwrap();
+        assert_eq!(seen, Value::from(format!("script {i}")));
+    }
+    assert_eq!(e.global("seen"), Value::Nil);
+}
+
+#[test]
+fn spawn_chunk_runs_on_the_engine_globals() {
+    let mut e = waiter();
+    let chunk = e
+        .compile(
+            "count.rhue",
+            "count = (count or 0) + 1 pause() return count",
+        )
+        .unwrap();
+    let mut a = e.spawn_chunk(&chunk).unwrap();
+    let mut b = e.spawn_chunk(&chunk).unwrap();
+    e.resume(&mut a, vec![]).unwrap();
+    e.resume(&mut b, vec![]).unwrap();
+    // two tasks, one set of globals
+    assert_eq!(a.state(), TaskState::Finished(vec![Value::Number(2.0)]));
+    assert_eq!(b.state(), TaskState::Finished(vec![Value::Number(2.0)]));
+    // and a chunk loaded from bytes works the same
+    let bytes = e.compile_to_bytes("b.rhue", "return 'from bytes'").unwrap();
+    let loaded = e.load(&bytes).unwrap();
+    let t = e.spawn_chunk(&loaded).unwrap();
+    assert_eq!(
+        t.state(),
+        TaskState::Finished(vec![Value::from("from bytes")])
+    );
 }

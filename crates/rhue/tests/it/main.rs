@@ -21,11 +21,15 @@ mod native_budget;
 #[cfg(feature = "tooling")]
 mod outline;
 mod patterns_and_modules;
+mod protected_yields;
+mod resume_errors;
+mod sandbox;
 mod statements;
 mod stdlib;
 mod table_templates;
 mod tables;
 mod tasks_and_environments;
+mod thread_kills;
 mod type_packs;
 mod type_properties;
 mod vectors;

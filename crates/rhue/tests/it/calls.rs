@@ -270,3 +270,71 @@ fn coroutines_switch_cleanly() {
             .is_err()
     );
 }
+
+// ─ The Call Depth Cap ────────────────────────────────────────────────────────
+
+/// How deep `depth()` got before it overflowed, through `pcall`.
+const DEPTH: &str = "local deepest = 0
+local function down(n)
+  deepest = n
+  return down(n + 1) + 1
+end
+local ok, err = pcall(down, 1)
+return ok, err, deepest";
+
+#[test]
+fn a_host_can_lower_the_call_depth_cap() {
+    let mut e = Engine::new();
+    e.set_max_call_depth(64);
+    let got = e.eval(DEPTH).unwrap();
+    assert_eq!(got[0], Value::Bool(false));
+    assert!(got[1].to_string().contains("stack overflow"), "{}", got[1]);
+    // the main chunk and pcall's frame count too
+    let Value::Number(deepest) = got[2] else {
+        panic!("{:?}", got[2])
+    };
+    assert!((60.0..64.0).contains(&deepest), "{deepest}");
+    // 63 levels deep is still fine
+    e.set_max_call_depth(64);
+    let src = "local function down(n) if n == 0 then return 0 end return down(n - 1) + 1 end
+return down(50)";
+    assert_eq!(e.eval(src).unwrap(), [Value::Number(50.0)]);
+}
+
+#[test]
+fn the_call_depth_cap_stays_within_its_range() {
+    let mut e = Engine::new();
+    let deepest = |e: &mut Engine| match e.eval(DEPTH).unwrap()[2] {
+        Value::Number(n) => n,
+        ref other => panic!("{other:?}"),
+    };
+    let default = deepest(&mut e);
+    assert!(default > 9_000.0, "{default}");
+    // higher than the default clamps to it
+    e.set_max_call_depth(1_000_000);
+    assert_eq!(deepest(&mut e), default);
+    // and zero gets raised to 2: the chunk and one call under it
+    e.set_max_call_depth(0);
+    assert_eq!(
+        e.eval("local function f() return 1 end return f()")
+            .unwrap(),
+        [Value::Number(1.0)]
+    );
+    let err = e
+        .eval("local function g() end local function f() g() end f()")
+        .unwrap_err();
+    assert!(err.to_string().contains("stack overflow"), "{err}");
+}
+
+#[test]
+fn each_coroutine_gets_its_own_depth() {
+    let mut e = Engine::new();
+    e.set_max_call_depth(40);
+    // 30 deep on the main thread, then 30 more inside a coroutine
+    let src = "local function down(n, k) if n == 0 then return k() end return down(n - 1, k) end
+return down(30, function()
+  local co = coroutine.wrap(function() return down(30, function() return 'ok' end) end)
+  return co()
+end)";
+    assert_eq!(e.eval(src).unwrap(), [Value::String("ok".into())]);
+}

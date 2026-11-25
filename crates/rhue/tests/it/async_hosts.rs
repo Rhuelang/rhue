@@ -15,6 +15,13 @@ fn engine() -> Engine {
     let mut e = Engine::new();
     e.open_tasks();
     e.set_sleep(tokio::time::sleep);
+    // read tokio's clock too, std's keeps going while tokio's is paused and
+    // the waits come out a millisecond short when the machine is busy
+    let epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap();
+    let start = tokio::time::Instant::now();
+    e.set_clock(move || epoch + start.elapsed());
     e.register_async("wait_ms", |ms: f64| async move {
         tokio::time::sleep(Duration::from_millis(ms as u64)).await;
         ms
@@ -59,6 +66,20 @@ async fn async_natives_return_and_raise() {
         .await
         .unwrap_err();
     assert_eq!(err.to_string(), "/missing not found");
+    // raised at the script's own call, with no wrapper frame in between
+    let src = "local x = 1
+local page = fetch('/missing')
+return page";
+    let err = e.eval_async(src).await.unwrap_err();
+    assert_eq!(err.diagnostic().span().text(src), "fetch('/missing')");
+    let r = err.render(false);
+    assert!(!r.contains("[async"), "{r}");
+    // xpcall sees it too
+    let v = e
+        .eval_async("return xpcall(fetch, function(err) return 'handled ' .. err end, '/missing')")
+        .await
+        .unwrap();
+    assert_eq!(text(&v), "false | handled <eval>:1: /missing not found");
     assert!(err.render(false).contains(":2:"), "{}", err.render(false));
 }
 

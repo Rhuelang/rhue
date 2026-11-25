@@ -41,7 +41,7 @@ pub(crate) fn install(vm: &mut Vm) {
     vm.register_native("unpack", Rc::new(unpack));
     vm.register_native("collectgarbage", Rc::new(collectgarbage));
     vm.register_special("pcall", Special::Pcall);
-    vm.register_native("xpcall", Rc::new(xpcall));
+    vm.register_special_native("xpcall", Special::Xpcall, Rc::new(xpcall));
 
     let next_fn = vm.native("next", Rc::new(next));
     vm.keep_alive(next_fn);
@@ -197,7 +197,9 @@ pub(crate) fn library(vm: &mut Vm, entries: &[(&str, crate::NativeFn)]) -> Value
         let f = vm.native(name, func.clone());
         let _ = table.set(key, f);
     }
-    Value::Table(vm.heap_mut().alloc_table(table))
+    let t = vm.heap_mut().alloc_table(table);
+    vm.add_library(t);
+    Value::Table(t)
 }
 
 // ─ Argument Helpers ──────────────────────────────────────────────────────────
@@ -209,7 +211,7 @@ pub(crate) fn bad_arg(n: usize, fname: &str, expected: &str, got: Value) -> Nati
     ))
 }
 
-fn arg(args: &[Value], i: usize, fname: &str) -> Result<Value, NativeError> {
+pub(crate) fn arg(args: &[Value], i: usize, fname: &str) -> Result<Value, NativeError> {
     args.get(i)
         .copied()
         .ok_or_else(|| NativeError::Message(format!("missing argument #{} to '{fname}'", i + 1)))
