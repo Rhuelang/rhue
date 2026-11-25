@@ -514,7 +514,7 @@ impl ScriptError {
             Repr::Value(v) => v.to_string(),
             Repr::OutOfMemory => rhue_vm::OUT_OF_MEMORY.to_string(),
             Repr::Uncatchable(m) => m.clone(),
-            Repr::Yield(_) => "attempt to yield across a C-call boundary".to_string(),
+            Repr::Yield(_) => "attempt to yield across an R-call boundary".to_string(),
         }
     }
 

@@ -11,7 +11,7 @@
 //! the coroutine's frame list and returns a yield signal, then the next resume
 //! pops that frame, drops the resume arguments where the `yield` call's results
 //! go, and keeps going. Yielding from inside a native's callback (like a
-//! `table.sort` comparator) raises "attempt to yield across a C-call boundary",
+//! `table.sort` comparator) raises "attempt to yield across an R-call boundary",
 //! naming the native in the way (found by walking the parked frames, so only
 //! the error pays for it). Metamethods run in the same dispatch loop, so they
 //! can yield. So can a native right inside `pcall` or `xpcall`, since those
@@ -357,14 +357,14 @@ impl Vm {
         self.current != self.main_thread && self.depth == self.heap.thread(self.current).base_depth
     }
 
-    /// The C-call boundary error, naming the native that can't be paused.
+    /// The R-call boundary error, naming the native that can't be paused.
     #[cold]
     fn boundary_message(&self) -> String {
         match self.native_in_the_way() {
             Some(name) => format!(
-                "attempt to yield across a C-call boundary: '{name}' called this and can't be paused partway, so wait before or after calling '{name}' instead"
+                "attempt to yield across an R-call boundary: '{name}' called this and can't be paused partway, so wait before or after calling '{name}' instead"
             ),
-            None => "attempt to yield across a C-call boundary: a native called this and can't be paused partway, so wait before or after that call instead".into(),
+            None => "attempt to yield across an R-call boundary: a native called this and can't be paused partway, so wait before or after that call instead".into(),
         }
     }
 

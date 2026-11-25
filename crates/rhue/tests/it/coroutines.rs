@@ -181,7 +181,7 @@ fn yield_crosses_pcall_but_not_native_callbacks() {
             local r = coroutine.create(function() return pcall(coroutine.yield, 1) end)
             local _, y = coroutine.resume(r)
             local _, rok, rv = coroutine.resume(r, 'back')
-            return a, b, c, d, ok, err:find('C-call boundary', 1, true) ~= nil, y, rok, rv";
+            return a, b, c, d, ok, err:find('R-call boundary', 1, true) ~= nil, y, rok, rv";
         assert_eq!(
             run(e, src),
             "in pcall false after resume end false true 1 true back"
@@ -655,7 +655,7 @@ fn a_yield_error_names_the_native_in_the_way() {
         let got = e.eval(&src).unwrap();
         assert_eq!(got[0], Value::Bool(false), "{body}");
         let err = got[1].to_string();
-        assert!(err.contains("C-call boundary"), "{err}");
+        assert!(err.contains("R-call boundary"), "{err}");
         assert!(
             err.contains(&format!("'{native}' called this")),
             "{body}: {err}"

@@ -174,7 +174,7 @@ pub enum NativeError {
     /// whoever resumed it (like `coroutine.yield`), and the values the next
     /// resume passes become the native's results. Only works when a script
     /// called the native directly, in a coroutine. Anywhere else it fails the
-    /// same way yielding across a C-call boundary would.
+    /// same way yielding across an R-call boundary would.
     Yield(Rets),
 }
 

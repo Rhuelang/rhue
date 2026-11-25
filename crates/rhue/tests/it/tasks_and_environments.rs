@@ -96,7 +96,7 @@ return table.concat(log, ', ')";
             "return table.sort({2, 1}, function(a, b) pause() return a < b end)",
         )
         .unwrap_err();
-    assert!(err.to_string().contains("C-call boundary"), "{err}");
+    assert!(err.to_string().contains("R-call boundary"), "{err}");
     // right inside pcall it's a plain call, so that one can (2.3)
     let mut t = e.spawn("p.rhue", "return pcall(pause)").unwrap();
     assert!(!t.is_finished());
