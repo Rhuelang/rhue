@@ -11,13 +11,16 @@
 //! the coroutine's frame list and returns a yield signal, then the next resume
 //! pops that frame, drops the resume arguments where the `yield` call's results
 //! go, and keeps going. Yielding from inside a native's callback (like a
-//! `table.sort` comparator) raises "attempt to yield across a C-call boundary".
-//! Metamethods run in the same dispatch loop, so they can yield. So can a
-//! native right inside `pcall` or `xpcall`, since those call it from the
-//! dispatch loop too and the [`Parked`] record says to add the `true`.
+//! `table.sort` comparator) raises "attempt to yield across an R-call boundary",
+//! naming the native in the way (found by walking the parked frames, so only
+//! the error pays for it). Metamethods run in the same dispatch loop, so they
+//! can yield. So can a native right inside `pcall` or `xpcall`, since those
+//! call it from the dispatch loop too and the [`Parked`] record says to add
+//! the `true`.
 
 use std::rc::Rc;
 
+use rhue_bytecode::Op;
 use smallvec::smallvec;
 
 use crate::heap::{CoStatus, Mark, ThreadEnd, ThreadRef, ThreadState};
@@ -332,23 +335,58 @@ impl Vm {
 
     pub(crate) fn check_yield(&self) -> Result<(), String> {
         if self.current == self.main_thread {
-            Err("attempt to yield from outside a coroutine".into())
+            Err(OUTSIDE_COROUTINE.into())
         } else if self.depth != self.heap.thread(self.current).base_depth {
-            Err("attempt to yield across a C-call boundary".into())
+            Err(self.boundary_message())
         } else {
             Ok(())
         }
     }
 
-    /// Why a `yield` reached through a nested call can't happen, if it's the
-    /// usual reason (outside any coroutine).
-    pub(crate) fn check_yield_nested(&self) -> Option<String> {
-        (self.current == self.main_thread)
-            .then(|| "attempt to yield from outside a coroutine".to_string())
+    /// Why a `yield` reached through a nested call can't happen: outside any
+    /// coroutine, or a native in the way.
+    pub(crate) fn nested_yield_message(&self) -> String {
+        if self.current == self.main_thread {
+            OUTSIDE_COROUTINE.into()
+        } else {
+            self.boundary_message()
+        }
     }
 
     pub(crate) fn is_yieldable(&self) -> bool {
-        self.check_yield().is_ok()
+        self.current != self.main_thread && self.depth == self.heap.thread(self.current).base_depth
+    }
+
+    /// The R-call boundary error, naming the native that can't be paused.
+    #[cold]
+    fn boundary_message(&self) -> String {
+        match self.native_in_the_way() {
+            Some(name) => format!(
+                "attempt to yield across an R-call boundary: '{name}' called this and can't be paused partway, so wait before or after calling '{name}' instead"
+            ),
+            None => "attempt to yield across an R-call boundary: a native called this and can't be paused partway, so wait before or after that call instead".into(),
+        }
+    }
+
+    /// The nearest native a script frame on this thread is waiting on, which
+    /// is what a yield would have to pause partway through. A native that
+    /// calls back into scripts parks its caller in `frames`, and that
+    /// frame's last instruction is the call, with the native in its slot.
+    fn native_in_the_way(&self) -> Option<Rc<str>> {
+        self.frames.iter().rev().find_map(|f| {
+            // placeholders sit at pc 0
+            let ins = *f.cl.proto.code.get(f.pc.checked_sub(1)?)?;
+            if !matches!(ins.op()?, Op::Call | Op::TailCall | Op::TForCall) {
+                return None;
+            }
+            match self.stack.get(f.base + usize::from(ins.a()))? {
+                Value::Function(r) => match self.heap.function(*r) {
+                    Function::Native(n) => Some(n.name.clone()),
+                    Function::Lua(_) => None,
+                },
+                _ => None,
+            }
+        })
     }
 
     /// `coroutine.resume(co, ...)` or a `coroutine.wrap` function, called from
@@ -605,6 +643,9 @@ impl Vm {
         self.budget = 0;
     }
 }
+
+/// Yielding on the main thread, with what to do about it.
+const OUTSIDE_COROUTINE: &str = "attempt to yield from outside a coroutine. Run it inside coroutine.wrap or coroutine.create, or have the host run it as a task";
 
 fn resume_arg_error(got: Value, nargs: usize) -> String {
     let got = if nargs == 0 {

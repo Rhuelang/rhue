@@ -184,13 +184,13 @@ fn yields_that_still_cant_happen() {
     let mut t = e.spawn("t.rhue", "return pcall(pcall, pause)").unwrap();
     let got = finished(&t);
     assert_eq!(got[..2], [Value::Bool(true), Value::Bool(false)]);
-    assert!(text(&got[2]).contains("C-call boundary"), "{}", got[2]);
+    assert!(text(&got[2]).contains("R-call boundary"), "{}", got[2]);
     // an xpcall handler can't yield
     let src = "return xpcall(function() error('x', 0) end, function(err) pause() return err end)";
     t = e.spawn("t.rhue", src).unwrap();
     let got = finished(&t);
     assert_eq!(got[0], Value::Bool(false));
-    assert!(text(&got[1]).contains("C-call boundary"), "{}", got[1]);
+    assert!(text(&got[1]).contains("R-call boundary"), "{}", got[1]);
     // and outside a coroutine there's nothing to yield to
     for src in ["return pcall(pause)", "return pcall(coroutine.yield)"] {
         let got = e.eval(src).unwrap();

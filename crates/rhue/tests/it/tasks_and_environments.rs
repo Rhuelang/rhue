@@ -85,9 +85,10 @@ return table.concat(log, ', ')";
     assert_eq!(t.state(), TaskState::Finished(vec![s("true x!, true x!")]));
     // from the main thread, or through a native, it's the usual error
     let err = e.eval("pause()").unwrap_err();
-    assert_eq!(
-        err.diagnostic().message,
-        "attempt to yield from outside a coroutine"
+    let m = &err.diagnostic().message;
+    assert!(
+        m.starts_with("attempt to yield from outside a coroutine"),
+        "{m}"
     );
     let err = e
         .spawn(
@@ -95,7 +96,7 @@ return table.concat(log, ', ')";
             "return table.sort({2, 1}, function(a, b) pause() return a < b end)",
         )
         .unwrap_err();
-    assert!(err.to_string().contains("C-call boundary"), "{err}");
+    assert!(err.to_string().contains("R-call boundary"), "{err}");
     // right inside pcall it's a plain call, so that one can (2.3)
     let mut t = e.spawn("p.rhue", "return pcall(pause)").unwrap();
     assert!(!t.is_finished());

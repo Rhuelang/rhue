@@ -174,7 +174,7 @@ pub enum NativeError {
     /// whoever resumed it (like `coroutine.yield`), and the values the next
     /// resume passes become the native's results. Only works when a script
     /// called the native directly, in a coroutine. Anywhere else it fails the
-    /// same way yielding across a C-call boundary would.
+    /// same way yielding across an R-call boundary would.
     Yield(Rets),
 }
 
@@ -1537,10 +1537,7 @@ impl Vm {
                 special: Some(Special::Yield),
                 ..
             }) => {
-                let m = match self.check_yield_nested() {
-                    Some(m) => m,
-                    None => "attempt to yield across a C-call boundary".into(),
-                };
+                let m = self.nested_yield_message();
                 Err(self.throw_here(m))
             }
             Function::Native(native) if native.special == Some(Special::Pcall) => {
@@ -1893,10 +1890,7 @@ impl Vm {
         let e = match e {
             // a yield that can't happen here (a native called from another
             // native, a metamethod, `pcall`...)
-            NativeError::Yield(_) => NativeError::Message(
-                self.check_yield_nested()
-                    .unwrap_or_else(|| "attempt to yield across a C-call boundary".to_string()),
-            ),
+            NativeError::Yield(_) => NativeError::Message(self.nested_yield_message()),
             e => e,
         };
         match e {
