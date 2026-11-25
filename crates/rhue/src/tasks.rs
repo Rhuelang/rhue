@@ -13,7 +13,7 @@
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
-use crate::{Context, Engine, Error, Function, ScriptError, Thread, Value, Variadic};
+use crate::{Context, Engine, Error, Function, IntoValue, ScriptError, Thread, Value, Variadic};
 
 /// A script or function running as a coroutine (see [`Engine::spawn`]).
 #[derive(Clone, Debug)]
@@ -144,6 +144,13 @@ fn thread_of(cx: &mut Context<'_>, v: &Value, f: &str) -> Result<Thread, ScriptE
     }
 }
 
+/// What a waiting thread gets when it's woken: results for the call it's
+/// waiting in, or an error for that call to raise.
+pub(crate) enum ResumeWith {
+    With(Vec<Value>),
+    Error(Value),
+}
+
 /// Resumes `t`, recording an error instead of raising it, and updating the
 /// host's [`Task`] for it if there is one.
 pub(crate) fn run(
@@ -152,10 +159,23 @@ pub(crate) fn run(
     t: &Thread,
     args: Vec<Value>,
 ) {
+    run_with(cx, sched, t, ResumeWith::With(args));
+}
+
+/// [`run`], with an error for the waiting call to raise as the other choice.
+pub(crate) fn run_with(
+    cx: &mut Context<'_>,
+    sched: &Rc<RefCell<Scheduler>>,
+    t: &Thread,
+    wake: ResumeWith,
+) {
     if cx.thread_status(t) != "suspended" {
         return;
     }
-    let result = cx.resume::<Variadic<Value>>(t, Variadic(args));
+    let result = match wake {
+        ResumeWith::With(args) => cx.resume::<Variadic<Value>>(t, Variadic(args)),
+        ResumeWith::Error(e) => cx.resume_error::<Variadic<Value>>(t, e),
+    };
     let dead = cx.thread_status(t) == "dead";
     let mut st = sched.borrow_mut();
     let state = st
@@ -177,7 +197,10 @@ pub(crate) fn run(
             if let Some(state) = state {
                 *state.borrow_mut() = TaskState::Finished(Vec::new());
             }
-            st.errors.push(Error::from_script(e));
+            // a killed task just finished, it isn't an error step() reports
+            if !e.is_killed() {
+                st.errors.push(Error::from_script(e));
+            }
         }
     }
     if dead {
@@ -236,6 +259,24 @@ impl Engine {
     pub fn resume(&mut self, task: &mut Task, args: Vec<Value>) -> Result<(), Error> {
         let mut cx = self.context();
         let result = cx.resume::<Variadic<Value>>(&task.thread, Variadic(args));
+        self.after_resume(task, result)
+    }
+
+    /// [`resume`](Self::resume), but the call the task is waiting in raises
+    /// `error` instead of returning, for a native that waited and then failed.
+    /// Under `pcall` the script gets `false, error` and carries on.
+    pub fn resume_error(&mut self, task: &mut Task, error: impl IntoValue) -> Result<(), Error> {
+        let mut cx = self.context();
+        let result = cx.resume_error::<Variadic<Value>>(&task.thread, error);
+        self.after_resume(task, result)
+    }
+
+    fn after_resume(
+        &mut self,
+        task: &mut Task,
+        result: Result<Variadic<Value>, ScriptError>,
+    ) -> Result<(), Error> {
+        let cx = self.context();
         let values = match result {
             Ok(v) => v.0,
             Err(e) => {
@@ -363,6 +404,8 @@ impl Engine {
         ] {
             cx.set(&lib, name, f).expect("a string key");
         }
+        let r = cx.table_ref_of(&lib);
+        cx.vm.add_library(r);
         cx.set_global("task", lib);
         self.declare("task", TASK_TYPE)
             .expect("the task library's type parses");

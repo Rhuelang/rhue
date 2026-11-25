@@ -96,6 +96,10 @@
 //! let b = engine.create_environment();
 //! engine.eval_in(&a, "secret = 42").unwrap();
 //! assert_eq!(engine.eval_in(&b, "return secret").unwrap(), [rhue::Value::Nil]);
+//!
+//! // but they share `math` and `string`, so lock those down
+//! engine.freeze_libraries();
+//! assert!(engine.eval_in(&a, "math.floor = nil").is_err());
 //! ```
 //!
 //! ## Modules and compiled chunks
@@ -204,7 +208,7 @@ pub use userdata::{IntoMethod, TypeBuilder, Ud, UserData};
 pub use value::{AnyUserData, Buffer, Function, Table, Thread, Value};
 
 /// Memory statistics; see [`Engine::heap_stats`].
-pub use rhue_vm::HeapStats;
+pub use rhue_vm::{HeapStats, ThreadEnd};
 
 /// Where `require(name)` looks for a module under `dir`, in order: `a.b` is
 /// `dir/a/b.rhue`, then `dir/a/b/init.rhue`. The CLI, the language server and
@@ -310,6 +314,16 @@ impl Error {
                 .diagnostics
                 .first()
                 .is_some_and(|d| d.message == rhue_vm::INTERRUPTED)
+    }
+
+    /// Whether a thread got killed or cancelled (see
+    /// [`Context::kill_thread`]) rather than failing.
+    pub fn is_killed(&self) -> bool {
+        self.kind == ErrorKind::Runtime
+            && self
+                .diagnostics
+                .first()
+                .is_some_and(|d| d.message == rhue_vm::KILLED || d.message == rhue_vm::CANCELLED)
     }
 
     /// An error from Rust-side work (a conversion, a native) or a script.
@@ -532,6 +546,13 @@ impl Engine {
         self.vm.set_instruction_limit(limit);
     }
 
+    /// Caps how deep script calls can nest before `stack overflow` (a normal
+    /// error, `pcall` catches it). The default and the most is 10,000, and
+    /// each coroutine gets its own count.
+    pub fn set_max_call_depth(&mut self, depth: usize) {
+        self.vm.set_max_call_depth(depth);
+    }
+
     /// Caps how much memory scripts can keep allocated, in bytes as the
     /// collector counts them (an approximation of the real heap). Hitting it
     /// stops the script with `not enough memory`, which `pcall` can't catch. A
@@ -539,6 +560,16 @@ impl Engine {
     /// refused before they're built. `None` means no limit.
     pub fn set_memory_limit(&mut self, limit: Option<usize>) {
         self.vm.set_memory_limit(limit);
+    }
+
+    /// Freezes the library tables (`math`, `string`, `table`, `task` and the
+    /// rest) and the metatable strings share. Environments keep their own
+    /// globals but share these, so without this one script can do
+    /// `math.floor = nil` and break it for everyone. Libraries opened after
+    /// this get frozen too, there's no undo, and tables you added yourself are
+    /// left alone (`table.freeze` them if you want).
+    pub fn freeze_libraries(&mut self) {
+        self.vm.freeze_libraries();
     }
 
     /// How much memory scripts are holding right now, as the collector counts

@@ -6,7 +6,10 @@
 //! Each program is compiled once outside the timing; each timed run starts
 //! from a fresh engine state where the engine allows (Rhue and Rhai), and
 //! a fresh Lua state for Luau. Rhai's ports use integers where Rhue and
-//! Luau use floats (Rhai's natural number type).
+//! Luau use floats (Rhai's natural number type). Every engine gets the host
+//! type from `host.rs` for `instances`.
+
+mod host;
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -70,6 +73,7 @@ fn main() {
 
         let rhue = time(runs, || {
             let mut e = rhue::Engine::new();
+            host::rhue(&mut e);
             let proto = e.compile(&name, &source).unwrap();
             let start = Instant::now();
             let out = e.run(&proto).unwrap();
@@ -79,6 +83,7 @@ fn main() {
 
         let luau = time(runs, || {
             let lua = mlua::Lua::new();
+            host::luau(&lua).unwrap();
             lua.set_compiler(mlua::Compiler::new().set_optimization_level(2));
             let f = lua.load(&source).set_name(&name).into_function().unwrap();
             let start = Instant::now();
@@ -96,6 +101,7 @@ fn main() {
         let rhai = std::fs::read_to_string(&rhai_src).ok().map(|src| {
             let r = time(runs, || {
                 let mut engine = rhai::Engine::new();
+                host::rhai(&mut engine);
                 engine.set_max_expr_depths(0, 0);
                 let ast = engine.compile(&src).unwrap();
                 let start = Instant::now();
@@ -130,7 +136,10 @@ fn main() {
     if write {
         let path = bench.join("results.json");
         write_results(&path, &measured);
-        println!("wrote {}, run `cargo xtask gen` to update the README", path.display());
+        println!(
+            "wrote {}, run `cargo xtask gen` to update the README",
+            path.display()
+        );
     }
 }
 
@@ -140,7 +149,8 @@ fn main() {
 fn write_results(path: &Path, measured: &[(String, f64, f64, Option<f64>)]) {
     use serde_json::{Map, Value, json};
     let text = std::fs::read_to_string(path).unwrap_or_else(|_| "{}".into());
-    let mut results: Map<String, Value> = serde_json::from_str(&text).expect("results.json is JSON");
+    let mut results: Map<String, Value> =
+        serde_json::from_str(&text).expect("results.json is JSON");
     let mut rows: Vec<Value> = results
         .get("rows")
         .and_then(Value::as_array)

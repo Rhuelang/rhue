@@ -53,6 +53,7 @@ let mut engine = Engine::new();
 engine.set_global("name", "Aalto");
 engine.set_instruction_limit(Some(1_000_000)); // stop runaway scripts
 engine.set_memory_limit(Some(64 << 20));       // and runaway allocation (64 MB)
+engine.set_max_call_depth(200);                // and runaway recursion (10,000 by default)
 engine.on_print(|line| eprintln!("[script] {line}")); // route `print`
 
 let values = engine.eval(r#"
@@ -92,6 +93,23 @@ let mut dialog = engine.spawn("npc.rhue", r#"
 // dialog.state() == Suspended(["What's your name?"])
 engine.resume(&mut dialog, vec![Value::from("Aalto")])?;
 // dialog.state() == Finished(["Nice to meet you, Aalto"])
+```
+
+If whatever it was waiting on fails, `resume_error` makes the call raise instead. A `pcall` around it gets `false, err` and the script carries on, otherwise the task dies and you get the error back. A string gets the position of the call, like `error("msg")` there would.
+
+```rust
+let mut load = engine.spawn("load.rhue", r#"
+    local ok, err = pcall(fetch, "/save")
+    if not ok then print("couldn't load: " .. err) end
+"#)?;
+engine.resume_error(&mut load, "not found")?; // couldn't load: load.rhue:2: not found
+```
+
+To stop a thread for good, `cx.kill_thread(&thread)` works on it in any state, and scripts can't `pcall` their way out of it. A waiting one dies on the spot. One that's waiting on a coroutine it resumed dies when that hands back, and a native killing its own thread should return `ScriptError::killed()` so nothing else runs. Whoever resumed it sees it as dead: `coroutine.resume` gives `false, "thread killed"`, and the host gets an error where `is_killed()` is `true`. `cx.cancel_thread` is the polite one, the thread keeps going and dies the next time it waits. `cx.thread_end(&thread)` says how a dead one went (finished, failed, killed or cancelled).
+
+```rust
+// the script's been disabled, stop whatever it was doing
+engine.context().kill_thread(task.thread());
 ```
 
 `engine.open_tasks()` adds Roblox's `task` library (`wait`, `delay`, `spawn`, `defer`, `cancel`). Time only moves when you call `engine.step(dt)`, and one task erroring doesn't take the rest down with it.
@@ -183,6 +201,16 @@ for player in players {
     engine.spawn_chunk_in(&env, &chunk)?;
 }
 ```
+
+The libraries are shared though. `math`, `string` and the rest are one table each, so a plugin doing `math.floor = nil` breaks it for every other plugin and for the host too. `freeze_libraries` stops that:
+
+```rust
+engine.freeze_libraries();
+assert!(engine.eval_in(&plugin_a, "math.floor = nil").is_err());  // attempt to modify a readonly table
+engine.eval_in(&plugin_a, "math = {}")?;  // fine, that's plugin_a's own `math` now
+```
+
+Every library table and the metatable strings share go read-only. Libraries opened after it (`open_tasks`) get frozen too, tables you added yourself don't (`table.freeze` those if you want). It's opt-in for now and turns on by default in 3.0, since plenty of Lua code likes adding its own helpers to `string`.
 
 ## serde
 
