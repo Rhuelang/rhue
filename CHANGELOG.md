@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+- Feat: `Engine::spawn_chunk` and `spawn_chunk_in` start an already compiled chunk as a task, so one script can run as many tasks (in as many environments) without compiling it each time.
 - Feat: `Engine::set_max_call_depth` lowers how deep script calls can nest before `stack overflow`. It's 10,000 by default, which is also the most.
 - Feat: `pcall` and `xpcall` work directly around a native that yields, so `pcall(require, m)` can wait on the host. `pcall(coroutine.yield, x)` yields now too, instead of erroring.
 - Feat: `Engine::resume_error` and `Context::resume_error` resume a waiting script so the call it waited in raises instead. Under `pcall` that gives `false, err`, for a native that waited on the host and then failed.

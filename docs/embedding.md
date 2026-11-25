@@ -191,6 +191,17 @@ engine.eval_in(&plugin_b, "name = 'B'")?;     // its own `name`; `greet` is nil 
 engine.eval_in(&plugin_a, "greet()")?;         // hi from A
 ```
 
+One script that runs once per player (or per anything) only needs compiling once. `spawn_chunk_in` starts it as a task in an environment, each on its own thread, and the chunk isn't tied to the environment it was compiled for. `spawn_chunk` does the same on the engine's globals.
+
+```rust
+let chunk = engine.compile("character.rhue", &source)?;
+for player in players {
+    let env = engine.create_environment();
+    engine.context().set(env.globals(), "player", player)?;
+    engine.spawn_chunk_in(&env, &chunk)?;
+}
+```
+
 The libraries are shared though. `math`, `string` and the rest are one table each, so a plugin doing `math.floor = nil` breaks it for every other plugin and for the host too. `freeze_libraries` stops that:
 
 ```rust

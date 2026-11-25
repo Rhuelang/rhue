@@ -95,10 +95,24 @@ impl Engine {
 
     /// [`spawn`](Self::spawn), in `env`.
     pub fn spawn_in(&mut self, env: &Environment, name: &str, source: &str) -> Result<Task, Error> {
-        let proto = self.compile_in(env, name, source)?;
-        self.verify(&proto.0)?;
+        let chunk = self.compile_in(env, name, source)?;
+        self.spawn_chunk_in(env, &chunk)
+    }
+
+    /// Runs a compiled chunk as a task in `env`, until it first yields or
+    /// finishes. Compile once and spawn it as often as you like: each task
+    /// gets its own thread, and a chunk isn't tied to the environment it was
+    /// compiled in, so one script can run in many. The checker only knows the
+    /// globals it defines in the environment [`compile_in`](Self::compile_in)
+    /// compiled it for.
+    pub fn spawn_chunk_in(
+        &mut self,
+        env: &Environment,
+        chunk: &crate::Chunk,
+    ) -> Result<Task, Error> {
+        self.verify(&chunk.0)?;
         let table = self.context().table_ref_of(&env.table);
-        let f = self.vm.load_in(&proto.0, table);
+        let f = self.vm.load_in(&chunk.0, table);
         let crate::Value::Function(f) = self.context().lift(f) else {
             unreachable!("loading a chunk gives a function")
         };
