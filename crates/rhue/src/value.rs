@@ -101,6 +101,16 @@ impl PartialEq for Thread {
     }
 }
 
+// the same thread, so it works as a map key (thread → script, say)
+impl Eq for Thread {}
+
+impl std::hash::Hash for Thread {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.r.hash(state);
+        self.pin.vm_id().hash(state);
+    }
+}
+
 /// A handle to a userdata object of any type. [`AnyUserData::downcast`]
 /// turns it into a typed [`Ud<T>`].
 #[derive(Clone)]

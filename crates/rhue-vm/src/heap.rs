@@ -151,6 +151,9 @@ pub struct Thread {
     /// Last resumed by the host instead of a script (see
     /// [`Vm::resumed_by_host`](crate::Vm::resumed_by_host)).
     pub(crate) by_host: bool,
+    /// Whatever the host hung on it (see
+    /// [`Vm::set_thread_data`](crate::Vm::set_thread_data)).
+    pub(crate) host: Option<Rc<dyn std::any::Any>>,
     /// A kill or cancel waiting to happen.
     pub(crate) mark: Mark,
     /// How it ended, once it's dead.
@@ -676,6 +679,7 @@ impl Heap {
             base_depth: 0,
             bytes,
             by_host: false,
+            host: None,
             mark: Mark::None,
             end: None,
         });

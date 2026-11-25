@@ -191,6 +191,22 @@ engine.eval_in(&plugin_b, "name = 'B'")?;     // its own `name`; `greet` is nil 
 engine.eval_in(&plugin_a, "greet()")?;         // hi from A
 ```
 
+A native can tell who's calling it. `env.set_data(...)` hangs anything on an environment and `cx.caller_environment()` finds the one the calling function runs in (the one it was defined in, wherever it's called from). Threads get the same with `cx.set_thread_data` and `cx.thread_data`, and a `Thread` works as a map key if you'd rather keep your own table.
+
+```rust
+plugin_a.set_data(Permissions::Trusted);
+engine.register("delete_save", |cx: &mut Context<'_>| -> Result<(), ScriptError> {
+    let trusted = cx
+        .caller_environment()
+        .and_then(|env| env.data::<Permissions>())
+        .is_some_and(|p| *p == Permissions::Trusted);
+    if !trusted {
+        return Err(ScriptError::new("not allowed"));
+    }
+    Ok(())
+});
+```
+
 One script that runs once per player (or per anything) only needs compiling once. `spawn_chunk_in` starts it as a task in an environment, each on its own thread, and the chunk isn't tied to the environment it was compiled for. `spawn_chunk` does the same on the engine's globals.
 
 ```rust

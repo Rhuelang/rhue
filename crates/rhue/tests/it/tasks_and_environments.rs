@@ -543,6 +543,99 @@ return `{s.name} {s.layers} {s.offset[1]},{s.offset[2]} {table.concat(kinds, '/'
     }
 }
 
+// ─ Host Data on Threads and Environments ─────────────────────────────────────
+
+#[test]
+fn threads_work_as_map_keys() {
+    use std::collections::HashMap;
+    let names: Rc<RefCell<HashMap<rhue::Thread, String>>> = Rc::default();
+    let mut e = Engine::new();
+    let seen = names.clone();
+    e.register("whoami", move |cx: &mut rhue::Context<'_>| -> String {
+        let me = cx.current_thread().expect("a task");
+        seen.borrow().get(&me).cloned().unwrap_or_default()
+    });
+    e.register("pause", || -> Result<(), ScriptError> {
+        Err(ScriptError::yield_with(vec![]))
+    });
+    let mut tasks = Vec::new();
+    for name in ["alice", "bob"] {
+        let t = e.spawn("t.rhue", "pause() return whoami()").unwrap();
+        names
+            .borrow_mut()
+            .insert(t.thread().clone(), name.to_string());
+        tasks.push(t);
+    }
+    for t in &mut tasks {
+        e.resume(t, vec![]).unwrap();
+    }
+    assert_eq!(tasks[0].state(), TaskState::Finished(vec![s("alice")]));
+    assert_eq!(tasks[1].state(), TaskState::Finished(vec![s("bob")]));
+}
+
+#[test]
+fn a_thread_carries_host_data() {
+    let mut e = Engine::new();
+    e.register("whoami", |cx: &mut rhue::Context<'_>| -> String {
+        let Some(me) = cx.current_thread() else {
+            return "main".into();
+        };
+        match cx.thread_data::<String>(&me) {
+            Some(name) => name.to_string(),
+            None => "nobody".into(),
+        }
+    });
+    e.register("pause", || -> Result<(), ScriptError> {
+        Err(ScriptError::yield_with(vec![]))
+    });
+    let mut t = e
+        .spawn(
+            "t.rhue",
+            "pause() local a = whoami() pause() return a, whoami()",
+        )
+        .unwrap();
+    e.context().set_thread_data(t.thread(), "alice".to_string());
+    e.resume(&mut t, vec![]).unwrap();
+    // the wrong type reads as nothing
+    e.context().set_thread_data(t.thread(), 7_u32);
+    e.resume(&mut t, vec![]).unwrap();
+    assert_eq!(
+        t.state(),
+        TaskState::Finished(vec![s("alice"), s("nobody")])
+    );
+    assert_eq!(e.eval("return whoami()").unwrap(), [s("main")]);
+}
+
+#[test]
+fn a_native_knows_its_callers_environment() {
+    let mut e = Engine::new();
+    e.register("owner", |cx: &mut rhue::Context<'_>| -> String {
+        match cx.caller_environment() {
+            Some(env) => env
+                .data::<String>()
+                .map_or("unnamed".into(), |n| n.to_string()),
+            None => "engine".into(),
+        }
+    });
+    let a = e.create_environment();
+    let b = e.create_environment();
+    a.set_data("plugin A".to_string());
+    b.set_data("plugin B".to_string());
+    assert_eq!(e.eval_in(&a, "return owner()").unwrap(), [s("plugin A")]);
+    assert_eq!(e.eval_in(&b, "return owner()").unwrap(), [s("plugin B")]);
+    assert_eq!(e.eval("return owner()").unwrap(), [s("engine")]);
+    // a function keeps the environment it was defined in, wherever it's called
+    e.eval_in(&a, "function report() return owner() end")
+        .unwrap();
+    let report = e.context().get::<Value>(a.globals(), "report").unwrap();
+    e.context().set(b.globals(), "report", report).unwrap();
+    assert_eq!(e.eval_in(&b, "return report()").unwrap(), [s("plugin A")]);
+    // one with no data still gets found
+    let c = e.create_environment();
+    assert_eq!(e.eval_in(&c, "return owner()").unwrap(), [s("unnamed")]);
+    assert!(a != b && a == a.clone());
+}
+
 // ─ One Chunk, Many Tasks ─────────────────────────────────────────────────────
 
 fn waiter() -> Engine {

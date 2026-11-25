@@ -48,6 +48,9 @@ pub(crate) struct HostState {
     /// Modules being type-checked for another chunk (a cycle there just makes
     /// the type `any`).
     pub checking: HashSet<String>,
+    /// Every environment's globals table, to find the environment a native's
+    /// caller runs in. Weak, so dropping an environment still frees it.
+    pub environments: Vec<(rhue_vm::TableRef, std::rc::Weak<crate::environment::Shared>)>,
 }
 
 impl HostState {
@@ -63,6 +66,7 @@ impl HostState {
             loaded: None,
             loading: Vec::new(),
             checking: HashSet::new(),
+            environments: Vec::new(),
         }
     }
 
