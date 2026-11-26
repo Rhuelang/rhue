@@ -295,7 +295,8 @@ impl Checker<'_> {
                 }
             }
             Type::Class(c) => {
-                if let Some(class) = self.env.class(&c) {
+                // nearest first, so an override shadows what it overrides
+                for class in self.env.class_chain(&c) {
                     for (n, p, _) in &class.props {
                         add(&mut out, n, p);
                     }

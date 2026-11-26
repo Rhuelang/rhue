@@ -14,13 +14,23 @@ use crate::check::Checker;
 use crate::types::{AliasDef, ClosedScope, FnType, GenericVar, NamedType, Pack, Type};
 use rhue_parser::ast::StmtKind;
 
-/// A host type's members.
+/// A host type's members. Inherited ones live on the parent, see
+/// [`Env::class_member`].
 #[derive(Clone, Debug, Default)]
 pub struct ClassType {
+    /// The class it inherits from: a `Box` goes wherever its parent `Shape`
+    /// does, and has its members.
+    pub parent: Option<Rc<str>>,
     /// `(name, type, writable)`
     pub props: Vec<(Rc<str>, Type, bool)>,
     /// Function types whose first parameter is the object.
     pub methods: Vec<(Rc<str>, Type)>,
+}
+
+/// A class member found by [`Env::class_member`].
+pub enum ClassMember<'a> {
+    Prop(&'a Type, bool),
+    Method(&'a Type),
 }
 
 impl ClassType {
@@ -350,7 +360,7 @@ impl Env {
                     return Err(errors);
                 }
                 for name in unknown {
-                    self.declare_class(&name);
+                    self.declare_class(&name, None);
                 }
                 Checker::for_declarations(self).resolve_declaration(&t)
             }
@@ -442,9 +452,74 @@ impl Env {
     }
 
     /// Declares a host type (fine to call twice). Its name can then be used in
-    /// types: `(Player) -> number`.
-    pub fn declare_class(&mut self, name: &str) {
-        self.classes.entry(Rc::from(name)).or_default();
+    /// types: `(Player) -> number`. With a parent it's a subtype of it and has
+    /// its members. A later call with a parent sets it, one without leaves it
+    /// alone, and a parent that would make a loop is ignored.
+    pub fn declare_class(&mut self, name: &str, parent: Option<&str>) {
+        if let Some(p) = parent {
+            self.declare_class(p, None);
+        }
+        let loops = parent.is_some_and(|p| self.is_subclass(p, name));
+        let c = self.classes.entry(Rc::from(name)).or_default();
+        if let Some(p) = parent
+            && !loops
+        {
+            c.parent = Some(Rc::from(p));
+        }
+    }
+
+    /// Class `name` and its ancestors, nearest first.
+    pub fn class_chain<'a>(&'a self, name: &str) -> impl Iterator<Item = &'a ClassType> + 'a {
+        let mut next = self.classes.get(name);
+        // classes can't loop (see declare_class), the cap is a backstop
+        let mut left = 1000;
+        std::iter::from_fn(move || {
+            let c = next.take()?;
+            left -= 1;
+            if left > 0 {
+                next = c.parent.as_deref().and_then(|p| self.classes.get(p));
+            }
+            Some(c)
+        })
+    }
+
+    /// Member `name` of class `class`, its own or the nearest ancestor's. A
+    /// class having both a method and a property by that name gives `prefer`.
+    pub fn class_member(
+        &self,
+        class: &str,
+        name: &str,
+        prefer_method: bool,
+    ) -> Option<ClassMember<'_>> {
+        self.class_chain(class).find_map(|c| {
+            let prop = c.prop(name).map(|(t, w)| ClassMember::Prop(t, w));
+            let method = c.method(name).map(ClassMember::Method);
+            if prefer_method {
+                method.or(prop)
+            } else {
+                prop.or(method)
+            }
+        })
+    }
+
+    /// Whether class `x` is `y` or has it among its ancestors.
+    pub fn is_subclass(&self, x: &str, y: &str) -> bool {
+        if x == y {
+            return true;
+        }
+        let mut cur = self.classes.get(x).and_then(|c| c.parent.clone());
+        let mut left = 1000;
+        while let Some(p) = cur {
+            if &*p == y {
+                return true;
+            }
+            left -= 1;
+            if left == 0 {
+                return false;
+            }
+            cur = self.classes.get(&*p).and_then(|c| c.parent.clone());
+        }
+        false
     }
 
     /// A property on a host type.
@@ -455,7 +530,7 @@ impl Env {
         ty: &str,
         writable: bool,
     ) -> Result<(), Vec<Diagnostic>> {
-        self.declare_class(class);
+        self.declare_class(class, None);
         let t = self.resolve(ty)?;
         let c = self.classes.get_mut(class).expect("declared above");
         match c.props.iter_mut().find(|(n, _, _)| &**n == name) {
@@ -476,7 +551,7 @@ impl Env {
         name: &str,
         ty: &str,
     ) -> Result<(), Vec<Diagnostic>> {
-        self.declare_class(class);
+        self.declare_class(class, None);
         let t = self.resolve(ty)?;
         let c = self.classes.get_mut(class).expect("declared above");
         c.methods.retain(|(n, _)| &**n != name);

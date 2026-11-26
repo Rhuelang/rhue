@@ -584,7 +584,7 @@ impl Checker<'_> {
             (BoolLit(x), BoolLit(y)) => x == y,
             (StrLit(x), StrLit(y)) => x == y,
             (Generic(x), Generic(y)) => x.id == y.id,
-            (Class(x), Class(y)) => x == y,
+            (Class(x), Class(y)) => self.env.is_subclass(x, y),
             (Function(f), Function(g)) => {
                 let (f, g) = (f.clone(), g.clone());
                 self.fn_sub(&f, &g, assumed)

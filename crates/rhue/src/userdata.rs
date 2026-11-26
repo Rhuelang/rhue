@@ -3,6 +3,7 @@
 use std::any::TypeId;
 use std::borrow::Cow;
 use std::cell::{Ref, RefCell, RefMut};
+use std::fmt;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
@@ -79,7 +80,7 @@ pub trait UserData: Sized + 'static {
 pub(crate) fn type_id_of<T: UserData>(vm: &mut rhue_vm::Vm) -> u32 {
     let (ty, new) = vm.userdata_type(TypeId::of::<T>(), T::NAME);
     if new {
-        crate::type_env(vm).declare_class(T::NAME);
+        crate::type_env(vm).declare_class(T::NAME, None);
         T::register(&mut TypeBuilder {
             vm,
             ty,
@@ -483,3 +484,304 @@ methods!(A, B, C, D);
 methods!(A, B, C, D, E);
 methods!(A, B, C, D, E, F);
 methods!(A, B, C, D, E, F, G);
+
+// ─ Handle Classes ────────────────────────────────────────────────────────────
+
+/// A class of handle objects, made with [`Engine::define_class`]: a host type
+/// `H` that stands behind a whole tree of classes (a `Box` that's a `Shape`
+/// that's a `Node`). Cheap to copy, and only good in the engine that made it.
+///
+/// [`Engine::define_class`]: crate::Engine::define_class
+pub struct Class<H> {
+    pub(crate) id: u32,
+    pub(crate) vm: u64,
+    pub(crate) name: Rc<str>,
+    _h: PhantomData<fn() -> H>,
+}
+
+impl<H> Clone for Class<H> {
+    fn clone(&self) -> Self {
+        Class {
+            id: self.id,
+            vm: self.vm,
+            name: self.name.clone(),
+            _h: PhantomData,
+        }
+    }
+}
+
+impl<H> fmt::Debug for Class<H> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Class({})", self.name)
+    }
+}
+
+impl<H> Class<H> {
+    /// The class's name, what `tostring` shows for its objects.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+/// Adds members to a handle class (see [`Engine::define_class`]). Members get
+/// the object as `&H`: there's no `RefCell`, so a member that calls back into
+/// a script and gets the same object back just works. The handle does its own
+/// locking, if it needs any.
+///
+/// [`Engine::define_class`]: crate::Engine::define_class
+pub struct ClassBuilder<'a, H: 'static> {
+    pub(crate) vm: &'a mut rhue_vm::Vm,
+    pub(crate) name: Rc<str>,
+    pub(crate) parent: Option<(u32, Rc<str>)>,
+    pub(crate) id: Option<u32>,
+    pub(crate) _h: PhantomData<fn() -> H>,
+}
+
+impl<H: 'static> ClassBuilder<'_, H> {
+    /// Makes it a child of `parent`: its objects go wherever the parent's do,
+    /// and have its members (ones the parent gets later too). Set it before
+    /// adding members.
+    ///
+    /// # Panics
+    ///
+    /// If members were added already, or `parent` is from another engine.
+    pub fn parent(&mut self, parent: &Class<H>) -> &mut Self {
+        assert!(self.id.is_none(), "set the parent before adding members");
+        assert_eq!(
+            parent.vm,
+            self.vm.id(),
+            "a class from one Engine was used in another"
+        );
+        self.parent = Some((parent.id, parent.name.clone()));
+        self
+    }
+
+    fn id(&mut self) -> u32 {
+        if let Some(id) = self.id {
+            return id;
+        }
+        let id = self
+            .vm
+            .define_class(
+                &self.name,
+                self.parent.as_ref().map(|p| p.0),
+                TypeId::of::<H>(),
+            )
+            .expect("a parent holding the same H, the type parameter makes sure of that");
+        crate::type_env(self.vm).declare_class(&self.name, self.parent.as_ref().map(|p| &*p.1));
+        self.id = Some(id);
+        id
+    }
+
+    /// A read-only property: `obj.name` returns `get(&obj)`.
+    pub fn getter<V: IntoValue>(
+        &mut self,
+        name: &str,
+        get: impl Fn(&H) -> V + 'static,
+    ) -> &mut Self {
+        let ty = self.id();
+        V::declare_types(self.vm);
+        let luau = V::luau_type();
+        declare(
+            crate::type_env(self.vm).declare_property(&self.name, name, &luau, false),
+            &luau,
+        );
+        let field: Rc<str> = Rc::from(name);
+        let class = self.name.clone();
+        let native: NativeFn = Rc::new(move |ctx, args| {
+            run_native(ctx, &args[..1], 1, |cx, _, out| {
+                let this = handle_receiver::<H>(cx, &args[..1], &field, &class)?;
+                crate::convert::IntoValues::lower_into(get(&this), cx, out);
+                Ok(())
+            })
+        });
+        self.vm.add_getter(ty, name, native);
+        self
+    }
+
+    /// Makes a property writable: `obj.name = v` calls `set(&obj, v)`.
+    pub fn setter<V: FromValue>(&mut self, name: &str, set: impl Fn(&H, V) + 'static) -> &mut Self {
+        let ty = self.id();
+        V::declare_types(self.vm);
+        let luau = V::luau_type();
+        declare(
+            crate::type_env(self.vm).declare_property(&self.name, name, &luau, true),
+            &luau,
+        );
+        let field: Rc<str> = Rc::from(name);
+        let class = self.name.clone();
+        let native: NativeFn = Rc::new(move |ctx, args| {
+            run_native(ctx, args, 1, |cx, args_in, _| {
+                let this = handle_receiver::<H>(cx, args, &field, &class)?;
+                // skip the receiver, the value is argument #2
+                let _ = Value::from_arg(args_in, cx);
+                let v = V::from_arg(args_in, cx).map_err(|e| {
+                    ScriptError::new(format!(
+                        "invalid value for '{field}' of {class} ({})",
+                        e.error
+                    ))
+                })?;
+                set(&this, v);
+                Ok(())
+            })
+        });
+        self.vm.add_setter(ty, name, native);
+        self
+    }
+
+    /// A readable and writable property.
+    pub fn property<V: IntoValue + FromValue>(
+        &mut self,
+        name: &str,
+        get: impl Fn(&H) -> V + 'static,
+        set: impl Fn(&H, V) + 'static,
+    ) -> &mut Self {
+        self.getter(name, get).setter(name, set)
+    }
+
+    /// `obj:name(...)`. The closure takes `&H` first, then any arguments, and
+    /// can take `&mut Context` before `&H`.
+    pub fn method<M, F: IntoHandleMethod<H, M>>(&mut self, name: &str, f: F) -> &mut Self {
+        let ty = self.id();
+        F::declare_types(self.vm);
+        let sig = F::signature(&self.name);
+        declare(
+            crate::type_env(self.vm).declare_method(&self.name, name, &sig),
+            &sig,
+        );
+        let native = f.into_method(Rc::from(name), self.name.clone());
+        let v = self.vm.native(name, native);
+        self.vm.add_method(ty, name, v);
+        self
+    }
+
+    /// The class, to make objects of ([`Context::create_object`]) and to be
+    /// the parent of other classes.
+    ///
+    /// [`Context::create_object`]: crate::Context::create_object
+    pub fn finish(&mut self) -> Class<H> {
+        let id = self.id();
+        Class {
+            id,
+            vm: self.vm.id(),
+            name: self.name.clone(),
+            _h: PhantomData,
+        }
+    }
+}
+
+/// The receiver of a handle class member, argument #1 has to hold an `H`.
+fn handle_receiver<H: 'static>(
+    cx: &mut Context<'_>,
+    args: &[rhue_vm::Value],
+    what: &str,
+    class: &str,
+) -> Result<Rc<H>, ScriptError> {
+    let first = args.first().copied().unwrap_or(rhue_vm::Value::Nil);
+    if let rhue_vm::Value::UserData(u) = first
+        && let Ok(h) = cx.vm.heap().userdata(u).data.clone().downcast::<H>()
+    {
+        return Ok(h);
+    }
+    let got = cx.lift(first);
+    Err(ScriptError::new(format!(
+        "invalid argument #1 to '{what}' ({class} expected, got {})",
+        got.type_of()
+    )))
+}
+
+/// A Rust function usable as a method of a handle class: `Fn(&H, args...)` or
+/// `Fn(&mut Context, &H, args...)`. See [`ClassBuilder::method`].
+pub trait IntoHandleMethod<H, Marker> {
+    /// Wraps the function as a method named `name` of class `class`.
+    fn into_method(self, name: Rc<str>, class: Rc<str>) -> NativeFn;
+
+    /// The method's Luau type, with the object (of class `class`) as its first
+    /// parameter.
+    fn signature(class: &str) -> String
+    where
+        Self: Sized;
+
+    #[doc(hidden)]
+    fn declare_types(_vm: &mut rhue_vm::Vm)
+    where
+        Self: Sized,
+    {
+    }
+}
+
+macro_rules! handle_methods {
+    ($($A:ident),*) => {
+        impl<H, Func, Ret, $($A,)*> IntoHandleMethod<H, (Ret, $($A,)*)> for Func
+        where
+            H: 'static,
+            Func: for<'h> Fn(&'h H, $($A),*) -> Ret + 'static,
+            Ret: IntoNativeResult,
+            $($A: FromArg,)*
+        {
+            #[allow(non_snake_case, unused_variables, unused_mut)]
+            fn into_method(self, name: Rc<str>, class: Rc<str>) -> NativeFn {
+                Rc::new(move |ctx, args| {
+                    let rest = args.get(1..).unwrap_or(&[]);
+                    let receiver_arg = &args[..args.len().min(1)];
+                    run_native(ctx, rest, 2, |cx, it, out| {
+                        let this = handle_receiver::<H>(cx, receiver_arg, &name, &class)?;
+                        $(let $A = $A::from_arg(it, cx)
+                            .map_err(|e| ScriptError::argument(&name, e))?;)*
+                        (self)(&this, $($A),*).lower_result(cx, out)
+                    })
+                })
+            }
+
+            fn signature(class: &str) -> String {
+                fn_signature(&[class.to_string(), $($A::param_type()),*], &Ret::result_type())
+            }
+
+            #[allow(unused_variables)]
+            fn declare_types(vm: &mut rhue_vm::Vm) {
+                $($A::declare_types(vm);)*
+                Ret::declare_types(vm);
+            }
+        }
+
+        impl<H, Func, Ret, $($A,)*> IntoHandleMethod<H, (WithContext, Ret, $($A,)*)> for Func
+        where
+            H: 'static,
+            Func: for<'a, 'b, 'h> Fn(&'a mut Context<'b>, &'h H, $($A),*) -> Ret + 'static,
+            Ret: IntoNativeResult,
+            $($A: FromArg,)*
+        {
+            #[allow(non_snake_case, unused_variables, unused_mut)]
+            fn into_method(self, name: Rc<str>, class: Rc<str>) -> NativeFn {
+                Rc::new(move |ctx, args| {
+                    let rest = args.get(1..).unwrap_or(&[]);
+                    let receiver_arg = &args[..args.len().min(1)];
+                    run_native(ctx, rest, 2, |cx, it, out| {
+                        let this = handle_receiver::<H>(cx, receiver_arg, &name, &class)?;
+                        $(let $A = $A::from_arg(it, cx)
+                            .map_err(|e| ScriptError::argument(&name, e))?;)*
+                        (self)(cx, &this, $($A),*).lower_result(cx, out)
+                    })
+                })
+            }
+
+            fn signature(class: &str) -> String {
+                fn_signature(&[class.to_string(), $($A::param_type()),*], &Ret::result_type())
+            }
+
+            #[allow(unused_variables)]
+            fn declare_types(vm: &mut rhue_vm::Vm) {
+                $($A::declare_types(vm);)*
+                Ret::declare_types(vm);
+            }
+        }
+    };
+}
+handle_methods!();
+handle_methods!(A);
+handle_methods!(A, B);
+handle_methods!(A, B, C);
+handle_methods!(A, B, C, D);
+handle_methods!(A, B, C, D, E);
+handle_methods!(A, B, C, D, E, F);
+handle_methods!(A, B, C, D, E, F, G);

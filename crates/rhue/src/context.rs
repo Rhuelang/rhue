@@ -364,6 +364,22 @@ impl<'a> Context<'a> {
             .collect()
     }
 
+    /// Hands `handle` to scripts as an object of `class` (see
+    /// [`Engine::define_class`](crate::Engine::define_class)).
+    ///
+    /// # Panics
+    ///
+    /// If `class` is from another engine.
+    pub fn create_object<H: 'static>(&mut self, class: &crate::Class<H>, handle: H) -> Value {
+        assert_eq!(
+            class.vm,
+            self.vm.id(),
+            "a class from one Engine was used in another"
+        );
+        let v = self.vm.new_userdata(class.id, Rc::new(handle));
+        self.lift(v)
+    }
+
     /// Moves `value` into the VM as userdata of type `T`.
     pub fn create_userdata<T: UserData>(&mut self, value: T) -> Ud<T> {
         let ty = crate::userdata::type_id_of::<T>(self.vm);

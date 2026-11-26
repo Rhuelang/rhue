@@ -6,6 +6,7 @@ mod calls;
 mod checker;
 mod checker_scaling;
 mod chunks;
+mod classes;
 mod clock;
 mod coroutines;
 mod debug_hooks;

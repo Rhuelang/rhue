@@ -522,14 +522,53 @@ pub enum PinKey {
     Buffer(BufRef),
 }
 
-/// How scripts see one kind of userdata: `obj.field` calls a getter, `obj.field
-/// = v` a setter, and `obj:method(...)` finds a function here. Natives get the
-/// object itself as their first argument.
-struct UdType {
+/// A userdata class: how scripts see its objects. `obj.field` calls a
+/// getter, `obj.field = v` a setter, and `obj:method(...)` finds a function
+/// here. Natives get the object itself as their first argument.
+struct Class {
     name: Rc<str>,
-    methods: FxHashMap<StrRef, Value>,
-    getters: FxHashMap<StrRef, NativeFn>,
-    setters: FxHashMap<StrRef, NativeFn>,
+    parent: Option<u32>,
+    children: Vec<u32>,
+    /// The Rust type every object in this class tree holds.
+    holds: std::any::TypeId,
+    /// Own and inherited members, flattened. A slot never moves: inherited
+    /// members keep their parent's slot and new ones get appended.
+    members: Vec<(StrRef, Member)>,
+    by_name: FxHashMap<StrRef, u32>,
+    /// The names this class defines itself, which a parent's member of the
+    /// same name doesn't replace.
+    own: std::collections::HashSet<StrRef, hash::FxBuildHasher>,
+}
+
+#[derive(Clone)]
+enum Member {
+    Method(Value),
+    Property {
+        get: Option<NativeFn>,
+        set: Option<NativeFn>,
+    },
+}
+
+impl Class {
+    fn member(&self, k: StrRef) -> Option<&Member> {
+        self.by_name
+            .get(&k)
+            .map(|&slot| &self.members[slot as usize].1)
+    }
+
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a class has nowhere near u32::MAX members"
+    )]
+    fn put(&mut self, k: StrRef, m: Member) {
+        match self.by_name.get(&k) {
+            Some(&slot) => self.members[slot as usize].1 = m,
+            None => {
+                self.by_name.insert(k, self.members.len() as u32);
+                self.members.push((k, m));
+            }
+        }
+    }
 }
 
 type PinTable = Rc<RefCell<HashMap<PinKey, usize>>>;
@@ -840,7 +879,7 @@ pub struct Vm {
     /// Stands in for the current frame while it sits in `frames` during a
     /// native call.
     placeholder: Rc<LuaClosure>,
-    ud_types: Vec<UdType>,
+    ud_types: Vec<Class>,
     ud_type_ids: HashMap<std::any::TypeId, u32>,
     /// Data the embedding layer keeps with the VM (the `rhue` crate keeps its
     /// type-checking environment here).
@@ -1187,13 +1226,12 @@ impl Vm {
         roots.extend(self.events.all().map(|s| GcRoot::Value(Value::String(s))));
         roots.extend(self.internal_roots.iter().map(|&v| GcRoot::Value(v)));
         roots.extend(self.native_roots.iter().map(|&v| GcRoot::Value(v)));
-        for ty in &self.ud_types {
-            for (&k, &m) in &ty.methods {
-                roots.push(GcRoot::Value(Value::String(k)));
-                roots.push(GcRoot::Value(m));
-            }
-            for &k in ty.getters.keys().chain(ty.setters.keys()) {
-                roots.push(GcRoot::Value(Value::String(k)));
+        for class in &self.ud_types {
+            for (k, m) in &class.members {
+                roots.push(GcRoot::Value(Value::String(*k)));
+                if let Member::Method(v) = m {
+                    roots.push(GcRoot::Value(*v));
+                }
             }
         }
         self.heap.collect(roots);
@@ -1201,39 +1239,143 @@ impl Vm {
 
     // ─ Userdata ──────────────────────────────────────────────────────────────
 
-    /// The id of the userdata type for Rust type `rust`, making it (named
-    /// `name`) on first use. The flag's `true` when it was just made.
+    /// The id of the root class for Rust type `rust` (what derive types use),
+    /// making it (named `name`) on first use. The flag's `true` when it was
+    /// just made.
     pub fn userdata_type(&mut self, rust: std::any::TypeId, name: &str) -> (u32, bool) {
         if let Some(&id) = self.ud_type_ids.get(&rust) {
             return (id, false);
         }
-        let id = self.heap.add_userdata_type(name);
-        self.ud_types.push(UdType {
-            name: Rc::from(name),
-            methods: FxHashMap::default(),
-            getters: FxHashMap::default(),
-            setters: FxHashMap::default(),
-        });
+        let id = self.new_class(name, None, rust);
         self.ud_type_ids.insert(rust, id);
         (id, true)
     }
 
-    /// Makes `obj:name(...)` find `method` on userdata of type `ty`.
-    pub fn add_method(&mut self, ty: u32, name: &str, method: Value) {
+    /// A new class named `name` whose objects hold a `holds`, under `parent`
+    /// if there is one. It starts with everything the parent has, and `typeof`
+    /// gives its root class's name. A parent holding a different Rust type is
+    /// an error, every class in a tree holds the same one.
+    pub fn define_class(
+        &mut self,
+        name: &str,
+        parent: Option<u32>,
+        holds: std::any::TypeId,
+    ) -> Result<u32, String> {
+        if let Some(p) = parent {
+            let pc = &self.ud_types[p as usize];
+            if pc.holds != holds {
+                return Err(format!(
+                    "'{name}' can't be a child of '{}', whose objects hold a different Rust type",
+                    pc.name
+                ));
+            }
+        }
+        Ok(self.new_class(name, parent, holds))
+    }
+
+    fn new_class(&mut self, name: &str, parent: Option<u32>, holds: std::any::TypeId) -> u32 {
+        let name: Rc<str> = Rc::from(name);
+        let (members, by_name, typeof_name) = match parent {
+            Some(p) => {
+                let pc = &self.ud_types[p as usize];
+                let root = self.class_root(p);
+                (
+                    pc.members.clone(),
+                    pc.by_name.clone(),
+                    self.ud_types[root as usize].name.clone(),
+                )
+            }
+            None => (Vec::new(), FxHashMap::default(), name.clone()),
+        };
+        let id = self.heap.add_userdata_type(typeof_name, name.clone());
+        self.ud_types.push(Class {
+            name,
+            parent,
+            children: Vec::new(),
+            holds,
+            members,
+            by_name,
+            own: Default::default(),
+        });
+        if let Some(p) = parent {
+            self.ud_types[p as usize].children.push(id);
+        }
+        id
+    }
+
+    fn class_root(&self, mut c: u32) -> u32 {
+        while let Some(p) = self.ud_types[c as usize].parent {
+            c = p;
+        }
+        c
+    }
+
+    /// The parent of class `c`.
+    pub fn class_parent(&self, c: u32) -> Option<u32> {
+        self.ud_types[c as usize].parent
+    }
+
+    /// The name of class `c`.
+    pub fn class_name(&self, c: u32) -> &str {
+        &self.ud_types[c as usize].name
+    }
+
+    /// Changes member `name` of class `c` with `change`, and gives every class
+    /// under it that doesn't define `name` itself the result too.
+    fn change_member(
+        &mut self,
+        c: u32,
+        name: &str,
+        change: impl FnOnce(Option<&Member>) -> Member,
+    ) {
         let k = self.heap.intern(name);
-        self.ud_types[ty as usize].methods.insert(k, method);
+        let class = &mut self.ud_types[c as usize];
+        let m = change(class.member(k));
+        class.put(k, m.clone());
+        class.own.insert(k);
+        let mut todo = class.children.clone();
+        while let Some(child) = todo.pop() {
+            let class = &mut self.ud_types[child as usize];
+            if class.own.contains(&k) {
+                continue;
+            }
+            class.put(k, m.clone());
+            todo.extend_from_slice(&class.children);
+        }
+    }
+
+    /// Makes `obj:name(...)` find `method` on objects of class `ty` (and the
+    /// classes under it).
+    pub fn add_method(&mut self, ty: u32, name: &str, method: Value) {
+        self.change_member(ty, name, |_| Member::Method(method));
     }
 
     /// `obj.name` calls `get(obj)` and takes its first result.
     pub fn add_getter(&mut self, ty: u32, name: &str, get: NativeFn) {
-        let k = self.heap.intern(name);
-        self.ud_types[ty as usize].getters.insert(k, get);
+        self.change_member(ty, name, |old| match old {
+            Some(Member::Property { set, .. }) => Member::Property {
+                get: Some(get),
+                set: set.clone(),
+            },
+            _ => Member::Property {
+                get: Some(get),
+                set: None,
+            },
+        });
     }
 
     /// `obj.name = v` calls `set(obj, v)`.
     pub fn add_setter(&mut self, ty: u32, name: &str, set: NativeFn) {
-        let k = self.heap.intern(name);
-        self.ud_types[ty as usize].setters.insert(k, set);
+        self.change_member(ty, name, |old| match old {
+            Some(Member::Property { get, .. }) => Member::Property {
+                get: get.clone(),
+                set: Some(set),
+            },
+            _ => Member::Property {
+                get: None,
+                set: Some(set),
+            },
+        });
     }
 
     pub fn new_userdata(&mut self, ty: u32, data: Rc<dyn std::any::Any>) -> Value {
@@ -1257,16 +1399,17 @@ impl Vm {
             );
             return Err(self.throw(f, pc, msg));
         };
-        if let Some(&m) = ty.methods.get(&k) {
-            return Ok(m);
-        }
-        let Some(get) = ty.getters.get(&k).cloned() else {
-            let msg = format!(
-                "'{}' is not a valid member of {}",
-                self.heap.get(k),
-                ty.name
-            );
-            return Err(self.throw(f, pc, msg));
+        let get = match ty.member(k) {
+            Some(Member::Method(m)) => return Ok(*m),
+            Some(Member::Property { get: Some(get), .. }) => get.clone(),
+            _ => {
+                let msg = format!(
+                    "'{}' is not a valid member of {}",
+                    self.heap.get(k),
+                    ty.name
+                );
+                return Err(self.throw(f, pc, msg));
+            }
         };
         match self.native_from(f, &get, &[Value::UserData(u)]) {
             Ok(values) => Ok(values.first().copied().unwrap_or(Value::Nil)),
@@ -1291,16 +1434,17 @@ impl Vm {
             );
             return Err(self.throw(f, pc, msg));
         };
-        let Some(set) = ty.setters.get(&k).cloned() else {
-            let what = if ty.getters.contains_key(&k) {
-                "a read-only member"
-            } else if ty.methods.contains_key(&k) {
-                "a method, and can't be assigned,"
-            } else {
-                "not a valid member"
-            };
-            let msg = format!("'{}' is {what} of {}", self.heap.get(k), ty.name);
-            return Err(self.throw(f, pc, msg));
+        let set = match ty.member(k) {
+            Some(Member::Property { set: Some(set), .. }) => set.clone(),
+            other => {
+                let what = match other {
+                    Some(Member::Property { .. }) => "a read-only member",
+                    Some(Member::Method(_)) => "a method, and can't be assigned,",
+                    None => "not a valid member",
+                };
+                let msg = format!("'{}' is {what} of {}", self.heap.get(k), ty.name);
+                return Err(self.throw(f, pc, msg));
+            }
         };
         match self.native_from(f, &set, &[Value::UserData(u), value]) {
             Ok(_) => Ok(()),

@@ -55,10 +55,13 @@ let shape = engine.define_class::<Handle>("Shape").parent(&node);
 let boxed = engine
     .define_class::<Handle>("Box")
     .parent(&shape)
-    .property("Size", |h: &Handle| h.size(), Some(|h: &Handle, v: Vector3| h.set_size(v)))
+    .property("Size", |h: &Handle| h.size(), |h: &Handle, v: Vector3| h.set_size(v))
     .method("Destroy", |h: &Handle| h.destroy())
     .finish();
+let obj = engine.context().create_object(&boxed, handle);
 ```
+
+`getter` and `setter` do one side each, and `engine.extend_class(&node)` adds members to a class that's already made (every class under it gets them, unless it has its own of that name).
 
 A host that registers its classes in a loop over reflection data can't write a closure per type, so the builder takes the script type as a string too:
 

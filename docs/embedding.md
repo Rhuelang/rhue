@@ -76,6 +76,23 @@ match engine.eval_expr("1 + true") {
 
 Globals stick around between `eval`s on the same engine, locals don't. Anything handed back to Rust is pinned, so the GC leaves it alone while you're holding it.
 
+## Class trees
+
+`register_type` is one Rust type, one script class. A host whose objects all sit behind one handle type, with a tree of classes on top (a `Box` is a `Shape` is a `Node`), uses `define_class` instead. Members get `&Handle`, there's no `RefCell`, so a member that calls back into a script that touches the same object just works.
+
+```rust
+let node = engine.define_class::<Handle>("Node")
+    .property("Name", |h: &Handle| h.name(), |h: &Handle, v: String| h.set_name(v))
+    .finish();
+let shape = engine.define_class::<Handle>("Shape")
+    .parent(&node)
+    .method("Grow", |h: &Handle, by: f64| h.grow(by))
+    .finish();
+engine.set_global("thing", engine.context().create_object(&shape, handle));
+```
+
+A child has everything its parent has, and the checker takes a `Shape` wherever a `Node` goes. `typeof(thing)` is the root's name, `"Node"`, and `tostring` shows the class's own. `engine.extend_class(&node)` adds members later, and the classes under it get them too.
+
 ## Tasks
 
 A native can pause a script by returning `ScriptError::yield_with(values)`. The host gets the values, and whatever it passes to `resume` becomes the call's result. Scripts stay straight-line code and the host decides when they move on (a dialog waiting on the player, a request waiting on the network).

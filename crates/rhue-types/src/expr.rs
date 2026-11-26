@@ -6,7 +6,7 @@ use rhue_common::Span;
 use rhue_parser::ast::*;
 
 use crate::check::{Checker, FuncCtx, Refine, always_exits};
-use crate::env::any_function;
+use crate::env::{ClassMember, any_function};
 use crate::relate::Subst;
 use crate::types::*;
 
@@ -628,8 +628,8 @@ impl Checker<'_> {
                 }
             },
             Type::Class(c) => match self.env.class(&c) {
-                Some(class) => match class.method(name).or(class.prop(name).map(|p| p.0)) {
-                    Some(t) => t.clone(),
+                Some(_) => match self.env.class_member(&c, name, true) {
+                    Some(ClassMember::Method(t) | ClassMember::Prop(t, _)) => t.clone(),
                     None => {
                         self.error(span, format!("Key '{name}' not found in class '{c}'"));
                         Type::Error
@@ -674,12 +674,10 @@ impl Checker<'_> {
                 Type::Error
             }
             Type::Class(c) => {
-                let found = self.env.class(&c).and_then(|class| {
-                    class
-                        .prop(name)
-                        .map(|p| p.0.clone())
-                        .or_else(|| class.method(name).cloned())
-                });
+                let found = match self.env.class_member(&c, name, false) {
+                    Some(ClassMember::Method(t) | ClassMember::Prop(t, _)) => Some(t.clone()),
+                    None => None,
+                };
                 found.unwrap_or_else(|| {
                     self.error(span, format!("Key '{name}' not found in class '{c}'"));
                     Type::Error
@@ -846,11 +844,9 @@ impl Checker<'_> {
                 }
             }
             Type::Class(c) => {
-                let (prop, is_method) = match self.env.class(&c) {
-                    Some(class) => (
-                        class.prop(name).map(|(t, w)| (t.clone(), w)),
-                        class.method(name).is_some(),
-                    ),
+                let (prop, is_method) = match self.env.class_member(&c, name, false) {
+                    Some(ClassMember::Prop(t, w)) => (Some((t.clone(), w)), false),
+                    Some(ClassMember::Method(_)) => (None, true),
                     None => (None, false),
                 };
                 match prop {

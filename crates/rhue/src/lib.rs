@@ -204,7 +204,7 @@ pub use rhue_compiler::CompileOptions;
 pub use rhue_derive::UserData;
 pub use rhue_parser::ast::TypeMode;
 pub use tasks::{Task, TaskState};
-pub use userdata::{IntoMethod, TypeBuilder, Ud, UserData};
+pub use userdata::{Class, ClassBuilder, IntoHandleMethod, IntoMethod, TypeBuilder, Ud, UserData};
 pub use value::{AnyUserData, Buffer, Function, Table, Thread, Value};
 
 /// Memory statistics; see [`Engine::heap_stats`].
@@ -673,6 +673,65 @@ impl Engine {
             vm: &mut self.vm,
             ty,
             _t: PhantomData,
+        }
+    }
+
+    /// Starts a class whose objects are all handles of host type `H`, for a
+    /// host whose objects form a class tree (a `Box` that's a `Shape` that's a
+    /// `Node`) behind one Rust type. Give it a parent first if it has one, add
+    /// members, then [`finish`](ClassBuilder::finish) it. Objects get made with
+    /// [`Context::create_object`].
+    ///
+    /// ```
+    /// # use rhue::{Engine, Value};
+    /// # use std::cell::Cell;
+    /// struct Handle { size: Cell<f64> }
+    ///
+    /// let mut engine = Engine::new();
+    /// let node = engine.define_class::<Handle>("Node")
+    ///     .method("Grow", |h: &Handle, by: f64| h.size.set(h.size.get() + by))
+    ///     .finish();
+    /// let shape = engine.define_class::<Handle>("Shape")
+    ///     .parent(&node)
+    ///     .property("Size", |h: &Handle| h.size.get(), |h: &Handle, v: f64| h.size.set(v))
+    ///     .finish();
+    /// let obj = engine.context().create_object(&shape, Handle { size: Cell::new(1.0) });
+    /// engine.set_global("s", obj);
+    /// let v = engine.eval("s:Grow(2) return s.Size, typeof(s)").unwrap();
+    /// assert_eq!(v, [Value::Number(3.0), Value::from("Node")]);
+    /// ```
+    pub fn define_class<H: 'static>(&mut self, name: &str) -> ClassBuilder<'_, H> {
+        ClassBuilder {
+            vm: &mut self.vm,
+            name: std::rc::Rc::from(name),
+            parent: None,
+            id: None,
+            _h: PhantomData,
+        }
+    }
+
+    /// Adds members to a class that's already made. Every class under it gets
+    /// them too, except where a child has a member of the same name itself.
+    ///
+    /// # Panics
+    ///
+    /// If `class` is from another engine.
+    pub fn extend_class<H: 'static>(&mut self, class: &Class<H>) -> ClassBuilder<'_, H> {
+        assert_eq!(
+            class.vm,
+            self.vm.id(),
+            "a class from one Engine was used in another"
+        );
+        let parent = self
+            .vm
+            .class_parent(class.id)
+            .map(|p| (p, std::rc::Rc::from(self.vm.class_name(p))));
+        ClassBuilder {
+            vm: &mut self.vm,
+            name: class.name.clone(),
+            parent,
+            id: Some(class.id),
+            _h: PhantomData,
         }
     }
 

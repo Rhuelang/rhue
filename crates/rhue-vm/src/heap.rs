@@ -178,8 +178,9 @@ impl fmt::Debug for Thread {
 }
 
 /// A Rust value a script can hold. `data` is whatever the host stored (the
-/// `rhue` crate stores an `Rc<RefCell<T>>`), and `type_id` indexes the VM's
-/// userdata types, which say how scripts index it.
+/// `rhue` crate stores an `Rc<RefCell<T>>` for derive types and an `Rc<H>` for
+/// handle classes), and `type_id` is its class, which says how scripts index
+/// it.
 pub struct UserData {
     pub type_id: u32,
     pub data: Rc<dyn std::any::Any>,
@@ -481,7 +482,9 @@ pub struct Heap {
     /// Reused by every collection.
     marks: Marks,
     /// Names of the userdata types, indexed by `UserData::type_id`.
-    ud_type_names: Vec<Rc<str>>,
+    /// Per class: what `typeof` says (the root class's name) and the class's
+    /// own name (what `tostring` shows).
+    ud_type_names: Vec<(Rc<str>, Rc<str>)>,
     /// Approximate live bytes (updated on allocation and table growth).
     bytes: usize,
     /// Collect when `bytes` passes this.
@@ -572,19 +575,26 @@ impl Heap {
         self.userdata.get(r.index, r.generation, "userdata")
     }
 
-    /// Adds a userdata type name and returns its id.
+    /// Adds a class's names and returns its id: `typeof_name` for `typeof`
+    /// (the root class's name) and `name` for `tostring`.
     #[expect(
         clippy::cast_possible_truncation,
         reason = "slab slots and type ids are capped well under u32"
     )]
-    pub fn add_userdata_type(&mut self, name: &str) -> u32 {
-        self.ud_type_names.push(Rc::from(name));
+    pub fn add_userdata_type(&mut self, typeof_name: Rc<str>, name: Rc<str>) -> u32 {
+        self.ud_type_names.push((typeof_name, name));
         (self.ud_type_names.len() - 1) as u32
     }
 
-    /// The type name of a userdata (`"Player"`), what `typeof` returns.
+    /// What `typeof` says for a userdata: its root class's name (`"Node"` for
+    /// a `Box`, `"Player"` for a derive type).
     pub fn userdata_type_name(&self, r: UdRef) -> &str {
-        &self.ud_type_names[self.userdata(r).type_id as usize]
+        &self.ud_type_names[self.userdata(r).type_id as usize].0
+    }
+
+    /// A userdata's own class name (`"Box"`), what `tostring` shows.
+    pub fn userdata_class_name(&self, r: UdRef) -> &str {
+        &self.ud_type_names[self.userdata(r).type_id as usize].1
     }
 
     // ─ Buffers ───────────────────────────────────────────────────────────────
