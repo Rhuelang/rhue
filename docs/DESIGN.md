@@ -2,6 +2,8 @@
 
 How Rhue fits together and why things ended up the way they did, milestone by milestone.
 
+The plan for 3.0's host classes is in [class-model.md](class-model.md).
+
 ## Pipeline
 
 ```mermaid
