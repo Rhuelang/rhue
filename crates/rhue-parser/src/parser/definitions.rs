@@ -7,6 +7,7 @@
 //!     Name: string
 //!     read Parent: Node?
 //!     function Destroy(self): ()
+//!     @class(name) function IsA(self, name: string): boolean
 //!     [string]: Node
 //! end
 //!
@@ -16,6 +17,7 @@
 //!
 //! declare world: Node
 //! declare function spawn(f: () -> ()): ()
+//! @class(name) declare function Instance.new(name: string): Node
 //! ```
 
 use std::rc::Rc;
@@ -57,14 +59,48 @@ impl Parser<'_> {
     fn skip_to_declaration(&mut self) {
         self.bump();
         while !self.at(Token::Eof) {
-            if self.newline_before() && (self.at_word("declare") || self.type_alias_starts()) {
+            if self.newline_before()
+                && (self.at_word("declare") || self.at(Token::At) || self.type_alias_starts())
+            {
                 return;
             }
             self.bump();
         }
     }
 
+    /// `@class(param)`, if that's next.
+    fn class_attr(&mut self) -> PResult<Option<(Rc<str>, Span)>> {
+        if self.eat(Token::At).is_none() {
+            return Ok(None);
+        }
+        if !self.at_word("class") {
+            return Err(error(
+                format!(
+                    "expected `class` after `@`, found {}",
+                    self.peek().token.describe()
+                ),
+                self.peek().span,
+            )
+            .with_label_boxed("the only attribute is `@class(param)`"));
+        }
+        self.bump();
+        self.expect(Token::LParen, "after `@class`")?;
+        let p = self.expect(Token::Ident, "for the parameter that names a class")?;
+        self.expect(Token::RParen, "to close `@class(`")?;
+        Ok(Some((Rc::from(self.text(p.span)), p.span)))
+    }
+
     fn declaration(&mut self) -> PResult<Declaration> {
+        let class_param = self.class_attr()?;
+        if class_param.is_some()
+            && !(self.at_word("declare") && self.peek_nth(1).token == Token::Function)
+        {
+            return Err(error(
+                "`@class` goes before a method or a `declare function`",
+                self.peek().span,
+            )
+            .with_label_boxed("expected `declare function`"));
+        }
         if self.type_alias_starts() {
             let stmt = self.type_alias()?;
             let StmtKind::TypeAlias(a) = stmt.kind else {
@@ -87,11 +123,19 @@ impl Parser<'_> {
         }
         if self.eat(Token::Function).is_some() {
             let name = self.expect(Token::Ident, "after `declare function`")?;
+            let mut text = self.text(name.span).to_string();
+            // `Instance.new`, a field of a global table
+            if self.eat(Token::Dot).is_some() {
+                let field = self.expect(Token::Ident, "after `.`")?;
+                text.push('.');
+                text.push_str(self.text(field.span));
+            }
             let ty = self.function_decl(None)?;
             return Ok(Declaration::Global {
-                name: Rc::from(self.text(name.span)),
+                name: Rc::from(text),
                 span: start.to(ty.span),
                 ty,
+                class_param,
             });
         }
         let name = self.expect(Token::Ident, "after `declare`")?;
@@ -101,6 +145,7 @@ impl Parser<'_> {
             name: Rc::from(self.text(name.span)),
             span: start.to(ty.span),
             ty,
+            class_param: None,
         })
     }
 
@@ -132,6 +177,11 @@ impl Parser<'_> {
 
     fn class_item(&mut self, class: Span) -> PResult<ClassItem> {
         let start = self.peek().span;
+        let class_param = self.class_attr()?;
+        if class_param.is_some() && !self.at(Token::Function) {
+            return Err(error("`@class` goes before a method", self.peek().span)
+                .with_label_boxed("expected `function`"));
+        }
         if self.eat(Token::Function).is_some() {
             let name = self.expect(Token::Ident, "after `function`")?;
             let ty = self.function_decl(Some(class))?;
@@ -139,6 +189,7 @@ impl Parser<'_> {
                 name: Rc::from(self.text(name.span)),
                 span: start.to(ty.span),
                 ty,
+                class_param,
             });
         }
         if self.eat(Token::LBracket).is_some() {

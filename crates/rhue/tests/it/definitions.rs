@@ -318,3 +318,281 @@ fn a_loaded_file_writes_back_with_its_aliases() {
     again.load_definitions("again.d.rhue", &out).unwrap();
     assert_eq!(again.definitions(), out);
 }
+
+// ─ Class Names As Strings ────────────────────────────────────────────────────
+
+const TREE: &str = "declare class Node
+    Name: string
+    @class(className) function FindFirstChildOfClass(self, className: string): Node?
+    @class(className) function IsA(self, className: string): boolean
+end
+declare class Box extends Node
+    Size: number
+end
+declare class Part extends Node end
+declare world: Node
+";
+
+fn tree() -> Engine {
+    let mut e = Engine::new();
+    e.load_definitions("tree.d.rhue", TREE).unwrap();
+    e
+}
+
+#[test]
+fn a_class_literal_gives_that_class() {
+    let mut e = tree();
+    strict(
+        &mut e,
+        "local b: Box? = world:FindFirstChildOfClass('Box')
+         if b then print(b.Size) end
+         local n: Node? = world:FindFirstChildOfClass('Node')",
+    )
+    .unwrap();
+    let err = strict(
+        &mut e,
+        "local p: Part? = world:FindFirstChildOfClass('Box')",
+    )
+    .unwrap_err();
+    assert!(err.contains("could not be converted"), "{err}");
+    // a string that isn't a literal gets the declared type
+    let err = strict(
+        &mut e,
+        "local s = 'Box' local name: string = s local b: Box? = world:FindFirstChildOfClass(name)",
+    )
+    .unwrap_err();
+    assert!(err.contains("could not be converted"), "{err}");
+}
+
+#[test]
+fn is_a_narrows_in_an_if() {
+    let mut e = tree();
+    strict(
+        &mut e,
+        "local function f(n: Node)
+             if n:IsA('Box') then print(n.Size) end
+             if not n:IsA('Box') then print(n.Name) else print(n.Size) end
+             if n:IsA('Node') then print(n.Name) end
+         end",
+    )
+    .unwrap();
+    let err = strict(
+        &mut e,
+        "local function f(n: Node) if not n:IsA('Box') then print(n.Size) end end",
+    )
+    .unwrap_err();
+    assert_eq!(err, "Key 'Size' not found in class 'Node'");
+    // a Box is already a Node, and isn't a Part
+    let err = strict(
+        &mut e,
+        "local function f(b: Box) if b:IsA('Part') then print(b.Name) end end",
+    )
+    .unwrap_err();
+    assert!(err.contains("never"), "{err}");
+}
+
+#[test]
+fn a_literal_that_isnt_a_class_is_a_strict_error() {
+    let mut e = tree();
+    assert_eq!(
+        strict(&mut e, "local n = world:FindFirstChildOfClass('Nope')").unwrap_err(),
+        "'Nope' is not a class"
+    );
+    e.check(
+        "loose",
+        "--!nonstrict\nlocal n = world:FindFirstChildOfClass('Nope')",
+    )
+    .unwrap();
+}
+
+#[test]
+fn class_params_round_trip_and_get_checked() {
+    let out = tree().definitions();
+    assert!(
+        out.contains("    @class(arg1) function IsA(self, arg1: string): boolean\n"),
+        "{out}"
+    );
+    let mut again = Engine::new();
+    again.load_definitions("again.d.rhue", &out).unwrap();
+    assert_eq!(again.definitions(), out);
+
+    // an engine with the method but not the `@class`
+    let mut e = Engine::new();
+    e.load_definitions(
+        "plain.d.rhue",
+        &TREE.replace("@class(className) function IsA", "function IsA"),
+    )
+    .unwrap();
+    assert_eq!(
+        e.check_definitions("tree.d.rhue", TREE).unwrap(),
+        ["Node:IsA takes a class name"]
+    );
+}
+
+#[test]
+fn class_param_mistakes() {
+    assert_eq!(
+        load_err("declare class A @class(nope) function X(self, a: string): () end"),
+        (
+            ErrorKind::Type,
+            "'nope' isn't one of the function's parameters".into()
+        )
+    );
+    assert_eq!(
+        load_err("declare class A @class(a) function X(self, a: number): () end"),
+        (
+            ErrorKind::Type,
+            "`@class(a)` needs 'a' to be a string".into()
+        )
+    );
+    assert_eq!(
+        load_err("declare class A @native function X(self): () end"),
+        (
+            ErrorKind::Syntax,
+            "expected `class` after `@`, found identifier".into()
+        )
+    );
+    assert_eq!(
+        load_err("declare class A @class(a) Name: string end"),
+        (ErrorKind::Syntax, "`@class` goes before a method".into())
+    );
+}
+
+#[test]
+fn class_params_from_rust() {
+    let mut e = Engine::new();
+    let node = e
+        .define_class::<Handle>("Node")
+        .method("IsA", |_: &Handle, _: String| true)
+        .method("Count", |_: &Handle, _: f64| 0.0)
+        .finish();
+    e.define_class::<Handle>("Box")
+        .parent(&node)
+        .getter("Size", |_: &Handle| 1.0)
+        .finish();
+    e.declare_class_param("Node", "IsA", 0).unwrap();
+    strict(
+        &mut e,
+        "local function f(n: Node) if n:IsA('Box') then print(n.Size) end end",
+    )
+    .unwrap();
+    // a class under it gets it too
+    strict(
+        &mut e,
+        "local function f(b: Box) if b:IsA('Box') then print(b.Size) end end",
+    )
+    .unwrap();
+    assert!(e.definitions().contains("@class(arg1) function IsA"));
+    let msg = |r: Result<(), rhue::Error>| r.unwrap_err().diagnostics[0].message.clone();
+    assert_eq!(
+        msg(e.declare_class_param("Node", "Nope", 0)),
+        "class 'Node' has no method 'Nope' of its own"
+    );
+    assert_eq!(
+        msg(e.declare_class_param("Box", "IsA", 0)),
+        "class 'Box' has no method 'IsA' of its own"
+    );
+    assert_eq!(
+        msg(e.declare_class_param("Node", "Count", 0)),
+        "argument 1 of 'Node:Count' isn't a string"
+    );
+}
+
+const MAKE: &str = "declare class Instance
+    Name: string
+end
+declare class Part extends Instance end
+declare Instance: { count: number }
+@class(className) declare function Instance.new(className: string): Instance
+@class(c) declare function make(c: string): Instance?
+";
+
+#[test]
+fn global_functions_take_class_names_too() {
+    let mut e = Engine::new();
+    e.load_definitions("make.d.rhue", MAKE).unwrap();
+    strict(
+        &mut e,
+        "local p: Part = Instance.new('Part')
+         local q: Part? = make('Part')
+         local n: number = Instance.count",
+    )
+    .unwrap();
+    assert_eq!(
+        strict(&mut e, "local p = Instance.new('Nope')").unwrap_err(),
+        "'Nope' is not a class"
+    );
+    // a local of the same name is something else
+    strict(
+        &mut e,
+        "local Instance = { new = function(s: string): number return 1 end }
+         local n: number = Instance.new('Part')",
+    )
+    .unwrap();
+
+    let out = e.definitions();
+    assert!(out.contains("declare Instance: { count: number }\n@class(arg1) declare function Instance.new(arg1: string): Instance\n"), "{out}");
+    assert!(
+        out.contains("@class(arg1) declare function make(arg1: string): Instance?\n"),
+        "{out}"
+    );
+    let mut again = Engine::new();
+    again.load_definitions("again.d.rhue", &out).unwrap();
+    assert_eq!(again.definitions(), out);
+
+    // from Rust
+    let mut host = Engine::new();
+    host.load_definitions(
+        "plain.d.rhue",
+        &MAKE
+            .replace("@class(className) ", "")
+            .replace("@class(c) ", ""),
+    )
+    .unwrap();
+    assert_eq!(
+        host.check_definitions("make.d.rhue", MAKE).unwrap(),
+        ["Instance.new takes a class name", "make takes a class name"]
+    );
+    host.declare_global_class_param("Instance.new", 0).unwrap();
+    host.declare_global_class_param("make", 0).unwrap();
+    assert!(
+        host.check_definitions("make.d.rhue", MAKE)
+            .unwrap()
+            .is_empty()
+    );
+    strict(&mut host, "local p: Part = Instance.new('Part')").unwrap();
+    let msg = |r: Result<(), rhue::Error>| r.unwrap_err().diagnostics[0].message.clone();
+    assert_eq!(
+        msg(host.declare_global_class_param("Instance.old", 0)),
+        "there's no global function 'Instance.old'"
+    );
+    assert_eq!(
+        msg(host.declare_global_class_param("make", 1)),
+        "argument 2 of 'make' isn't a string"
+    );
+}
+
+#[test]
+fn global_class_param_mistakes() {
+    assert_eq!(
+        load_err("@class(a) declare x: string"),
+        (
+            ErrorKind::Syntax,
+            "`@class` goes before a method or a `declare function`".into()
+        )
+    );
+    assert_eq!(
+        load_err("@class(a) declare function f(a: number): ()"),
+        (
+            ErrorKind::Type,
+            "`@class(a)` needs 'a' to be a string".into()
+        )
+    );
+    assert_eq!(
+        load_err("declare x: number\ndeclare function x.f(): ()"),
+        (
+            ErrorKind::Type,
+            "'x' isn't a table, so it can't have 'f'".into()
+        )
+    );
+}

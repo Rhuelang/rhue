@@ -24,6 +24,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Feat: Handle class getters and setters can take the `Context` and fail (`getter_with`, `setter_with`), so a setter can refuse a value or fire a changed signal. `getter_dyn`, `setter_dyn`, `property_dyn` and `method_dyn` take script types as strings, for hosts that register classes from their own reflection data.
 - Feat: Definitions files (`.d.rhue`), Luau's declaration syntax for what a host has. `Engine::definitions` writes one, `Engine::load_definitions` reads one, and `Engine::check_definitions` lists what a file has that the engine doesn't, for a test that keeps a checked-in one honest.
 - Feat: `rhue --check --definitions FILE` checks against a host's definitions file. `rhue-lsp` reads the `rhue.definitions` setting, or every `*.d.rhue` at the top of the workspace, and shows a definitions file's own errors.
+- Feat: Class names as strings. `@class(param)` in a definitions file, or `Engine::declare_class_param` and `declare_global_class_param`, says an argument names a class, so `FindFirstChildOfClass("Box")` is a `Box?`, `Instance.new("Box")` is a `Box`, and `if n:IsA("Box") then` makes `n` a `Box`. A literal that isn't a class is an error in strict scripts.
+- Changed: `@` is a token, so a stray one in a script is a parse error now instead of a lex error.
+- Changed: `rhue_types::ClassType` has a `class_params` field, the methods that take a class name.
 - Changed: `rhue_types::Env::declare_class` takes the class's parent, `None` for a class without one.
 - Changed: `rhue_types::ClassType` has an `index` field, the type an index hook gives.
 

@@ -457,6 +457,49 @@ impl Engine {
             .map_err(|d| Error::new(ErrorKind::Syntax, d, &SourceFile::new("<declaration>", ty)))
     }
 
+    /// Tells the checker argument `arg` (0 is the first after the object) of
+    /// class `class`'s method `method` names a class, as `@class(param)` does
+    /// in a definitions file. A string literal naming a class there makes a
+    /// method that returns a class return that one
+    /// (`FindFirstChildOfClass("Box")` is a `Box?`), and makes one that
+    /// returns a boolean narrow the object in an `if` (`if n:IsA("Box")
+    /// then`). A literal that isn't a class is an error in strict scripts.
+    /// The method has to be the class's own and take a string there.
+    pub fn declare_class_param(
+        &mut self,
+        class: &str,
+        method: &str,
+        arg: usize,
+    ) -> Result<(), Error> {
+        type_env(&mut self.vm)
+            .declare_class_param(class, method, arg)
+            .map_err(|m| {
+                let d = Diagnostic::error(m, Span::new(0, 0));
+                Error::new(
+                    ErrorKind::Type,
+                    vec![d],
+                    &SourceFile::new("<declaration>", ""),
+                )
+            })
+    }
+
+    /// The same as [`declare_class_param`](Self::declare_class_param) for a
+    /// global function, or a function in a global table: `path` is `spawn`
+    /// or `Instance.new`, and `arg` counts from 0. Then
+    /// `Instance.new("Box")` is a `Box` to the checker.
+    pub fn declare_global_class_param(&mut self, path: &str, arg: usize) -> Result<(), Error> {
+        type_env(&mut self.vm)
+            .declare_global_class_param(path, arg)
+            .map_err(|m| {
+                let d = Diagnostic::error(m, Span::new(0, 0));
+                Error::new(
+                    ErrorKind::Type,
+                    vec![d],
+                    &SourceFile::new("<declaration>", ""),
+                )
+            })
+    }
+
     /// Everything the host declared, as a definitions file (`.d.rhue`) the
     /// standalone tools can read: `rhue --check --definitions` and
     /// `rhue-lsp`. Classes, their members, globals, and aliases from loaded

@@ -170,6 +170,16 @@ assert!(missing.is_empty(), "host.d.rhue has things the host doesn't: {missing:?
 
 That compares names (classes, parents, members, which properties can be set, index hooks, globals), not types.
 
+A method that takes a class's name gets `@class(param)` in a file, or `declare_class_param` from Rust (the argument counts from 0 after the object):
+
+```rust
+engine.declare_class_param("Node", "IsA", 0)?;
+engine.declare_class_param("Node", "FindFirstChildOfClass", 0)?;
+engine.declare_global_class_param("Instance.new", 0)?;
+```
+
+Then a string literal there means that class to the checker. `world:FindFirstChildOfClass("Box")` is a `Box?`, `Instance.new("Box")` is a `Box`, and `if n:IsA("Box") then` makes `n` a `Box` inside. In a file a global one is `@class(name) declare function Instance.new(name: string): Node`, and a dotted name adds a field to that global table. A literal that isn't a class is an error in strict scripts, and a string that isn't a literal just gets the declared type.
+
 ## Tasks
 
 A native can pause a script by returning `ScriptError::yield_with(values)`. The host gets the values, and whatever it passes to `resume` becomes the call's result. Scripts stay straight-line code and the host decides when they move on (a dialog waiting on the player, a request waiting on the network).

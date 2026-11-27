@@ -148,11 +148,13 @@ declare world: Node
 - `Engine::check_definitions` lists what a file declares that the engine doesn't have, for a test in the host's own suite.
 - Events are typed with one generic `Signal` alias, since the checker already has generic aliases with type packs.
 
-As built: `[string]: T` in a class is its index hook's type. A function declared twice is overloaded. Parameter names don't survive a round trip, the writer numbers them (`arg1`). Properties can be `read`, not `write`, since a class property scripts can set but not read isn't a thing here. `check_definitions` compares names, not types. `@class` comes with the next part.
+As built: `[string]: T` in a class is its index hook's type. A function declared twice is overloaded. Parameter names don't survive a round trip, the writer numbers them (`arg1`). Properties can be `read`, not `write`, since a class property scripts can set but not read isn't a thing here. `check_definitions` compares names, not types.
 
 ### Class names as strings
 
 `@class(param)` marks a string parameter as naming a class. A string literal naming a declared class `C` makes a class-returning function return `C` (`FindFirstChildOfClass("Box")` is `Box?`), and makes a boolean one narrow the receiver in an `if` (`if n:IsA("Box") then`). A literal that isn't a class is a strict-mode error, and a string that isn't a literal gets the declared type. From Rust it's `declare_class_param`.
+
+As built: global functions get it too (`Instance.new("Box")`, written `@class(name) declare function Instance.new(...)`, and `declare_global_class_param` from Rust), since a class and a global table can share a name. They only retype the result, narrowing needs a method's object. The argument is counted from 0 after `self` in `declare_class_param`, and it has to be the class's own method and take a `string` there. A literal only swaps in its class where the declared result is a class it's under, so `FindFirstChildOfClass("Box")` on a `Node?` result is `Box?`, and narrowing needs the object to be a local or a field path, same as `typeof`. `@` is a token now, scripts that have one get a parse error instead of a lex error.
 
 ## Order
 

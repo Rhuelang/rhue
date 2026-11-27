@@ -620,11 +620,15 @@ pub enum Declaration {
     /// `declare class Name extends Parent ... end`
     Class(ClassDecl),
     /// `declare name: T`, or `declare function name(...): R` (with `ty` the
-    /// function's type).
+    /// function's type). A function's name can be `Table.field`, which adds
+    /// a field to global table `Table`.
     Global {
         name: Rc<str>,
         span: Span,
         ty: TypeExpr,
+        /// `@class(a)` before a `declare function`: parameter `a` names a
+        /// class.
+        class_param: Option<(Rc<str>, Span)>,
     },
 }
 
@@ -651,6 +655,8 @@ pub enum ClassItem {
         name: Rc<str>,
         span: Span,
         ty: TypeExpr,
+        /// `@class(a)` before it: parameter `a` names a class.
+        class_param: Option<(Rc<str>, Span)>,
     },
     /// `[string]: T`, what reading a name that isn't a member gives.
     Index {

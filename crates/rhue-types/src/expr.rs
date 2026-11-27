@@ -207,6 +207,12 @@ impl Checker<'_> {
                 if !p.types.is_empty() && self.is_builtin(callee, "assert") {
                     p.types[0] = p.types[0].strip_nil();
                 }
+                // `Instance.new("Box")` is a `Box`
+                if let Some(c) = self.global_class_literal(callee, args)
+                    && let Some(first) = p.types.first_mut()
+                {
+                    *first = self.as_class(first, &c);
+                }
                 p
             }
             ExprKind::MethodCall {
@@ -220,7 +226,14 @@ impl Checker<'_> {
                 let ft = self.method_type(&ot, method, *method_span);
                 self.suggest_member(from, &ot, method, *method_span);
                 self.suggest_assert(from, *method_span, object.span);
-                self.call(&ft, Some(ot), args, e.span, Some(method))
+                let mut p = self.call(&ft, Some(ot.clone()), args, e.span, Some(method));
+                // `FindFirstChildOfClass("Box")` is a `Box?`
+                if let Some(c) = self.class_literal(&ot, method, args, true)
+                    && let Some(first) = p.types.first_mut()
+                {
+                    *first = self.as_class(first, &c);
+                }
+                p
             }
             ExprKind::Vararg => {
                 let v = self.funcs.last().map_or(Type::Any, |f| f.vararg.clone());
@@ -1203,6 +1216,32 @@ impl Checker<'_> {
                 };
                 (t, r)
             }
+            // `n:IsA("Box")`
+            ExprKind::MethodCall {
+                object,
+                method,
+                args,
+                ..
+            } => {
+                let t = self.expr_hinted(e, hint);
+                let Some(key) = self.path_of(object) else {
+                    return (t, Refine::default());
+                };
+                if !matches!(self.expand(&t), Type::Boolean) {
+                    return (t, Refine::default());
+                }
+                let before = self.errors.len();
+                let ot = self.expr(object);
+                self.errors.truncate(before);
+                let Some(c) = self.class_literal(&ot, method, args, false) else {
+                    return (t, Refine::default());
+                };
+                let r = Refine {
+                    truthy: vec![(key.clone(), self.filter_class(&ot, &c, true))],
+                    falsy: vec![(key, self.filter_class(&ot, &c, false))],
+                };
+                (t, r)
+            }
             ExprKind::Binary {
                 op: op @ (BinOp::Eq | BinOp::Ne),
                 lhs,
@@ -1276,6 +1315,110 @@ impl Checker<'_> {
             }
             _ => None,
         }
+    }
+
+    /// The class a string literal names in `obj:method(...)`, when `obj` is a
+    /// class whose `method` takes a class name there (see
+    /// [`Env::declare_class_param`](crate::Env::declare_class_param)). A
+    /// literal that isn't a class is an error in strict mode (if `report`).
+    fn class_literal(
+        &mut self,
+        ot: &Type,
+        method: &str,
+        args: &[Expr],
+        report: bool,
+    ) -> Option<Rc<str>> {
+        let Type::Class(class) = self.expand(ot) else {
+            return None;
+        };
+        let i = self.env.class_param(&class, method)?;
+        self.literal_class(args.get(i)?, report)
+    }
+
+    /// The same for a global function (`f(...)`, `Table.f(...)`) that
+    /// takes a class name, see
+    /// [`Env::declare_global_class_param`](crate::Env::declare_global_class_param).
+    fn global_class_literal(&mut self, callee: &Expr, args: &[Expr]) -> Option<Rc<str>> {
+        let host = |c: &Self, n: &rhue_parser::ast::Name| {
+            c.local_id(n).is_none() && !c.chunk_globals.contains_key(&n.text)
+        };
+        let path = match &callee.kind {
+            ExprKind::Name(n) if host(self, n) => n.text.to_string(),
+            ExprKind::Index { object, key } => match (&object.kind, &key.kind) {
+                (ExprKind::Name(o), ExprKind::String(k)) if host(self, o) => {
+                    format!("{}.{k}", o.text)
+                }
+                _ => return None,
+            },
+            _ => return None,
+        };
+        let i = self.env.global_class_param(&path)?;
+        self.literal_class(args.get(i)?, true)
+    }
+
+    /// The class string literal `arg` names. One that isn't a class is an
+    /// error in strict mode (if `report`).
+    fn literal_class(&mut self, arg: &Expr, report: bool) -> Option<Rc<str>> {
+        let ExprKind::String(name) = &arg.kind else {
+            return None;
+        };
+        if self.env.class(name).is_some() {
+            return Some(name.clone());
+        }
+        if report && self.strict {
+            self.error(arg.span, format!("'{name}' is not a class"));
+        }
+        None
+    }
+
+    /// `t` with any class `c` is under swapped for `c` (`Node?` → `Box?`).
+    fn as_class(&mut self, t: &Type, c: &Rc<str>) -> Type {
+        let members: Vec<Type> = self
+            .expand(t)
+            .members()
+            .iter()
+            .map(|m| self.expand(m))
+            .collect();
+        if !members
+            .iter()
+            .any(|m| matches!(m, Type::Class(x) if self.env.is_subclass(c, x)))
+        {
+            return t.clone();
+        }
+        union(
+            members
+                .into_iter()
+                .map(|m| match m {
+                    Type::Class(x) if self.env.is_subclass(c, &x) => Type::Class(c.clone()),
+                    m => m,
+                })
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    /// The part of `t` that is (`keep`) or isn't a `c`: a `Node` that is a
+    /// `Box` is a `Box`, one that isn't stays a `Node`.
+    fn filter_class(&mut self, t: &Type, c: &Rc<str>, keep: bool) -> Type {
+        let e = self.expand(t);
+        if matches!(e, Type::Any | Type::Error | Type::Unknown) {
+            return if keep { Type::Class(c.clone()) } else { e };
+        }
+        let members: Vec<Type> = e.members().iter().map(|m| self.expand(m)).collect();
+        let env = self.env;
+        union(
+            members
+                .into_iter()
+                .filter_map(|m| match &m {
+                    // already a `c`
+                    Type::Class(x) if env.is_subclass(x, c) => keep.then_some(m),
+                    // might be one
+                    Type::Class(x) if env.is_subclass(c, x) => {
+                        Some(if keep { Type::Class(c.clone()) } else { m })
+                    }
+                    _ => (!keep).then_some(m),
+                })
+                .collect::<Vec<_>>(),
+        )
     }
 
     /// The part of `t` whose `type()` (or `typeof()`) is (`keep`) or isn't

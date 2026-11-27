@@ -15,12 +15,15 @@ use crate::portable::{pack_with_names, variadic_with_names, with_names};
 use crate::types::{AliasDef, ClosedScope, FnType, GenericVar, NamedType, Pack, Type};
 use crate::{HashMap, intersection};
 
+/// A declared method's overloads, and which argument names a class.
+type Overloads = (Vec<Type>, Option<usize>);
+
 /// What one declaration turns into, worked out before anything changes.
 enum Change {
     Prop(Rc<str>, Rc<str>, Type, bool),
-    Method(Rc<str>, Rc<str>, Type),
+    Method(Rc<str>, Rc<str>, Type, Option<usize>),
     Index(Rc<str>, Type),
-    Global(Rc<str>, Type),
+    Global(Rc<str>, Type, Option<usize>, rhue_common::Span),
 }
 
 impl Env {
@@ -107,8 +110,24 @@ impl Env {
             for item in &defs.items {
                 match item {
                     Declaration::Alias(_) => {}
-                    Declaration::Global { name, ty, .. } => {
-                        changes.push(Change::Global(name.clone(), resolve(&mut c, ty)));
+                    Declaration::Global {
+                        name,
+                        ty,
+                        class_param,
+                        span,
+                    } => {
+                        let t = resolve(&mut c, ty);
+                        let arg = match class_param {
+                            Some((p, span)) => match class_arg(&t, ty, p, false) {
+                                Ok(i) => Some(i),
+                                Err(msg) => {
+                                    c.errors.push(Diagnostic::error(msg, *span));
+                                    continue;
+                                }
+                            },
+                            None => None,
+                        };
+                        changes.push(Change::Global(name.clone(), t, arg, *span));
                     }
                     Declaration::Class(class) => {
                         for m in &class.members {
@@ -135,12 +154,24 @@ impl Env {
                                         *access == Access::ReadWrite,
                                     ));
                                 }
-                                ClassItem::Method { name: m, ty, .. } => {
-                                    changes.push(Change::Method(
-                                        name,
-                                        m.clone(),
-                                        resolve(&mut c, ty),
-                                    ));
+                                ClassItem::Method {
+                                    name: m,
+                                    ty,
+                                    class_param,
+                                    ..
+                                } => {
+                                    let t = resolve(&mut c, ty);
+                                    let arg = match class_param {
+                                        Some((p, span)) => match class_arg(&t, ty, p, true) {
+                                            Ok(i) => Some(i),
+                                            Err(msg) => {
+                                                c.errors.push(Diagnostic::error(msg, *span));
+                                                continue;
+                                            }
+                                        },
+                                        None => None,
+                                    };
+                                    changes.push(Change::Method(name, m.clone(), t, arg));
                                 }
                                 ClassItem::Index { key, value, .. } => {
                                     if !matches!(resolve(&mut c, key), Type::String) {
@@ -165,8 +196,10 @@ impl Env {
         }
 
         // a function declared twice in the file is overloaded
-        let mut methods: BTreeMap<(Rc<str>, Rc<str>), Vec<Type>> = BTreeMap::new();
-        let mut globals: BTreeMap<Rc<str>, Vec<Type>> = BTreeMap::new();
+        // (class, method) to its overloads and which argument names a class
+        let mut methods: BTreeMap<(Rc<str>, Rc<str>), Overloads> = BTreeMap::new();
+        let mut globals: BTreeMap<Rc<str>, (Vec<Type>, Option<usize>, rhue_common::Span)> =
+            BTreeMap::new();
         for change in changes {
             match change {
                 Change::Prop(class, name, t, writable) => {
@@ -174,20 +207,58 @@ impl Env {
                     c.props.retain(|(n, _, _)| *n != name);
                     c.props.push((name, t, writable));
                 }
-                Change::Method(class, name, t) => methods.entry((class, name)).or_default().push(t),
+                Change::Method(class, name, t, arg) => {
+                    let m = methods.entry((class, name)).or_default();
+                    m.0.push(t);
+                    m.1 = m.1.or(arg);
+                }
                 Change::Index(class, t) => {
                     env.classes.get_mut(&class).expect("declared above").index = Some(t);
                 }
-                Change::Global(name, t) => globals.entry(name).or_default().push(t),
+                Change::Global(name, t, arg, span) => {
+                    let g = globals
+                        .entry(name)
+                        .or_insert_with(|| (Vec::new(), None, span));
+                    g.0.push(t);
+                    g.1 = g.1.or(arg);
+                }
             }
         }
-        for ((class, name), ts) in methods {
+        for ((class, name), (ts, arg)) in methods {
             let c = env.classes.get_mut(&class).expect("declared above");
             c.methods.retain(|(n, _)| *n != name);
+            c.class_params.retain(|(n, _)| *n != name);
+            if let Some(i) = arg {
+                c.class_params.push((name.clone(), i));
+            }
             c.methods.push((name, intersection(ts)));
         }
-        for (name, ts) in globals {
-            env.declare_global_type(&name, intersection(ts));
+        // plain globals first, so `declare T: {...}` is there for `T.f`
+        let (fields, plain): (Vec<_>, Vec<_>) =
+            globals.into_iter().partition(|(n, _)| n.contains('.'));
+        for (name, (ts, arg, _)) in plain.into_iter().chain(fields) {
+            if let Some((table, field)) = name.split_once('.') {
+                let mut tt = match env.globals.get(table) {
+                    Some(Type::Table(tt)) => (**tt).clone(),
+                    None => crate::types::TableType::default(),
+                    Some(_) => {
+                        let span = globals_span(defs, &name);
+                        return Err(vec![Diagnostic::error(
+                            format!("'{table}' isn't a table, so it can't have '{field}'"),
+                            span,
+                        )]);
+                    }
+                };
+                tt.props.retain(|(n, _)| &**n != field);
+                tt.props.push((Rc::from(field), intersection(ts)));
+                env.declare_global_type(table, Type::table(tt));
+            } else {
+                env.declare_global_type(&name, intersection(ts));
+            }
+            match arg {
+                Some(i) => env.global_class_params.insert(name, i),
+                None => env.global_class_params.remove(&name),
+            };
         }
         env.aliases.extend(aliases);
         env.alias_text.extend(texts);
@@ -227,11 +298,44 @@ impl Env {
             .collect();
         globals.sort_by(|a, b| a.0.cmp(b.0));
         for (name, t) in globals {
+            let class = |path: &str| match self.global_class_param(path) {
+                Some(i) => format!("@class(arg{}) ", i + 1),
+                None => String::new(),
+            };
+            // a table's functions that take a class name get written apart
+            if let Type::Table(tt) = t
+                && tt
+                    .props
+                    .iter()
+                    .any(|(f, _)| self.global_class_param(&format!("{name}.{f}")).is_some())
+            {
+                let mut rest = (**tt).clone();
+                let mut apart: Vec<_> = Vec::new();
+                rest.props.retain(|(f, ft)| {
+                    let path = format!("{name}.{f}");
+                    let keep = self.global_class_param(&path).is_none() || functions(ft).is_none();
+                    if !keep {
+                        apart.push((path, ft.clone()));
+                    }
+                    keep
+                });
+                if !rest.props.is_empty() || rest.indexer.is_some() {
+                    let _ = writeln!(out, "declare {name}: {}", with_names(&Type::table(rest)));
+                }
+                apart.sort_by(|a, b| a.0.cmp(&b.0));
+                for (path, ft) in apart {
+                    for f in functions(&ft).expect("only functions go apart") {
+                        let _ = write!(out, "{}declare function {path}", class(&path));
+                        write_signature(&mut out, f, false);
+                        out.push('\n');
+                    }
+                }
+                continue;
+            }
             match functions(t) {
                 Some(fs) => {
                     for f in fs {
-                        out.push_str("declare function ");
-                        out.push_str(name);
+                        let _ = write!(out, "{}declare function {name}", class(name));
                         write_signature(&mut out, f, false);
                         out.push('\n');
                     }
@@ -283,10 +387,14 @@ impl Env {
         methods.sort_by(|a, b| a.0.cmp(&b.0));
         for (n, t) in methods {
             let fs = functions(t).filter(|fs| fs.iter().all(|f| !f.params.is_empty()));
+            let class = match c.class_params.iter().find(|(m, _)| m == n) {
+                Some((_, i)) => format!("@class(arg{}) ", i + 1),
+                None => String::new(),
+            };
             match fs {
                 Some(fs) => {
                     for f in fs {
-                        let _ = write!(out, "    function {n}");
+                        let _ = write!(out, "    {class}function {n}");
                         write_signature(out, f, true);
                         out.push('\n');
                     }
@@ -348,6 +456,10 @@ impl Env {
                     Some(crate::ClassMember::Method(_))
                 ) {
                     missing.push(format!("{name}:{n}"));
+                } else if let Some(i) = file.class_param(name, n)
+                    && self.class_param(name, n) != Some(i)
+                {
+                    missing.push(format!("{name}:{n} takes a class name"));
                 }
             }
             if fc.index.is_some() && self.class_index(name).is_none() {
@@ -362,8 +474,49 @@ impl Env {
             .collect();
         globals.sort();
         missing.extend(globals);
+        let mut params: Vec<_> = file.global_class_params.iter().collect();
+        params.sort();
+        for (path, i) in params {
+            if self.global_path(path).is_none() {
+                missing.push(path.to_string());
+            } else if self.global_class_param(path) != Some(*i) {
+                missing.push(format!("{path} takes a class name"));
+            }
+        }
         Ok(missing)
     }
+}
+
+/// Which argument (0 is the first, after `self` for a method) `@class(param)`
+/// means, for a function whose type is `t` as written in `te`. It has to be a
+/// string.
+fn class_arg(t: &Type, te: &TypeExpr, param: &str, method: bool) -> Result<usize, String> {
+    let rhue_parser::ast::TypeKind::Function { params, .. } = &te.kind else {
+        unreachable!("a declared function is a function type");
+    };
+    let skip = usize::from(method);
+    let Some(j) = params
+        .iter()
+        .skip(skip)
+        .position(|p| p.name.as_deref() == Some(param))
+    else {
+        return Err(format!("'{param}' isn't one of the function's parameters"));
+    };
+    match t {
+        Type::Function(f) if matches!(f.params.get(j + skip), Some(Type::String)) => Ok(j),
+        _ => Err(format!("`@class({param})` needs '{param}' to be a string")),
+    }
+}
+
+/// Where `declare function name` is in the file, for an error about it.
+fn globals_span(defs: &Definitions, name: &str) -> rhue_common::Span {
+    defs.items
+        .iter()
+        .find_map(|d| match d {
+            Declaration::Global { name: n, span, .. } if &**n == name => Some(*span),
+            _ => None,
+        })
+        .unwrap_or_default()
 }
 
 /// Every alias once, so a broken one fails here (like [`Env::import`]).

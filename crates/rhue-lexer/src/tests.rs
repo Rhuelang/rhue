@@ -156,9 +156,9 @@ fn string_errors() {
 
 #[test]
 fn unexpected_character_is_reported_and_lexing_continues() {
-    let lexed = lex("1 @ 2");
+    let lexed = lex("1 $ 2");
     assert_eq!(lexed.errors.len(), 1);
-    assert_eq!(lexed.errors[0].message, "unexpected character `@`");
+    assert_eq!(lexed.errors[0].message, "unexpected character `$`");
     assert_eq!(lexed.errors[0].span(), rhue_common::Span::new(2, 3));
     let toks: Vec<_> = lexed.tokens.iter().map(|t| t.token).collect();
     assert_eq!(toks, vec![Number(1.0), Number(2.0), Eof]);

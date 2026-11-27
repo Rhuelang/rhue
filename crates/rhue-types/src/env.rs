@@ -28,6 +28,10 @@ pub struct ClassType {
     /// What reading a name that isn't a member gives, when the host has an
     /// index hook for the class (children by name, say).
     pub index: Option<Type>,
+    /// Methods with an argument that names a class, by the argument's
+    /// position after the object (0 is the first). A literal there gives a
+    /// more exact type, see [`Env::declare_class_param`].
+    pub class_params: Vec<(Rc<str>, usize)>,
 }
 
 /// A class member found by [`Env::class_member`].
@@ -70,6 +74,9 @@ pub struct Env {
     pub(crate) aliases: HashMap<Rc<str>, Rc<AliasDef>>,
     /// Their source, for writing them back out.
     pub(crate) alias_text: std::collections::BTreeMap<Rc<str>, String>,
+    /// Global functions (`f`, or `Table.f`) with an argument that names a
+    /// class, see [`Env::declare_global_class_param`].
+    pub(crate) global_class_params: HashMap<Rc<str>, usize>,
 }
 
 /// The standard library in Luau type syntax. Overloads are intersections.
@@ -524,6 +531,97 @@ impl Env {
         let t = self.resolve(ty)?;
         self.classes.get_mut(class).expect("declared above").index = Some(t);
         Ok(())
+    }
+
+    /// Says argument `arg` (0 is the first after the object) of method
+    /// `method` of class `class` names a class, like `IsA("Box")`. With a
+    /// string literal naming a class there, a method that returns a class
+    /// returns that one instead (`FindFirstChildOfClass("Box")` is a `Box?`),
+    /// and one that returns a boolean narrows the object in an `if`. The
+    /// method has to be the class's own. Classes under it get it too, unless
+    /// they have their own method by that name.
+    pub fn declare_class_param(
+        &mut self,
+        class: &str,
+        method: &str,
+        arg: usize,
+    ) -> Result<(), String> {
+        let Some(t) = self.class(class).and_then(|c| c.method(method)) else {
+            return Err(format!(
+                "class '{class}' has no method '{method}' of its own"
+            ));
+        };
+        let takes_string = |t: &Type| match t {
+            Type::Function(f) => matches!(f.params.get(arg + 1), Some(Type::String)),
+            _ => false,
+        };
+        let ok = match t {
+            Type::Intersection(ts) => ts.iter().any(takes_string),
+            t => takes_string(t),
+        };
+        if !ok {
+            return Err(format!(
+                "argument {} of '{class}:{method}' isn't a string",
+                arg + 1
+            ));
+        }
+        let c = self.classes.get_mut(class).expect("it has a method");
+        c.class_params.retain(|(n, _)| &**n != method);
+        c.class_params.push((Rc::from(method), arg));
+        Ok(())
+    }
+
+    /// Says argument `arg` (0 is the first) of global function `path` names
+    /// a class, like [`Env::declare_class_param`] for a method. `path` is a
+    /// global's name, or a global table's field: `Instance.new`.
+    pub fn declare_global_class_param(&mut self, path: &str, arg: usize) -> Result<(), String> {
+        let Some(t) = self.global_path(path) else {
+            return Err(format!("there's no global function '{path}'"));
+        };
+        let takes_string = |t: &Type| match t {
+            Type::Function(f) => matches!(f.params.get(arg), Some(Type::String)),
+            _ => false,
+        };
+        let ok = match t {
+            Type::Intersection(ts) => ts.iter().any(takes_string),
+            t => takes_string(t),
+        };
+        if !ok {
+            return Err(format!("argument {} of '{path}' isn't a string", arg + 1));
+        }
+        self.global_class_params.insert(Rc::from(path), arg);
+        Ok(())
+    }
+
+    /// Which argument of global function `path` names a class, if one does.
+    pub fn global_class_param(&self, path: &str) -> Option<usize> {
+        self.global_class_params.get(path).copied()
+    }
+
+    /// The type of global `f` or global table field `T.f`.
+    pub(crate) fn global_path(&self, path: &str) -> Option<&Type> {
+        match path.split_once('.') {
+            None => self.globals.get(path),
+            Some((t, f)) => match self.globals.get(t)? {
+                Type::Table(tt) => tt.prop(f),
+                _ => None,
+            },
+        }
+    }
+
+    /// Which argument of `class:method(...)` names a class, if one does
+    /// (see [`Env::declare_class_param`]).
+    pub fn class_param(&self, class: &str, method: &str) -> Option<usize> {
+        for c in self.class_chain(class) {
+            if let Some((_, i)) = c.class_params.iter().find(|(n, _)| &**n == method) {
+                return Some(*i);
+            }
+            // a class with its own method by that name and no `@class`
+            if c.method(method).is_some() {
+                return None;
+            }
+        }
+        None
     }
 
     /// Whether class `x` is `y` or has it among its ancestors.
