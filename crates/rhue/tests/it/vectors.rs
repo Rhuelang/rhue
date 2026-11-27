@@ -230,3 +230,108 @@ fn vectors_read_as_three_numbers() {
     let t: (f64, f64, f64) = rhue::serde::from_value(&mut e.context(), v).unwrap();
     assert_eq!(t, (1.0, 2.0, 3.0));
 }
+
+fn host_vectors() -> Engine {
+    let mut e = Engine::new();
+    e.vector()
+        .property("Magnitude", |v: [f32; 3]| {
+            (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
+        })
+        .property("Unit", |v: [f32; 3]| {
+            let m = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+            v.map(|c| c / m)
+        })
+        .method("Dot", |a: [f32; 3], b: [f32; 3]| {
+            a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+        })
+        .method("Lerp", |a: [f32; 3], b: [f32; 3], t: f32| {
+            [0, 1, 2].map(|i| a[i] + (b[i] - a[i]) * t)
+        })
+        .constructor("Vector3")
+        .function("Vector3", "fromX", |x: f32| [x, 0.0, 0.0]);
+    e
+}
+
+fn host_run(src: &str) -> String {
+    let vals: Vec<Value> = host_vectors()
+        .eval_as::<rhue::Variadic<Value>>(src)
+        .unwrap_or_else(|err| panic!("{src}\n{}", err.render(false)))
+        .0;
+    vals.iter()
+        .map(|v| v.to_string())
+        .collect::<Vec<_>>()
+        .join(" | ")
+}
+
+#[test]
+fn hosts_add_vector_members() {
+    assert_eq!(
+        host_run(
+            "local v = Vector3.new(3, 4) return v.Magnitude, v.Unit, v:Dot(Vector3.one), v.X, v.y"
+        ),
+        "5 | 0.6, 0.8, 0 | 7 | 3 | 4"
+    );
+    assert_eq!(
+        host_run("return Vector3.zero:Lerp(Vector3.new(2, 4, 6), 0.5), Vector3.fromX(2)"),
+        "1, 2, 3 | 2, 0, 0"
+    );
+    // a method looked up and called like any other function value
+    assert_eq!(
+        host_run("local v = vector.create(1, 2, 3) local dot = v.Dot return dot(v, v)"),
+        "14"
+    );
+}
+
+#[test]
+fn vector_members_errors() {
+    let err = |src: &str| {
+        host_vectors()
+            .eval(src)
+            .unwrap_err()
+            .diagnostic()
+            .message
+            .clone()
+    };
+    assert_eq!(
+        err("return Vector3.one.Nope"),
+        "attempt to index vector with 'Nope'"
+    );
+    assert!(
+        err("return Vector3.one:Dot(1)").contains("invalid argument #2 to 'Dot'"),
+        "{}",
+        err("return Vector3.one:Dot(1)")
+    );
+    // without a host nothing changed
+    assert_eq!(
+        error("return vector.one.Magnitude"),
+        "attempt to index vector with 'Magnitude'"
+    );
+}
+
+#[test]
+fn vector_members_survive_collection() {
+    let mut e = host_vectors();
+    e.gc();
+    let v = e
+        .eval("collectgarbage() return Vector3.new(1, 2, 2):Dot(Vector3.one), Vector3.new(0, 3, 4).Magnitude")
+        .unwrap();
+    assert_eq!(v, [Value::Number(5.0), Value::Number(5.0)]);
+}
+
+#[test]
+fn vector_members_check() {
+    let host_check = |src: &str| {
+        host_vectors()
+            .check("t.rhue", &format!("--!strict\n{src}"))
+            .map_err(|e| e.render(false))
+    };
+    host_check(
+        "local v: vector = Vector3.new(1, 2, 3)\nlocal m: number = v.Magnitude\nlocal d: number = v:Dot(Vector3.one)\nlocal u: vector = v.Unit:Lerp(Vector3.zero, 0.5)\nlocal x: vector = Vector3.fromX(1)",
+    )
+    .unwrap();
+    assert!(host_check("local v = Vector3.new(1, 2) local s: string = v.Magnitude").is_err());
+    assert!(host_check("local v = Vector3.new(1, 2) return v:Dot(1)").is_err());
+    assert!(host_check("local v = Vector3.new(1, 2) return v.Nope").is_err());
+    // plain engines still don't know them
+    assert!(check("return vector.one.Magnitude").is_err());
+}

@@ -76,6 +76,20 @@ match engine.eval_expr("1 + true") {
 
 Globals stick around between `eval`s on the same engine, locals don't. Anything handed back to Rust is pinned, so the GC leaves it alone while you're holding it.
 
+## Vector members
+
+`vector` is a plain value, not userdata, but a host can still give it members. Scripts written against an engine with `Vector3.new` and `v.Magnitude` then run as they are:
+
+```rust
+engine.vector()
+    .property("Magnitude", |v: [f32; 3]| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt())
+    .method("Dot", |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2])
+    .constructor("Vector3") // Vector3.new(x, y, z?), Vector3.zero, Vector3.one
+    .function("Vector3", "fromX", |x: f32| [x, 0.0, 0.0]);
+```
+
+Methods take the vector first. The checker gets all of it, so strict scripts can use them. `x`, `y`, `z` and the capitals always win, and reading them costs what it did before, the members only get looked at when the name isn't a component.
+
 ## Class trees
 
 `register_type` is one Rust type, one script class. Coming from 2.x with a wrapper type per class, [migrating.md](migrating.md) goes through moving over. A host whose objects all sit behind one handle type, with a tree of classes on top (a `Box` is a `Shape` is a `Node`), uses `define_class` instead. Members get `&Handle`, there's no `RefCell`, so a member that calls back into a script that touches the same object just works.

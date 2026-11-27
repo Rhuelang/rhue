@@ -171,6 +171,7 @@ pub mod serde;
 mod tasks;
 mod userdata;
 mod value;
+mod vector;
 
 use std::fmt;
 use std::marker::PhantomData;
@@ -206,6 +207,7 @@ pub use rhue_parser::ast::TypeMode;
 pub use tasks::{Task, TaskState};
 pub use userdata::{Class, ClassBuilder, IntoHandleMethod, IntoMethod, TypeBuilder, Ud, UserData};
 pub use value::{AnyUserData, Buffer, Function, Table, Thread, Value};
+pub use vector::VectorBuilder;
 
 /// Memory statistics; see [`Engine::heap_stats`].
 pub use rhue_vm::{HeapStats, ThreadEnd};
@@ -798,6 +800,24 @@ impl Engine {
             id: None,
             _h: PhantomData,
         }
+    }
+
+    /// Adds host members to the built-in `vector`: properties like
+    /// `v.Magnitude`, methods like `v:Dot(w)`, and a constructor table if
+    /// scripts expect one. Reading `v.x` costs the same as before.
+    ///
+    /// ```
+    /// # use rhue::{Engine, Value};
+    /// let mut engine = Engine::new();
+    /// engine.vector()
+    ///     .property("Magnitude", |v: [f32; 3]| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt())
+    ///     .method("Dot", |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2])
+    ///     .constructor("Vector3");
+    /// let v = engine.eval("local v = Vector3.new(3, 4) return v.Magnitude, v:Dot(Vector3.one)").unwrap();
+    /// assert_eq!(v, [Value::Number(5.0), Value::Number(7.0)]);
+    /// ```
+    pub fn vector(&mut self) -> VectorBuilder<'_> {
+        VectorBuilder { vm: &mut self.vm }
     }
 
     /// Adds members to a class that's already made. Every class under it gets

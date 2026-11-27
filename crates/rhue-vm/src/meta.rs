@@ -277,8 +277,8 @@ impl Vm {
                 Value::Vector(c) => match crate::vector_component(c, key, &self.heap) {
                     Some(n) => return found(self, Value::Number(n)),
                     None => {
-                        let m = format!("attempt to index vector with {}", self.describe_key(key));
-                        return Err(self.throw(f, pc, m));
+                        let v = self.vector_member(f, pc, c, key)?;
+                        return found(self, v);
                     }
                 },
                 Value::String(_) => {

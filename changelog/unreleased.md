@@ -17,6 +17,7 @@
 - Feat: Class names as strings. `@class(param)` in a definitions file, or `Engine::declare_class_param` and `declare_global_class_param`, says an argument names a class, so `FindFirstChildOfClass("Box")` is a `Box?`, `Instance.new("Box")` is a `Box`, and `if n:IsA("Box") then` makes `n` a `Box`. A literal that isn't a class is an error in strict scripts.
 - Feat: `docs/migrating.md` says what a 2.x host has to check for 3.0, and walks a host with one handle type over to class trees.
 - Feat: Method calls on host objects (`obj:Method()`) are cached per call site, about 1.4% fewer instructions on `bench/instances.rhue`.
+- Feat: `Engine::vector` gives the built-in `vector` host properties and methods (`v.Magnitude`, `v:Dot(w)`) and a constructor table under a name the host picks (`Vector3.new`). The checker knows them too, and `v.x` costs the same.
 - Changed: `@` is a token, so a stray one in a script is a parse error now instead of a lex error.
 - Changed: `rhue_types::ClassType` has a `class_params` field, the methods that take a class name.
 - Changed: `rhue_types::Env::declare_class` takes the class's parent, `None` for a class without one.

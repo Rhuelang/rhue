@@ -928,6 +928,8 @@ pub struct Vm {
     placeholder: Rc<LuaClosure>,
     ud_types: Vec<Class>,
     ud_type_ids: HashMap<std::any::TypeId, u32>,
+    /// What the host put on `vector` past `x`, `y` and `z`.
+    vector_members: HashMap<StrRef, Member>,
     /// Data the embedding layer keeps with the VM (the `rhue` crate keeps its
     /// type-checking environment here).
     host_data: Option<Box<dyn std::any::Any>>,
@@ -1016,6 +1018,7 @@ impl Vm {
             }),
             ud_types: Vec::new(),
             ud_type_ids: HashMap::new(),
+            vector_members: HashMap::new(),
             host_data: None,
         }
     }
@@ -1282,6 +1285,12 @@ impl Vm {
                 }
             }
         }
+        for (k, m) in &self.vector_members {
+            roots.push(GcRoot::Value(Value::String(*k)));
+            if let Member::Method(v) = m {
+                roots.push(GcRoot::Value(*v));
+            }
+        }
         self.heap.collect(roots);
     }
 
@@ -1432,6 +1441,52 @@ impl Vm {
                 set: None,
             },
         });
+    }
+
+    /// `v:name(...)` on every vector. Components (`x`, `y`, `z` and the
+    /// capitals) always win over a member with the same name.
+    pub fn add_vector_method(&mut self, name: &str, method: Value) {
+        let k = self.heap.intern(name);
+        self.vector_members.insert(k, Member::Method(method));
+    }
+
+    /// `v.name` on every vector calls `get(v)` and takes its first result.
+    pub fn add_vector_getter(&mut self, name: &str, get: NativeFn) {
+        let k = self.heap.intern(name);
+        self.vector_members.insert(
+            k,
+            Member::Property {
+                get: Some(get),
+                set: None,
+            },
+        );
+    }
+
+    /// A host member of `vector`, for when `key` isn't a component.
+    #[cold]
+    pub(crate) fn vector_member(
+        &mut self,
+        f: &mut Frame,
+        pc: usize,
+        v: [f32; 3],
+        key: Value,
+    ) -> Result<Value, Thrown> {
+        let get = match key {
+            Value::String(k) => match self.vector_members.get(&k) {
+                Some(Member::Method(m)) => return Ok(*m),
+                Some(Member::Property { get: Some(get), .. }) => Some(get.clone()),
+                _ => None,
+            },
+            _ => None,
+        };
+        let Some(get) = get else {
+            let m = format!("attempt to index vector with {}", self.describe_key(key));
+            return Err(self.throw(f, pc, m));
+        };
+        match self.native_from(f, &get, &[Value::Vector(v)]) {
+            Ok(values) => Ok(values.first().copied().unwrap_or(Value::Nil)),
+            Err(e) => Err(self.native_throw(f, pc, e)),
+        }
     }
 
     /// `obj.name = v` calls `set(obj, v)`.
