@@ -577,6 +577,49 @@ impl Class {
 
 type PinTable = Rc<RefCell<HashMap<PinKey, usize>>>;
 
+/// The bit marking an instruction cache cell as a userdata method's class and
+/// slot, see [`ud_method`].
+const UD_CACHED: u32 = 1 << 31;
+
+/// Method `k` of userdata `u` for `SELF`, through the instruction's cache
+/// cell `hint`, or `None` if `k` isn't a method (then the usual path
+/// handles it). A userdata cell is [`UD_CACHED`], a 15-bit class id and a
+/// 16-bit slot. Slots never move, so a matching class mostly means the
+/// slot's right, but a chunk can run in more than one VM, so the slot's
+/// name gets checked too. Tables keep a hash index in the same cell and
+/// it's never this big, so the two just miss each other. Classes past 32,767
+/// and members past 65,535 don't get cached.
+///
+/// Only `SELF` has this. An arm like it in `GETFIELD` and `SETFIELD` made
+/// the dispatch loop slower for every script, userdata or not.
+#[inline]
+fn ud_method(
+    heap: &Heap,
+    classes: &[Class],
+    u: UdRef,
+    k: StrRef,
+    hint: &Cell<u32>,
+) -> Option<Value> {
+    let id = heap.userdata(u).type_id;
+    let class = &classes[id as usize];
+    let h = hint.get();
+    if h & UD_CACHED != 0
+        && (h >> 16) & 0x7fff == id
+        && let Some((name, Member::Method(m))) = class.members.get((h & 0xffff) as usize)
+        && *name == k
+    {
+        return Some(*m);
+    }
+    let slot = *class.by_name.get(&k)?;
+    if id <= 0x7fff && slot <= 0xffff {
+        hint.set(UD_CACHED | id << 16 | slot);
+    }
+    match &class.members[slot as usize].1 {
+        Member::Method(m) => Some(*m),
+        Member::Property { .. } => None,
+    }
+}
+
 /// How much of the instruction budget gets handed out at once. Every time a
 /// slice runs out the VM checks for an [`Interrupt`], so scripts notice one
 /// within about this many loop iterations or calls.
@@ -3349,6 +3392,18 @@ impl Vm {
                                     continue 'frame;
                                 }
                                 regs[a] = method;
+                                regs[a + 1] = obj;
+                            }
+                            (Value::UserData(u), Value::String(s))
+                                if let Some(m) = ud_method(
+                                    &self.heap,
+                                    &self.ud_types,
+                                    u,
+                                    s,
+                                    cache.slot(at, code.len()),
+                                ) =>
+                            {
+                                regs[a] = m;
                                 regs[a + 1] = obj;
                             }
                             _ => {

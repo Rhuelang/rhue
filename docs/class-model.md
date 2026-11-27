@@ -117,6 +117,8 @@ A weak-keyed entry for an object goes when no script holds that object's userdat
 
 The per-instruction cache tables use gets a userdata arm. For userdata the cell holds a tag bit, a 15-bit class id and a 16-bit slot. The key at `GETFIELD`, `SETFIELD` and `SELF` is a constant of the instruction, and slots never move, so a matching class means the cached slot is right: one compare, no version to keep in step. Debug builds also check the slot's name. Up to 32,767 classes and 65,535 members a class get cached, past that a class just isn't.
 
+As built, only `SELF` has the arm, and the slot's name gets checked in release builds too. Every version with an arm in `GETFIELD` or `SETFIELD` made the dispatch loop slower for scripts that never touch a userdata: inline, `loops` came out 2.8% worse; out of line, `fib` and `closures` got worse too. A cache down in the member lookup instead (where those already end up) cost more than the hash lookup it saved. `SELF` alone took `bench/instances.rhue` from 842,637,033 instructions to 830,973,167 (1.4% fewer), with everything else within 0.2%. The name check is there because a compiled chunk, and the cache on it, can run in more than one engine, where the same class id can be a different class.
+
 ## Definitions files
 
 Luau's declaration syntax in a `.d.rhue` file, so the standalone tools know a host's classes.

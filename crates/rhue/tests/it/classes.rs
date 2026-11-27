@@ -443,6 +443,112 @@ fn an_interned_object_goes_when_scripts_let_go() {
     assert_eq!(made.get(), 3);
 }
 
+// ─ The Member Cache ──────────────────────────────────────────────────────────
+
+#[test]
+fn one_instruction_can_see_many_classes() {
+    let mut e = Engine::new();
+    let t = tree(&mut e);
+    let mut cx = e.context();
+    let n = cx.create_object(&t.node, Handle::new("n"));
+    let sh = cx.create_object(&t.shape, Handle::new("sh"));
+    let b = cx.create_object(&t.boxed, Handle::new("b"));
+    let all = vec![n.clone(), sh.clone(), b.clone(), n, b, sh];
+    e.set_global("all", all);
+    // the same GETFIELD and SELF see three classes, in turn and repeated
+    let got = e
+        .eval(
+            "local out = {}
+             for i, o in all do out[i] = o.Name .. '=' .. o:Describe() end
+             return table.concat(out, ' ')",
+        )
+        .unwrap();
+    assert_eq!(
+        got,
+        [s("n=node n sh=node sh b=box b n=node n b=box b sh=node sh")]
+    );
+}
+
+#[test]
+fn tables_and_objects_can_share_an_instruction() {
+    let mut e = Engine::new();
+    let t = tree(&mut e);
+    let b = e.context().create_object(&t.boxed, Handle::new("crate"));
+    e.set_global("b", b);
+    let got = e
+        .eval(
+            "local t = { Name = 'table', Size = 9 }
+             local out = {}
+             for i, o in { t, b, t, b, b, t } do
+                 o.Name = o.Name .. i
+                 out[i] = o.Name .. ':' .. o.Size
+             end
+             return table.concat(out, ' ')",
+        )
+        .unwrap();
+    assert_eq!(
+        got,
+        [s(
+            "table1:9 crate2:1 table13:9 crate24:1 crate245:1 table136:9"
+        )]
+    );
+}
+
+#[test]
+fn a_member_changed_after_it_was_cached_is_the_new_one() {
+    let mut e = Engine::new();
+    let t = tree(&mut e);
+    let n = e.context().create_object(&t.node, Handle::new("n"));
+    e.set_global("n", n);
+    e.eval("function describe(o) return o:Describe() end")
+        .unwrap();
+    assert_eq!(e.eval("return describe(n)").unwrap(), [s("node n")]);
+    e.extend_class(&t.node)
+        .method("Describe", |_: &Handle| "changed");
+    assert_eq!(e.eval("return describe(n)").unwrap(), [s("changed")]);
+}
+
+#[test]
+fn a_chunk_run_in_two_engines_finds_each_ones_members() {
+    // same class id in both, but the members are in a different order
+    fn engine(first: &str, second: &str) -> Engine {
+        let mut e = Engine::new();
+        let class = e
+            .define_class::<Handle>("Thing")
+            .method(first, |h: &Handle| h.name.borrow().clone())
+            .method(second, |h: &Handle| h.size.get().to_string())
+            .finish();
+        let o = e.context().create_object(&class, Handle::new("named"));
+        e.set_global("o", o);
+        e
+    }
+    let mut a = engine("a", "b");
+    let mut b = engine("b", "a");
+    let chunk = a.compile("both", "return o:a(), o:b()").unwrap();
+    for _ in 0..3 {
+        assert_eq!(a.run(&chunk).unwrap(), [s("named"), s("1")]);
+        assert_eq!(b.run(&chunk).unwrap(), [s("1"), s("named")]);
+    }
+}
+
+#[test]
+fn cached_members_still_error_the_same() {
+    let mut e = Engine::new();
+    let t = tree(&mut e);
+    let b = e.context().create_object(&t.boxed, Handle::new("crate"));
+    e.set_global("b", b);
+    // a read, a write and a call that get cached, then go wrong
+    e.eval("function get(o) return o.Size end function put(o, v) o.Name = v end")
+        .unwrap();
+    e.eval("get(b) put(b, 'x')").unwrap();
+    let err = e.eval("put(b, 1)").unwrap_err().to_string();
+    assert!(err.contains("string expected, got number"), "{err}");
+    let err = e.eval("b.Size = 2").unwrap_err().to_string();
+    assert!(err.contains("'Size' is a read-only member of Box"), "{err}");
+    let err = e.eval("return b:Size()").unwrap_err().to_string();
+    assert!(err.contains("attempt to call a number value"), "{err}");
+}
+
 // ─ In the Checker ────────────────────────────────────────────────────────────
 
 #[test]
