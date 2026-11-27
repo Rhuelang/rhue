@@ -78,7 +78,7 @@ Globals stick around between `eval`s on the same engine, locals don't. Anything 
 
 ## Class trees
 
-`register_type` is one Rust type, one script class. A host whose objects all sit behind one handle type, with a tree of classes on top (a `Box` is a `Shape` is a `Node`), uses `define_class` instead. Members get `&Handle`, there's no `RefCell`, so a member that calls back into a script that touches the same object just works.
+`register_type` is one Rust type, one script class. Coming from 2.x with a wrapper type per class, [migrating.md](migrating.md) goes through moving over. A host whose objects all sit behind one handle type, with a tree of classes on top (a `Box` is a `Shape` is a `Node`), uses `define_class` instead. Members get `&Handle`, there's no `RefCell`, so a member that calls back into a script that touches the same object just works.
 
 ```rust
 let node = engine.define_class::<Handle>("Node")
