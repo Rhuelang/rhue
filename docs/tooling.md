@@ -68,6 +68,8 @@ vim.lsp.config("rhue", { cmd = { "rhue-lsp" }, filetypes = { "luau" }, root_mark
 vim.lsp.enable("rhue")
 ```
 
+Scripts written for a host get checked against its definitions files (see [embedding](embedding.md#definitions-files)), every `*.d.rhue` at the top of the workspace, or whatever the `rhue.definitions` setting says (a path or a list, relative to the workspace). The setting goes in the client's initialization options or settings, `{ "rhue": { "definitions": "types/host.d.rhue" } }`. From the command line it's `rhue --check --definitions host.d.rhue FILE`, and the flag can be given more than once.
+
 The formatter keeps your line breaks and comments and only fixes spacing and indentation. If its output wouldn't lex back to the exact same tokens, it gives up instead of touching your code.
 
 ## Debugging

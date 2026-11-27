@@ -8,6 +8,11 @@
 //! `require`s get found next to it on disk (`a.b` is `a/b.rhue` or
 //! `a/b/init.rhue`), preferring the text of documents open in the editor.
 //!
+//! Every engine reads the host's definitions files first (`.d.rhue`, see
+//! [`Docs::definitions`]), so scripts written for a host get checked
+//! against what it has. A definitions file that's open gets its own errors
+//! as diagnostics.
+//!
 //! Positions are LSP's, lines and UTF-16 columns.
 
 use std::cell::{Cell, RefCell, RefMut};
@@ -105,6 +110,10 @@ pub struct Docs {
     outlines: RefCell<HashMap<PathBuf, (String, Rc<Outline>)>>,
     /// The workspace folders, searched for symbols and references.
     pub roots: Vec<PathBuf>,
+    /// The definitions files (`.d.rhue`) every engine reads, from the
+    /// `rhue.definitions` setting (see [`definitions_setting`]). Empty means
+    /// the `*.d.rhue` files at the top of each workspace folder.
+    pub definitions: Vec<PathBuf>,
     stats: Rc<Stats>,
 }
 
@@ -157,7 +166,12 @@ impl Docs {
 
     /// Files changed on disk (saved, or changed outside the editor). Every
     /// document that read a module might see new types, so those get returned.
+    /// With definitions files around, one of them might have changed, so
+    /// that's every document.
     pub fn files_changed(&mut self) -> Vec<Uri> {
+        if !self.definition_files().is_empty() {
+            return self.forget_all();
+        }
         let mut affected: Vec<Uri> = self
             .engines
             .borrow()
@@ -181,6 +195,11 @@ impl Docs {
         let Ok(path) = changed.to_file_path() else {
             return Vec::new();
         };
+        if self.definition_files().contains(&path) {
+            let mut all = self.forget_all();
+            all.retain(|u| u != changed);
+            return all;
+        }
         let mut affected: Vec<Uri> = self
             .engines
             .borrow()
@@ -194,6 +213,44 @@ impl Docs {
             self.analyses.borrow_mut().remove(u);
         }
         affected
+    }
+
+    /// Uses `files` as the definitions files from now on (the setting
+    /// changed). Returns the open documents, which all get checked again.
+    pub fn set_definitions(&mut self, files: Vec<PathBuf>) -> Vec<Uri> {
+        self.definitions = files;
+        self.forget_all()
+    }
+
+    /// Throws out every engine and analysis, returns the open documents.
+    fn forget_all(&mut self) -> Vec<Uri> {
+        self.engines.borrow_mut().clear();
+        self.analyses.borrow_mut().clear();
+        let mut open: Vec<Uri> = self.open.keys().cloned().collect();
+        open.sort();
+        open
+    }
+
+    /// The definitions files engines read: the setting's, or the `*.d.rhue`
+    /// files at the top of each workspace folder.
+    pub fn definition_files(&self) -> Vec<PathBuf> {
+        if !self.definitions.is_empty() {
+            return self.definitions.clone();
+        }
+        let mut out = Vec::new();
+        for root in &self.roots {
+            let Ok(entries) = std::fs::read_dir(root) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if is_definitions(&path) && path.is_file() {
+                    out.push(path);
+                }
+            }
+        }
+        out.sort();
+        out
     }
 
     pub fn stats(&self) -> &Stats {
@@ -268,7 +325,10 @@ impl Docs {
                     if !name.starts_with('.') && name != "target" && name != "node_modules" {
                         stack.push(path);
                     }
-                } else if name.ends_with(".rhue") && out.len() < MAX_FILES {
+                } else if name.ends_with(".rhue")
+                    && !name.ends_with(".d.rhue")
+                    && out.len() < MAX_FILES
+                {
                     out.push(path);
                 }
             }
@@ -301,6 +361,12 @@ impl Docs {
     fn new_engine(&self, uri: &Uri) -> (Engine, Deps) {
         let mut engine = Engine::new();
         engine.set_default_type_mode(TypeMode::NonStrict);
+        // a broken one gets reported when it's open, the rest still count
+        for path in self.definition_files() {
+            if let Some(text) = self.text_at(&path) {
+                let _ = engine.load_definitions(&path.to_string_lossy(), &text);
+            }
+        }
         let snapshot: HashMap<PathBuf, String> = self
             .open
             .iter()
@@ -335,12 +401,53 @@ impl Docs {
 
 pub fn diagnostics(docs: &Docs, uri: &Uri, text: &str) -> Vec<Diagnostic> {
     let idx = LineIndex::new(text);
+    if uri.to_file_path().is_ok_and(|p| is_definitions(&p)) {
+        return match Engine::new().load_definitions("definitions", text) {
+            Ok(()) => Vec::new(),
+            Err(e) => e.diagnostics.iter().map(|d| to_lsp(&idx, d)).collect(),
+        };
+    }
     let analysis = docs.analyze(uri, text);
     analysis
         .diagnostics
         .iter()
         .map(|d| to_lsp(&idx, d))
         .collect()
+}
+
+/// Whether `path` is a definitions file, `*.d.rhue`.
+pub fn is_definitions(path: &Path) -> bool {
+    path.file_name()
+        .is_some_and(|n| n.to_string_lossy().ends_with(".d.rhue"))
+}
+
+/// The definitions files a client's settings name, from initialization
+/// options or a configuration change: `{ "rhue": { "definitions": ... } }`
+/// or just `{ "definitions": ... }`, a path or a list of them. Relative
+/// paths are from the first workspace folder. `None` if the settings don't
+/// say.
+pub fn definitions_setting(
+    settings: &serde_json::Value,
+    roots: &[PathBuf],
+) -> Option<Vec<PathBuf>> {
+    let v = settings
+        .get("rhue")
+        .and_then(|r| r.get("definitions"))
+        .or_else(|| settings.get("definitions"))?;
+    let paths: Vec<&str> = match v {
+        serde_json::Value::String(s) => vec![s.as_str()],
+        serde_json::Value::Array(a) => a.iter().filter_map(|p| p.as_str()).collect(),
+        _ => return None,
+    };
+    Some(
+        paths
+            .into_iter()
+            .map(|p| match roots.first() {
+                Some(root) if Path::new(p).is_relative() => root.join(p),
+                _ => PathBuf::from(p),
+            })
+            .collect(),
+    )
 }
 
 fn to_lsp(idx: &LineIndex<'_>, d: &rhue::Diagnostic) -> Diagnostic {

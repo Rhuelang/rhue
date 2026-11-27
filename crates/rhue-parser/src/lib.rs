@@ -11,7 +11,7 @@ pub mod ast;
 mod parser;
 mod strings;
 
-pub use parser::{MAX_DEPTH, MAX_ERRORS, parse_chunk, parse_expr, parse_type};
+pub use parser::{MAX_DEPTH, MAX_ERRORS, parse_chunk, parse_definitions, parse_expr, parse_type};
 
 #[cfg(test)]
 mod tests;

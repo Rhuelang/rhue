@@ -148,6 +148,8 @@ declare world: Node
 - `Engine::check_definitions` lists what a file declares that the engine doesn't have, for a test in the host's own suite.
 - Events are typed with one generic `Signal` alias, since the checker already has generic aliases with type packs.
 
+As built: `[string]: T` in a class is its index hook's type. A function declared twice is overloaded. Parameter names don't survive a round trip, the writer numbers them (`arg1`). Properties can be `read`, not `write`, since a class property scripts can set but not read isn't a thing here. `check_definitions` compares names, not types. `@class` comes with the next part.
+
 ### Class names as strings
 
 `@class(param)` marks a string parameter as naming a class. A string literal naming a declared class `C` makes a class-returning function return `C` (`FindFirstChildOfClass("Box")` is `Box?`), and makes a boolean one narrow the receiver in an `if` (`if n:IsA("Box") then`). A literal that isn't a class is a strict-mode error, and a string that isn't a literal gets the declared type. From Rust it's `declare_class_param`.

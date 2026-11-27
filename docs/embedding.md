@@ -130,6 +130,46 @@ engine.declare_index("Node", "Node")?; // so strict scripts know world.Box is a 
 
 `create_object` makes a new script object every time. When the same host object can come back more than once (a child found by name, a handler's argument), use `cx.object(&class, id, || handle)` instead. It gives back the object scripts already have for that `u64` id, so `==` and table keys work, and only calls the closure when there isn't one. Ids are per class tree. Nothing on the host side keeps the object alive, so once no script holds it, it gets collected and the next call makes a fresh one. A weak-keyed table entry for it goes too, even if the host still has the thing.
 
+## Definitions files
+
+`rhue --check` and `rhue-lsp` don't have your host, so they don't know `Node` or `world`. Write what the engine knows out as a `.d.rhue` file and they will:
+
+```rust
+std::fs::write("host.d.rhue", engine.definitions())?;
+```
+
+It's Luau's declaration syntax, sorted by name so it diffs cleanly, and nothing has to run first:
+
+```lua
+type Signal<T...> = {
+    Connect: (any, (T...) -> ()) -> Connection,
+}
+
+declare class Node
+    read ClassName: string
+    Name: string
+    function FindFirstChild(self, arg1: string): Node?
+    [string]: Node
+end
+
+declare class Shape extends Node
+    read Touched: Signal<Shape>
+end
+
+declare world: Node
+```
+
+Types don't keep parameter names, so they come out as `arg1`, `arg2` and so on. Hand-written files can name them. Aliases only come along if they came from a loaded file, a host declaring things from Rust doesn't have any. `engine.load_definitions(name, source)` reads one in (types only, nothing exists at run time), and scripts can name its aliases.
+
+To keep a checked-in file from going stale, check it in a test:
+
+```rust
+let missing = engine.check_definitions("host.d.rhue", include_str!("host.d.rhue"))?;
+assert!(missing.is_empty(), "host.d.rhue has things the host doesn't: {missing:?}");
+```
+
+That compares names (classes, parents, members, which properties can be set, index hooks, globals), not types.
+
 ## Tasks
 
 A native can pause a script by returning `ScriptError::yield_with(values)`. The host gets the values, and whatever it passes to `resume` becomes the call's result. Scripts stay straight-line code and the host decides when they move on (a dialog waiting on the player, a request waiting on the network).

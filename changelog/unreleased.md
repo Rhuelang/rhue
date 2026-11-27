@@ -12,5 +12,7 @@
 - Feat: Weak tables. `__mode` with `"k"`, `"v"` or `"kv"` on the metatable, as in Luau.
 - Feat: `ClassBuilder::index` gives a class a hook for names that aren't members, for children by name (`world.Box`). Members come first, and `Engine::declare_index` tells the checker what the hook returns.
 - Feat: Handle class getters and setters can take the `Context` and fail (`getter_with`, `setter_with`), so a setter can refuse a value or fire a changed signal. `getter_dyn`, `setter_dyn`, `property_dyn` and `method_dyn` take script types as strings, for hosts that register classes from their own reflection data.
+- Feat: Definitions files (`.d.rhue`), Luau's declaration syntax for what a host has. `Engine::definitions` writes one, `Engine::load_definitions` reads one, and `Engine::check_definitions` lists what a file has that the engine doesn't, for a test that keeps a checked-in one honest.
+- Feat: `rhue --check --definitions FILE` checks against a host's definitions file. `rhue-lsp` reads the `rhue.definitions` setting, or every `*.d.rhue` at the top of the workspace, and shows a definitions file's own errors.
 - Changed: `rhue_types::Env::declare_class` takes the class's parent, `None` for a class without one.
 - Changed: `rhue_types::ClassType` has an `index` field, the type an index hook gives.

@@ -6,14 +6,19 @@
 //! across the workspace), document and workspace symbols, semantic
 //! highlighting, completion (after `.` and `:`, and names in scope), renaming
 //! locals, signature help and formatting.
+//!
+//! Scripts written for a host get checked against its definitions files:
+//! the `rhue.definitions` setting (a path or a list, relative to the
+//! workspace, in initialization options or a configuration change), or else
+//! every `*.d.rhue` at the top of the workspace.
 
 use rhue_lsp::uri::UriExt;
 use std::error::Error;
 
 use lsp_server::{Connection, Message, Notification, Request, RequestId, Response};
 use lsp_types::notification::{
-    DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidOpenTextDocument,
-    DidSaveTextDocument, Notification as _, PublishDiagnostics,
+    DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument,
+    DidOpenTextDocument, DidSaveTextDocument, Notification as _, PublishDiagnostics,
 };
 use lsp_types::request::{
     CodeActionRequest, Completion, DocumentSymbolRequest, Formatting, GotoDefinition, HoverRequest,
@@ -89,6 +94,7 @@ fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
     };
     let caps = serde_json::to_value(capabilities)?;
     let (id, params) = connection.initialize_start()?;
+    let options = params.get("initializationOptions").cloned();
     let roots = workspace_roots(serde_json::from_value(params).ok());
     connection.initialize_finish(
         id,
@@ -97,7 +103,7 @@ fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
             "serverInfo": { "name": "rhue-lsp", "version": env!("CARGO_PKG_VERSION") },
         }),
     )?;
-    serve(&connection, roots)?;
+    serve(&connection, roots, options)?;
     // the writer thread finishes once the connection's gone
     drop(connection);
     io_threads.join()?;
@@ -127,8 +133,12 @@ fn workspace_roots(params: Option<InitializeParams>) -> Vec<std::path::PathBuf> 
 fn serve(
     connection: &Connection,
     roots: Vec<std::path::PathBuf>,
+    options: Option<serde_json::Value>,
 ) -> Result<(), Box<dyn Error + Sync + Send>> {
     let mut docs = Docs::default();
+    if let Some(files) = options.and_then(|o| rhue_lsp::definitions_setting(&o, &roots)) {
+        docs.definitions = files;
+    }
     docs.roots = roots;
     for msg in &connection.receiver {
         match msg {
@@ -213,6 +223,17 @@ fn handle_notification(docs: &mut Docs, n: Notification) -> Vec<Uri> {
             out
         }
         DidSaveTextDocument::METHOD | DidChangeWatchedFiles::METHOD => docs.files_changed(),
+        DidChangeConfiguration::METHOD => {
+            let Some(p): Option<lsp_types::DidChangeConfigurationParams> =
+                serde_json::from_value(n.params).ok()
+            else {
+                return Vec::new();
+            };
+            match rhue_lsp::definitions_setting(&p.settings, &docs.roots) {
+                Some(files) => docs.set_definitions(files),
+                None => Vec::new(),
+            }
+        }
         _ => Vec::new(),
     }
 }

@@ -84,6 +84,69 @@ fn diagnostics_follow_the_directive() {
 }
 
 #[test]
+fn scripts_get_checked_against_definitions_files() {
+    let dir = std::env::temp_dir().join(format!("rhue-lsp-defs-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("types")).unwrap();
+    let file = |name: &str| rhue_lsp::uri::from_file_path(dir.join(name)).unwrap();
+    std::fs::write(
+        dir.join("host.d.rhue"),
+        "declare class Node\n    Name: string\nend\ndeclare world: Node\n",
+    )
+    .unwrap();
+    let main = file("main.rhue");
+    let script = "--!strict\nlocal n: number = world.Name";
+    let messages = |docs: &Docs| -> Vec<String> {
+        rhue_lsp::diagnostics(docs, &main, script)
+            .into_iter()
+            .map(|d| d.message)
+            .collect()
+    };
+
+    // a `.d.rhue` at the top of the workspace counts
+    assert_eq!(messages(&Docs::default()), ["Unknown global 'world'"]);
+    let mut docs = Docs::default();
+    docs.roots = vec![dir.clone()];
+    assert_eq!(
+        messages(&docs),
+        ["Type 'string' could not be converted into 'number'"]
+    );
+
+    // editing it rechecks what's open, and its own mistakes show in it
+    docs.set_text(&main, script.into());
+    let defs = file("host.d.rhue");
+    let changed = docs.set_text(
+        &defs,
+        "declare class Node\n    Name: number\nend\ndeclare world: Node\n".into(),
+    );
+    assert_eq!(changed, std::slice::from_ref(&main));
+    assert!(messages(&docs).is_empty());
+    let bad = rhue_lsp::diagnostics(&docs, &defs, "declare class Node\n    Name: Nope\nend");
+    assert_eq!(bad.len(), 1);
+    assert_eq!(bad[0].message, "Unknown type 'Nope'");
+    assert_eq!(bad[0].range.start, Position::new(1, 10));
+    docs.close(&defs);
+
+    // the setting wins, and the definitions files aren't scripts
+    std::fs::write(dir.join("types/other.d.rhue"), "declare world: string\n").unwrap();
+    let setting = serde_json::json!({ "rhue": { "definitions": "types/other.d.rhue" } });
+    let files = rhue_lsp::definitions_setting(&setting, &docs.roots).unwrap();
+    assert_eq!(files, [dir.join("types/other.d.rhue")]);
+    assert_eq!(docs.set_definitions(files), std::slice::from_ref(&main));
+    assert!(
+        messages(&docs)[0].contains("Key 'Name' not found"),
+        "{:?}",
+        messages(&docs)
+    );
+    assert!(rhue_lsp::definitions_setting(&serde_json::json!({ "other": 1 }), &[]).is_none());
+    assert!(
+        docs.workspace_files()
+            .iter()
+            .all(|p| !p.to_string_lossy().ends_with(".d.rhue"))
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn hover_shows_types() {
     let src = "--!strict\nlocal function add(a: number, b: number) return a + b end\nlocal to|tal = add(1, 2)";
     assert_eq!(hover(src).as_deref(), Some("total: number"));

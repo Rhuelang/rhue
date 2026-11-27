@@ -65,6 +65,11 @@ pub struct Env {
     /// The aliases of imported types (see [`Env::import`]), kept alive here
     /// since the aliases only point at their scope weakly.
     pub(crate) imported: Vec<Rc<ClosedScope>>,
+    /// Aliases from definitions files, which scripts can name too (see
+    /// [`Env::load_definitions`]).
+    pub(crate) aliases: HashMap<Rc<str>, Rc<AliasDef>>,
+    /// Their source, for writing them back out.
+    pub(crate) alias_text: std::collections::BTreeMap<Rc<str>, String>,
 }
 
 /// The standard library in Luau type syntax. Overloads are intersections.

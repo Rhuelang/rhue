@@ -19,6 +19,9 @@
 //! options:
 //!   --check                type-check only (strict unless the file says
 //!                          otherwise); don't run
+//!   --definitions FILE     with --check, check against what a host's
+//!                          `.d.rhue` file declares (can be given more
+//!                          than once)
 //!   --strict               type-check everything strictly before running
 //!                          (files can still opt out with `--!nocheck`)
 //!   --dump                 print the bytecode before running
@@ -42,6 +45,7 @@ struct Args {
     fold: bool,
     check_only: bool,
     strict: bool,
+    definitions: Vec<String>,
     input: Input,
 }
 
@@ -52,7 +56,7 @@ enum Input {
 }
 
 fn usage() -> &'static str {
-    "usage: rhue [--check] [--strict] [--dump] [--no-fold] [FILE | -e SOURCE]\n       rhue compile [--strict] FILE [-o OUT]\n       rhue test [--filter TEXT] [PATH...]\n       rhue fmt [--check] [--indent N] FILE..."
+    "usage: rhue [--check [--definitions FILE]...] [--strict] [--dump] [--no-fold] [FILE | -e SOURCE]\n       rhue compile [--strict] FILE [-o OUT]\n       rhue test [--filter TEXT] [PATH...]\n       rhue fmt [--check] [--indent N] FILE..."
 }
 
 fn parse_args(raw: &[String]) -> Result<Args, String> {
@@ -61,6 +65,7 @@ fn parse_args(raw: &[String]) -> Result<Args, String> {
         fold: true,
         check_only: false,
         strict: false,
+        definitions: Vec::new(),
         input: Input::Repl,
     };
     let mut it = raw.iter().cloned();
@@ -70,11 +75,20 @@ fn parse_args(raw: &[String]) -> Result<Args, String> {
             "--check" => args.check_only = true,
             "--strict" => args.strict = true,
             "--no-fold" => args.fold = false,
+            "--definitions" => args
+                .definitions
+                .push(it.next().ok_or("--definitions needs a file")?),
             "-e" => args.input = Input::Inline(it.next().ok_or("-e needs an argument")?),
             "-h" | "--help" => return Err(usage().into()),
             s if s.starts_with('-') => return Err(format!("unknown option `{s}`\n{}", usage())),
             file => args.input = Input::File(file.into()),
         }
+    }
+    if !args.definitions.is_empty() && !args.check_only {
+        return Err(format!(
+            "--definitions only goes with --check, a definitions file has types and no values\n{}",
+            usage()
+        ));
     }
     Ok(args)
 }
@@ -268,6 +282,19 @@ pub fn main(args: impl IntoIterator<Item = String>) -> ExitCode {
                 return ExitCode::from(2);
             }
         };
+        for path in &args.definitions {
+            let loaded = match std::fs::read_to_string(path) {
+                Ok(defs) => engine.load_definitions(path, &defs),
+                Err(e) => {
+                    eprintln!("rhue: cannot read {path}: {e}");
+                    return ExitCode::FAILURE;
+                }
+            };
+            if let Err(e) = loaded {
+                eprint!("{}", e.render(color));
+                return ExitCode::FAILURE;
+            }
+        }
         return match engine.check(&name, &src) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {

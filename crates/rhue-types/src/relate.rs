@@ -334,7 +334,8 @@ impl Checker<'_> {
         let alias = self.alias_scopes[..alias_limit]
             .iter()
             .rev()
-            .find_map(|s| s.get(name).cloned());
+            .find_map(|s| s.get(name).cloned())
+            .or_else(|| self.env.aliases.get(name).cloned());
         if let Some(alias) = alias {
             return match self.alias_args(&alias, args, span) {
                 Some((args, packs)) => Type::Named(Rc::new(NamedType {

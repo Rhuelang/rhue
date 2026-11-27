@@ -10,6 +10,7 @@ mod classes;
 mod clock;
 mod coroutines;
 mod debug_hooks;
+mod definitions;
 mod embedding;
 mod expression_type;
 mod expressions;

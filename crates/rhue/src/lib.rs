@@ -457,6 +457,43 @@ impl Engine {
             .map_err(|d| Error::new(ErrorKind::Syntax, d, &SourceFile::new("<declaration>", ty)))
     }
 
+    /// Everything the host declared, as a definitions file (`.d.rhue`) the
+    /// standalone tools can read: `rhue --check --definitions` and
+    /// `rhue-lsp`. Classes, their members, globals, and aliases from loaded
+    /// definitions files, each sorted by name so it diffs cleanly. Parameter
+    /// names aren't kept, so they come out as `arg1`, `arg2` and so on. The
+    /// standard library is left out. Nothing needs to have run first.
+    pub fn definitions(&mut self) -> String {
+        type_env(&mut self.vm).definitions()
+    }
+
+    /// Tells the type checker what a definitions file (`.d.rhue`) declares,
+    /// for checking scripts written for a host without the host. Types only,
+    /// nothing gets defined at run time. Its aliases (`type Signal<T...> =
+    /// ...`) can be named by scripts too. With any error nothing changes.
+    pub fn load_definitions(&mut self, name: &str, source: &str) -> Result<(), Error> {
+        let file = SourceFile::new(name, source);
+        let defs = rhue_parser::parse_definitions(source)
+            .map_err(|d| Error::new(ErrorKind::Syntax, d, &file))?;
+        type_env(&mut self.vm)
+            .load_definitions(&defs, source)
+            .map_err(|d| Error::new(ErrorKind::Type, d, &file))
+    }
+
+    /// What a definitions file declares that this engine doesn't have, for
+    /// a test in the host's own suite that keeps a checked-in `.d.rhue` in
+    /// step: `Node`, `Shape extends Node`, `Node.Name`, `Node.Name can be
+    /// set`, `Node:Destroy`, `Node[string]`, `world`. Only names get
+    /// compared, not types. Empty means everything's there.
+    pub fn check_definitions(&mut self, name: &str, source: &str) -> Result<Vec<String>, Error> {
+        let file = SourceFile::new(name, source);
+        let defs = rhue_parser::parse_definitions(source)
+            .map_err(|d| Error::new(ErrorKind::Syntax, d, &file))?;
+        type_env(&mut self.vm)
+            .check_definitions(&defs, source)
+            .map_err(|d| Error::new(ErrorKind::Type, d, &file))
+    }
+
     /// An engine that compiles with `options` (see [`CompileOptions`]).
     pub fn with_options(options: CompileOptions) -> Self {
         let mut engine = Self::new();

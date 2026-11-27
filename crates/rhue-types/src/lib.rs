@@ -19,6 +19,7 @@
 //! ```
 
 mod check;
+mod definitions;
 mod env;
 mod export;
 mod expr;

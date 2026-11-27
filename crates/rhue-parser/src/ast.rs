@@ -603,3 +603,59 @@ impl fmt::Display for Expr {
         }
     }
 }
+
+// ─ Definitions Files ─────────────────────────────────────────────────────────
+
+/// A `.d.rhue` file, what a host has, in Luau's declaration syntax (see
+/// [`parse_definitions`](crate::parse_definitions)).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Definitions {
+    pub items: Vec<Declaration>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Declaration {
+    /// `type Name<T> = ...`, which scripts can use too.
+    Alias(Rc<TypeAlias>),
+    /// `declare class Name extends Parent ... end`
+    Class(ClassDecl),
+    /// `declare name: T`, or `declare function name(...): R` (with `ty` the
+    /// function's type).
+    Global {
+        name: Rc<str>,
+        span: Span,
+        ty: TypeExpr,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClassDecl {
+    pub name: Rc<str>,
+    pub span: Span,
+    pub parent: Option<(Rc<str>, Span)>,
+    pub members: Vec<ClassItem>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ClassItem {
+    /// `Name: T`, or `read Name: T` for one scripts can't assign.
+    Prop {
+        name: Rc<str>,
+        span: Span,
+        ty: TypeExpr,
+        access: Access,
+    },
+    /// `function Name(self, a: T): R`. `ty` is the function's type with the
+    /// object as its first parameter.
+    Method {
+        name: Rc<str>,
+        span: Span,
+        ty: TypeExpr,
+    },
+    /// `[string]: T`, what reading a name that isn't a member gives.
+    Index {
+        span: Span,
+        key: TypeExpr,
+        value: TypeExpr,
+    },
+}
