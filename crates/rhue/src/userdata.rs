@@ -824,6 +824,41 @@ impl<H: 'static> ClassBuilder<'_, H> {
         self
     }
 
+    /// What reading a name that isn't a member gives, for children by name
+    /// (`world.Box`). `Ok(None)` means there's nothing by that name, and the
+    /// read errors like it would without a hook. Members always come first,
+    /// so a hook can't hide one, and a child class without its own hook uses
+    /// the nearest parent's.
+    ///
+    /// Only reads go through it, writing a name that isn't a property is
+    /// still an error. For strict scripts, say what it returns with
+    /// [`Engine::declare_index`](crate::Engine::declare_index).
+    pub fn index(
+        &mut self,
+        hook: impl Fn(&mut Context<'_>, &H, &str) -> Result<Option<Value>, ScriptError> + 'static,
+    ) -> &mut Self {
+        let ty = self.id();
+        let class = self.name.clone();
+        let native: NativeFn = Rc::new(move |ctx, args| {
+            let receiver_arg = &args[..args.len().min(1)];
+            run_native(ctx, receiver_arg, 1, |cx, _, out| {
+                let this = handle_receiver::<H>(cx, receiver_arg, "__index", &class)?;
+                // the interned name, so a lookup allocates nothing
+                let Some(&rhue_vm::Value::String(k)) = args.get(1) else {
+                    return Ok(());
+                };
+                let name = cx.vm.heap().get_rc(k);
+                if let Some(v) = hook(cx, &this, &name)? {
+                    let v = cx.lower(v);
+                    out.push(v);
+                }
+                Ok(())
+            })
+        });
+        self.vm.set_index_hook(ty, native);
+        self
+    }
+
     /// The class, to make objects of ([`Context::create_object`]) and to be
     /// the parent of other classes.
     ///

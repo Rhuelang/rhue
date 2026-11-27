@@ -447,6 +447,16 @@ impl Engine {
             .map_err(|d| Error::new(ErrorKind::Syntax, d, &SourceFile::new("<declaration>", ty)))
     }
 
+    /// Tells the checker what reading a name that isn't a member of class
+    /// `class` gives, for a class with an index hook
+    /// ([`ClassBuilder::index`]): `declare_index("Node", "Node")` makes
+    /// `world.Box` a `Node` in strict scripts. Classes under it get it too.
+    pub fn declare_index(&mut self, class: &str, ty: &str) -> Result<(), Error> {
+        type_env(&mut self.vm)
+            .declare_index(class, ty)
+            .map_err(|d| Error::new(ErrorKind::Syntax, d, &SourceFile::new("<declaration>", ty)))
+    }
+
     /// An engine that compiles with `options` (see [`CompileOptions`]).
     pub fn with_options(options: CompileOptions) -> Self {
         let mut engine = Self::new();

@@ -303,6 +303,70 @@ fn members_can_come_from_data() {
     assert!(err.to_string().contains("string"), "{err}");
 }
 
+/// `tree` with an index hook on Node that finds a child for any name starting
+/// with `child`, and counts how often it ran.
+fn tree_with_children(e: &mut Engine) -> (Tree, std::rc::Rc<Cell<u32>>) {
+    let t = tree(e);
+    let calls = std::rc::Rc::new(Cell::new(0));
+    let (node, seen) = (t.node.clone(), calls.clone());
+    e.extend_class(&t.node).index(move |cx, _h: &Handle, name| {
+        seen.set(seen.get() + 1);
+        if name == "boom" {
+            return Err(ScriptError::new("the host said no"));
+        }
+        Ok(name
+            .starts_with("child")
+            .then(|| cx.create_object(&node, Handle::new(name))))
+    });
+    (t, calls)
+}
+
+#[test]
+fn an_index_hook_finds_names_that_arent_members() {
+    let mut e = Engine::new();
+    let (t, calls) = tree_with_children(&mut e);
+    let b = e.context().create_object(&t.boxed, Handle::new("crate"));
+    e.set_global("b", b);
+    // Box gets Node's hook, and members never reach it
+    let got = e
+        .eval("return b.childA.Name, b.Name, b.Size, b:Describe()")
+        .unwrap();
+    assert_eq!(
+        got,
+        [s("childA"), s("crate"), Value::Number(1.0), s("box crate")]
+    );
+    assert_eq!(calls.get(), 1);
+    // Ok(None) reads like there was no hook
+    let err = e.eval("return b.Nope").unwrap_err().to_string();
+    assert!(err.contains("'Nope' is not a valid member of Box"), "{err}");
+    // the hook's own error raises at the read
+    let err = e.eval("return b.boom").unwrap_err().to_string();
+    assert!(err.contains("the host said no"), "{err}");
+    // and writes don't go through it
+    let err = e.eval("b.childA = 1").unwrap_err().to_string();
+    assert!(
+        err.contains("'childA' is not a valid member of Box"),
+        "{err}"
+    );
+    assert_eq!(calls.get(), 3);
+}
+
+#[test]
+fn a_child_class_can_have_its_own_index_hook() {
+    let mut e = Engine::new();
+    let (t, calls) = tree_with_children(&mut e);
+    e.extend_class(&t.shape)
+        .index(|_, h: &Handle, name| Ok(Some(Value::from(format!("{}/{name}", h.name.borrow())))));
+    let b = e.context().create_object(&t.boxed, Handle::new("crate"));
+    let n = e.context().create_object(&t.node, Handle::new("root"));
+    e.set_global("b", b);
+    e.set_global("n", n);
+    // Box takes the nearest one, Shape's, and Node keeps its own
+    let got = e.eval("return b.anything, n.childB.Name").unwrap();
+    assert_eq!(got, [s("crate/anything"), s("childB")]);
+    assert_eq!(calls.get(), 1);
+}
+
 // ─ In the Checker ────────────────────────────────────────────────────────────
 
 #[test]
@@ -340,5 +404,41 @@ local d: string = b:Describe()",
     assert!(
         err.to_string().contains("not found in class 'Box'"),
         "{err}"
+    );
+}
+
+#[test]
+fn the_checker_knows_what_an_index_hook_returns() {
+    let mut e = Engine::new();
+    let _ = tree_with_children(&mut e);
+    e.declare("b", "Box").unwrap();
+    let err = e
+        .check("before.rhue", "--!strict\nlocal c = b.childA")
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("not found in class 'Box'"),
+        "{err}"
+    );
+    e.declare_index("Node", "Node").unwrap();
+    e.check(
+        "ok.rhue",
+        "--!strict\nlocal c: Node = b.childA\nlocal n: string = b.childA.childB.Name",
+    )
+    .unwrap();
+    // a Node isn't a Box, and writes still need a property
+    let err = e
+        .check("bad.rhue", "--!strict\nlocal c: Box = b.childA")
+        .unwrap_err();
+    assert!(err.to_string().contains("Node"), "{err}");
+    let err = e
+        .check("write.rhue", "--!strict\nb.childA = b")
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("not found in class 'Box'"),
+        "{err}"
+    );
+    assert_eq!(
+        e.declare_index("Node", "Node |").unwrap_err().kind,
+        rhue::ErrorKind::Syntax
     );
 }

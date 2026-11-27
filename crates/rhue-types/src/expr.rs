@@ -630,10 +630,13 @@ impl Checker<'_> {
             Type::Class(c) => match self.env.class(&c) {
                 Some(_) => match self.env.class_member(&c, name, true) {
                     Some(ClassMember::Method(t) | ClassMember::Prop(t, _)) => t.clone(),
-                    None => {
-                        self.error(span, format!("Key '{name}' not found in class '{c}'"));
-                        Type::Error
-                    }
+                    None => match self.env.class_index(&c) {
+                        Some(t) => t.clone(),
+                        None => {
+                            self.error(span, format!("Key '{name}' not found in class '{c}'"));
+                            Type::Error
+                        }
+                    },
                 },
                 None => Type::Any,
             },
@@ -676,7 +679,8 @@ impl Checker<'_> {
             Type::Class(c) => {
                 let found = match self.env.class_member(&c, name, false) {
                     Some(ClassMember::Method(t) | ClassMember::Prop(t, _)) => Some(t.clone()),
-                    None => None,
+                    // a name the host's index hook looks up
+                    None => self.env.class_index(&c).cloned(),
                 };
                 found.unwrap_or_else(|| {
                     self.error(span, format!("Key '{name}' not found in class '{c}'"));

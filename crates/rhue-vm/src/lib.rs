@@ -538,6 +538,10 @@ struct Class {
     /// The names this class defines itself, which a parent's member of the
     /// same name doesn't replace.
     own: std::collections::HashSet<StrRef, hash::FxBuildHasher>,
+    /// Called with the object and the name when a read finds no member. Its
+    /// own or the nearest ancestor's, copied down like members are.
+    index: Option<NativeFn>,
+    own_index: bool,
 }
 
 #[derive(Clone)]
@@ -1275,7 +1279,7 @@ impl Vm {
 
     fn new_class(&mut self, name: &str, parent: Option<u32>, holds: std::any::TypeId) -> u32 {
         let name: Rc<str> = Rc::from(name);
-        let (members, by_name, typeof_name) = match parent {
+        let (members, by_name, typeof_name, index) = match parent {
             Some(p) => {
                 let pc = &self.ud_types[p as usize];
                 let root = self.class_root(p);
@@ -1283,9 +1287,10 @@ impl Vm {
                     pc.members.clone(),
                     pc.by_name.clone(),
                     self.ud_types[root as usize].name.clone(),
+                    pc.index.clone(),
                 )
             }
-            None => (Vec::new(), FxHashMap::default(), name.clone()),
+            None => (Vec::new(), FxHashMap::default(), name.clone(), None),
         };
         let id = self.heap.add_userdata_type(typeof_name, name.clone());
         self.ud_types.push(Class {
@@ -1296,6 +1301,8 @@ impl Vm {
             members,
             by_name,
             own: Default::default(),
+            index,
+            own_index: false,
         });
         if let Some(p) = parent {
             self.ud_types[p as usize].children.push(id);
@@ -1340,6 +1347,25 @@ impl Vm {
                 continue;
             }
             class.put(k, m.clone());
+            todo.extend_from_slice(&class.children);
+        }
+    }
+
+    /// Gives class `ty` (and the classes under it without their own) an index
+    /// hook: a read of a name that isn't a member calls `hook(obj, name)`, and
+    /// its first result is the value. No results means there's no such member
+    /// after all, and the read errors the way it would without a hook.
+    pub fn set_index_hook(&mut self, ty: u32, hook: NativeFn) {
+        let class = &mut self.ud_types[ty as usize];
+        class.index = Some(hook.clone());
+        class.own_index = true;
+        let mut todo = class.children.clone();
+        while let Some(child) = todo.pop() {
+            let class = &mut self.ud_types[child as usize];
+            if class.own_index {
+                continue;
+            }
+            class.index = Some(hook.clone());
             todo.extend_from_slice(&class.children);
         }
     }
@@ -1402,19 +1428,45 @@ impl Vm {
         let get = match ty.member(k) {
             Some(Member::Method(m)) => return Ok(*m),
             Some(Member::Property { get: Some(get), .. }) => get.clone(),
-            _ => {
-                let msg = format!(
-                    "'{}' is not a valid member of {}",
-                    self.heap.get(k),
-                    ty.name
-                );
-                return Err(self.throw(f, pc, msg));
-            }
+            Some(Member::Property { get: None, .. }) => return Err(self.no_member(f, pc, u, k)),
+            None => match ty.index.clone() {
+                Some(hook) => return self.ud_index_hook(f, pc, u, k, &hook),
+                None => return Err(self.no_member(f, pc, u, k)),
+            },
         };
         match self.native_from(f, &get, &[Value::UserData(u)]) {
             Ok(values) => Ok(values.first().copied().unwrap_or(Value::Nil)),
             Err(e) => Err(self.native_throw(f, pc, e)),
         }
+    }
+
+    #[cold]
+    fn ud_index_hook(
+        &mut self,
+        f: &mut Frame,
+        pc: usize,
+        u: UdRef,
+        k: StrRef,
+        hook: &NativeFn,
+    ) -> Result<Value, Thrown> {
+        match self.native_from(f, hook, &[Value::UserData(u), Value::String(k)]) {
+            Ok(values) => match values.first() {
+                Some(&v) => Ok(v),
+                None => Err(self.no_member(f, pc, u, k)),
+            },
+            Err(e) => Err(self.native_throw(f, pc, e)),
+        }
+    }
+
+    #[cold]
+    fn no_member(&mut self, f: &mut Frame, pc: usize, u: UdRef, k: StrRef) -> Thrown {
+        let ty = &self.ud_types[self.heap.userdata(u).type_id as usize];
+        let msg = format!(
+            "'{}' is not a valid member of {}",
+            self.heap.get(k),
+            ty.name
+        );
+        self.throw(f, pc, msg)
     }
 
     fn ud_assign(

@@ -119,6 +119,15 @@ for prop in &info.props {
 class.method_dyn("FindFirstChild", "(Node, string, boolean?) -> Node?", find_first_child)?;
 ```
 
+For names that aren't members, like a child found by name (`world.Box`), a class gets an index hook. Members always win, so a hook can't hide a property, and `Ok(None)` errors the same as if there were no hook. Classes under it use the nearest one up. It's only for reads, writing a name that isn't a property still errors.
+
+```rust
+engine.extend_class(&node).index(|cx: &mut Context, h: &Handle, name: &str| {
+    Ok(h.find_child(name).map(|c| cx.create_object(&node_class, c)))
+});
+engine.declare_index("Node", "Node")?; // so strict scripts know world.Box is a Node
+```
+
 ## Tasks
 
 A native can pause a script by returning `ScriptError::yield_with(values)`. The host gets the values, and whatever it passes to `resume` becomes the call's result. Scripts stay straight-line code and the host decides when they move on (a dialog waiting on the player, a request waiting on the network).

@@ -25,6 +25,9 @@ pub struct ClassType {
     pub props: Vec<(Rc<str>, Type, bool)>,
     /// Function types whose first parameter is the object.
     pub methods: Vec<(Rc<str>, Type)>,
+    /// What reading a name that isn't a member gives, when the host has an
+    /// index hook for the class (children by name, say).
+    pub index: Option<Type>,
 }
 
 /// A class member found by [`Env::class_member`].
@@ -500,6 +503,22 @@ impl Env {
                 prop.or(method)
             }
         })
+    }
+
+    /// What reading a name that isn't a member of `class` gives: the nearest
+    /// index type up the chain, if there's one.
+    pub fn class_index(&self, class: &str) -> Option<&Type> {
+        self.class_chain(class).find_map(|c| c.index.as_ref())
+    }
+
+    /// Says reading a name that isn't a member of class `class` gives `ty`
+    /// (and the classes under it, unless they say otherwise). Goes with an
+    /// index hook on the class at run time.
+    pub fn declare_index(&mut self, class: &str, ty: &str) -> Result<(), Vec<Diagnostic>> {
+        self.declare_class(class, None);
+        let t = self.resolve(ty)?;
+        self.classes.get_mut(class).expect("declared above").index = Some(t);
+        Ok(())
     }
 
     /// Whether class `x` is `y` or has it among its ancestors.
