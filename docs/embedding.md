@@ -128,6 +128,8 @@ engine.extend_class(&node).index(|cx: &mut Context, h: &Handle, name: &str| {
 engine.declare_index("Node", "Node")?; // so strict scripts know world.Box is a Node
 ```
 
+`create_object` makes a new script object every time. When the same host object can come back more than once (a child found by name, a handler's argument), use `cx.object(&class, id, || handle)` instead. It gives back the object scripts already have for that `u64` id, so `==` and table keys work, and only calls the closure when there isn't one. Ids are per class tree. Nothing on the host side keeps the object alive, so once no script holds it, it gets collected and the next call makes a fresh one. A weak-keyed table entry for it goes too, even if the host still has the thing.
+
 ## Tasks
 
 A native can pause a script by returning `ScriptError::yield_with(values)`. The host gets the values, and whatever it passes to `resume` becomes the call's result. Scripts stay straight-line code and the host decides when they move on (a dialog waiting on the player, a request waiting on the network).

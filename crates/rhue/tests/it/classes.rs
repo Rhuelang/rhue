@@ -367,6 +367,82 @@ fn a_child_class_can_have_its_own_index_hook() {
     assert_eq!(calls.get(), 1);
 }
 
+/// An engine with `get(id)` handing out interned objects of `t.boxed`, and a
+/// count of how many handles it had to make.
+fn interning(e: &mut Engine) -> (Tree, std::rc::Rc<Cell<u32>>) {
+    let t = tree(e);
+    let made = std::rc::Rc::new(Cell::new(0));
+    let (boxed, count) = (t.boxed.clone(), made.clone());
+    e.register("get", move |cx: &mut Context, id: u32| {
+        let count = count.clone();
+        cx.object(&boxed, u64::from(id), move || {
+            count.set(count.get() + 1);
+            Handle::new(&format!("box{id}"))
+        })
+    });
+    (t, made)
+}
+
+#[test]
+fn the_same_host_object_is_the_same_value() {
+    let mut e = Engine::new();
+    let (t, made) = interning(&mut e);
+    let got = e
+        .eval(
+            "local a, b, c = get(1), get(1), get(2)
+             local seen = {[a] = 'first'}
+             a.Name = 'renamed'
+             return a == b, rawequal(a, b), a == c, seen[b], b.Name",
+        )
+        .unwrap();
+    assert_eq!(
+        got,
+        [
+            Value::Bool(true),
+            Value::Bool(true),
+            Value::Bool(false),
+            s("first"),
+            s("renamed")
+        ]
+    );
+    assert_eq!(made.get(), 2);
+    // ids are per tree, so a Node with id 1 is that same Box
+    let n = e
+        .context()
+        .object(&t.node, 1, || unreachable!("it's interned already"));
+    e.set_global("n", n);
+    let got = e
+        .eval("return n == get(1), typeof(n), tostring(n):sub(1, 4)")
+        .unwrap();
+    assert_eq!(got, [Value::Bool(true), s("Node"), s("Box:")]);
+    assert_eq!(made.get(), 2);
+}
+
+#[test]
+fn an_interned_object_goes_when_scripts_let_go() {
+    let mut e = Engine::new();
+    let (_t, made) = interning(&mut e);
+    e.eval(
+        "seen = setmetatable({}, {__mode = 'k'})
+         local function touch() seen[get(7)] = true end
+         touch()",
+    )
+    .unwrap();
+    e.gc();
+    // nothing held it, so the weak key went and get(7) makes a new one
+    let got = e.eval("return next(seen), get(7) ~= nil").unwrap();
+    assert_eq!(got, [Value::Nil, Value::Bool(true)]);
+    assert_eq!(made.get(), 2);
+    // while something holds it, it's the same one
+    e.eval("held = get(8)").unwrap();
+    e.gc();
+    assert_eq!(
+        e.eval("return held == get(8)").unwrap(),
+        [Value::Bool(true)]
+    );
+    assert_eq!(made.get(), 3);
+}
+
 // ─ In the Checker ────────────────────────────────────────────────────────────
 
 #[test]

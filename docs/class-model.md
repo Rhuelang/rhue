@@ -109,7 +109,7 @@ The VM interns handle objects by a key the host gives, and the collector clears 
 - `cx.object(&class, id, || handle)` returns the live userdata for that `u64` id if there is one and makes it otherwise. The key is scoped to the tree's root class. Same id, same `UdRef`, so `==` and table keys just work, no hash hook.
 - The map lives on the heap beside the string intern table, and the userdata sweep removes an object's entry when it frees it. Nothing in the map keeps anything alive.
 - The VM does nothing special for an object the host considers destroyed. The userdata holds its handle, and the host's members decide what a destroyed object does.
-- `__mode` with `"k"`, `"v"` and `"kv"`, as in Luau. Weak keys, not ephemerons. The collector skips marking through weak parts, then clears unreached entries. Only collectable values count as weak, strings and numbers never get cleared. The mode gets read once, at `setmetatable`.
+- `__mode` with `"k"`, `"v"` and `"kv"`, as in Luau. Weak keys, not ephemerons. The collector skips marking through weak parts, then clears unreached entries. Only collectable values count as weak, strings and numbers never get cleared. The collector reads the mode off the metatable each time, like Luau. Reading it once at `setmetatable` was the first plan, but that put a lookup on every `setmetatable`, which cost the `classes` benchmark almost 2%.
 
 A weak-keyed entry for an object goes when no script holds that object's userdata, even if the host still has the object. Asking for it again makes a new userdata. Roblox has the same quirk.
 

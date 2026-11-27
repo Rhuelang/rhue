@@ -58,9 +58,10 @@ pub(crate) enum Event {
     ToString,
     Metatable,
     Iter,
+    Mode,
 }
 
-pub(crate) const EVENT_NAMES: [&str; 19] = [
+pub(crate) const EVENT_NAMES: [&str; 20] = [
     "__index",
     "__newindex",
     "__call",
@@ -80,6 +81,7 @@ pub(crate) const EVENT_NAMES: [&str; 19] = [
     "__tostring",
     "__metatable",
     "__iter",
+    "__mode",
 ];
 
 impl Event {

@@ -656,3 +656,97 @@ fn deep_structures_do_not_overflow_the_collector() {
     e.gc();
     assert!(e.heap_stats().tables < 100);
 }
+
+// ─ Weak Tables ───────────────────────────────────────────────────────────────
+
+/// Fills `w` from a function (so nothing's left in this frame's registers),
+/// collects, and returns what's left in it, sorted.
+const WEAK: &str = "
+local keep = {}
+-- the string stores go last so no register still holds a table when it
+-- returns (the collector scans the stack up to its top)
+local function fill(w)
+    w[{}] = 'gone key'
+    w[1] = {}
+    w.gone = {}
+    w[keep] = 'kept key'
+    w.kept = keep
+    w.text = 'strings stay'
+end
+local function left(w)
+    local out = {}
+    for k, v in pairs(w) do
+        local name = if k == keep then 'keep' elseif type(k) == 'table' then 'table' else tostring(k)
+        table.insert(out, name .. '=' .. type(v))
+    end
+    table.sort(out)
+    return table.concat(out, ' ')
+end
+";
+
+#[test]
+fn weak_tables_drop_what_nothing_else_holds() {
+    let src = |mode: &str| {
+        format!(
+            "{WEAK} local w = setmetatable({{}}, {{__mode = '{mode}'}}) fill(w) collectgarbage() return left(w)"
+        )
+    };
+    // weak keys: the table key nothing holds goes, values are held
+    assert_eq!(
+        one(&src("k")),
+        "\"1=table gone=table keep=string kept=table text=string\""
+    );
+    // weak values: the table and function values nothing holds go
+    assert_eq!(
+        one(&src("v")),
+        "\"keep=string kept=table table=string text=string\""
+    );
+    assert_eq!(one(&src("kv")), "\"keep=string kept=table text=string\"");
+    // and a plain table keeps everything
+    assert_eq!(
+        one(&format!(
+            "{WEAK} local w = {{}} fill(w) collectgarbage() return left(w)"
+        )),
+        "\"1=table gone=table keep=string kept=table table=string text=string\""
+    );
+}
+
+#[test]
+fn the_mode_counts_at_each_collection() {
+    // read off the metatable when collecting, like Luau, so it can change
+    assert_eq!(
+        one(&format!(
+            "{WEAK} local mt = {{}} local w = setmetatable({{}}, mt)
+             fill(w) collectgarbage() local before = left(w)
+             mt.__mode = 'v' collectgarbage() return before .. ' | ' .. left(w)"
+        )),
+        "\"1=table gone=table keep=string kept=table table=string text=string | keep=string kept=table table=string text=string\""
+    );
+}
+
+#[test]
+fn frozen_weak_tables_still_get_cleared() {
+    assert_eq!(
+        one(&format!(
+            "{WEAK} local w = setmetatable({{}}, {{__mode = 'k'}}) fill(w) table.freeze(w)
+             collectgarbage() return left(w)"
+        )),
+        "\"1=table gone=table keep=string kept=table text=string\""
+    );
+}
+
+#[test]
+fn a_weak_cache_lets_its_keys_go() {
+    let mut e = Engine::new();
+    e.eval(
+        "cache = setmetatable({}, {__mode = 'k'})
+         for i = 1, 10000 do cache[{}] = {i} end",
+    )
+    .unwrap();
+    e.gc();
+    assert_eq!(e.eval("return next(cache)").unwrap(), [Value::Nil]);
+    // weak keys, not ephemerons: the values were marked through their entries,
+    // so they go on the collection after the entries do
+    e.gc();
+    assert!(e.heap_stats().tables < 50, "{:?}", e.heap_stats());
+}

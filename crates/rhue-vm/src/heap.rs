@@ -23,7 +23,8 @@ use std::rc::Rc;
 
 use rhue_bytecode::Proto;
 
-use crate::table::Table;
+use crate::FxHashMap;
+use crate::table::{Table, WEAK_KEYS, WEAK_VALUES};
 use crate::{NativeCtx, NativeError, Value};
 
 macro_rules! handle {
@@ -184,6 +185,8 @@ impl fmt::Debug for Thread {
 pub struct UserData {
     pub type_id: u32,
     pub data: Rc<dyn std::any::Any>,
+    /// The (root class, host id) it's interned under, if it is.
+    pub(crate) key: Option<(u32, u64)>,
 }
 
 impl fmt::Debug for UserData {
@@ -485,6 +488,11 @@ pub struct Heap {
     /// Per class: what `typeof` says (the root class's name) and the class's
     /// own name (what `tostring` shows).
     ud_type_names: Vec<(Rc<str>, Rc<str>)>,
+    /// Interned host objects: the live userdata for a (root class, host id).
+    /// Holds nothing alive, the userdata sweep takes an object's entry out.
+    objects: FxHashMap<(u32, u64), UdRef>,
+    /// The interned `"__mode"`, for weak tables.
+    mode_key: Option<StrRef>,
     /// Approximate live bytes (updated on allocation and table growth).
     bytes: usize,
     /// Collect when `bytes` passes this.
@@ -510,6 +518,8 @@ impl Default for Heap {
             buffers: Slab::default(),
             marks: Marks::default(),
             ud_type_names: Vec::new(),
+            objects: FxHashMap::default(),
+            mode_key: None,
             bytes: 0,
             threshold: MIN_THRESHOLD,
             pause_percent: 200,
@@ -569,6 +579,46 @@ impl Heap {
         self.bytes += USERDATA_BYTES + std::mem::size_of_val(&*ud.data);
         let (index, generation) = self.userdata.alloc(ud);
         UdRef { index, generation }
+    }
+
+    /// The live userdata interned under `key`, if there is one.
+    pub(crate) fn interned_object(&self, key: (u32, u64)) -> Option<UdRef> {
+        self.objects.get(&key).copied()
+    }
+
+    /// Allocates `ud` and interns it under `key`, (root class, host id).
+    pub(crate) fn alloc_interned(&mut self, mut ud: UserData, key: (u32, u64)) -> UdRef {
+        ud.key = Some(key);
+        let r = self.alloc_userdata(ud);
+        self.objects.insert(key, r);
+        r
+    }
+
+    /// Gives the collector the interned `"__mode"`, which the VM keeps alive.
+    pub(crate) fn set_mode_key(&mut self, key: StrRef) {
+        self.mode_key = Some(key);
+    }
+
+    /// What table `t`'s metatable's `__mode` makes weak, [`WEAK_KEYS`] and
+    /// [`WEAK_VALUES`]. Read every collection, as Luau does, so it's one
+    /// lookup per live table with a metatable instead of one per
+    /// `setmetatable`.
+    pub fn weak_mode(&self, t: &Table) -> u8 {
+        let (Some(m), Some(key)) = (t.meta(), self.mode_key) else {
+            return 0;
+        };
+        let Value::String(s) = self.table(m).get_str(key) else {
+            return 0;
+        };
+        let s = self.get(s);
+        let mut weak = 0;
+        if s.contains('k') {
+            weak |= crate::table::WEAK_KEYS;
+        }
+        if s.contains('v') {
+            weak |= crate::table::WEAK_VALUES;
+        }
+        weak
     }
 
     pub fn userdata(&self, r: UdRef) -> &UserData {
@@ -824,7 +874,29 @@ impl Heap {
         let epoch = self.collections;
         while let Some(item) = marks.work.pop() {
             match item {
-                Work::Table(r) => self.table(r).for_each_ref(|v| marks.value(v)),
+                Work::Table(r) => {
+                    let t = self.table(r);
+                    match self.weak_mode(t) {
+                        0 => t.for_each_ref(|v| marks.value(v)),
+                        weak => {
+                            // the weak parts don't keep anything alive. They
+                            // get cleared once marking's done
+                            marks.weak.push(r);
+                            if let Some(m) = t.meta() {
+                                marks.value(Value::Table(m));
+                            }
+                            let (wk, wv) = (weak & WEAK_KEYS != 0, weak & WEAK_VALUES != 0);
+                            t.for_each_entry(|k, v| {
+                                if !(wk && collectable(k)) {
+                                    marks.value(k);
+                                }
+                                if !(wv && collectable(v)) {
+                                    marks.value(v);
+                                }
+                            });
+                        }
+                    }
+                }
                 Work::Function(r) => match self.function(r) {
                     Function::Lua(c) => {
                         for u in c.upvalues.iter() {
@@ -855,6 +927,23 @@ impl Heap {
             }
         }
 
+        // entries of weak tables whose key or value nothing else reached
+        for r in std::mem::take(&mut marks.weak) {
+            let t = self.table(r);
+            let weak = self.weak_mode(t);
+            let (wk, wv) = (weak & WEAK_KEYS != 0, weak & WEAK_VALUES != 0);
+            let mut dead = Vec::new();
+            t.for_each_entry(|k, v| {
+                if (wk && !marks.reached(k)) || (wv && !marks.reached(v)) {
+                    dead.push(k);
+                }
+            });
+            let t = self.table_mut(r);
+            for k in dead {
+                t.clear_dead(k);
+            }
+        }
+
         let mut freed_bytes = 0usize;
         let interned = &mut self.interned;
         self.strings.sweep(&marks.strings, |s| {
@@ -870,8 +959,12 @@ impl Heap {
                     Function::Native(_) => 0,
                 }
         });
+        let objects = &mut self.objects;
         self.userdata.sweep(&marks.userdata, |u| {
-            freed_bytes += USERDATA_BYTES + std::mem::size_of_val(&*u.data)
+            freed_bytes += USERDATA_BYTES + std::mem::size_of_val(&*u.data);
+            if let Some(key) = u.key {
+                objects.remove(&key);
+            }
         });
         self.threads
             .sweep(&marks.threads, |t| freed_bytes += t.bytes);
@@ -906,9 +999,36 @@ struct Marks {
     threads: Vec<bool>,
     buffers: Vec<bool>,
     work: Vec<Work>,
+    /// Weak tables reached this collection, to clear after marking.
+    weak: Vec<TableRef>,
+}
+
+/// Values a weak table can lose. Strings, numbers and the rest aren't
+/// objects with an identity, so they never get cleared.
+fn collectable(v: Value) -> bool {
+    matches!(
+        v,
+        Value::Table(_)
+            | Value::Function(_)
+            | Value::UserData(_)
+            | Value::Thread(_)
+            | Value::Buffer(_)
+    )
 }
 
 impl Marks {
+    /// Whether marking got to `v`. Values that aren't collectable always did.
+    fn reached(&self, v: Value) -> bool {
+        match v {
+            Value::Table(t) => self.tables[t.index as usize],
+            Value::Function(f) => self.functions[f.index as usize],
+            Value::UserData(u) => self.userdata[u.index as usize],
+            Value::Thread(t) => self.threads[t.index as usize],
+            Value::Buffer(b) => self.buffers[b.index as usize],
+            _ => true,
+        }
+    }
+
     fn push(&mut self, root: GcRoot) {
         match root {
             GcRoot::Value(v) => self.value(v),

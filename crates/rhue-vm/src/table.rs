@@ -167,6 +167,10 @@ pub struct Table {
     frozen: bool,
 }
 
+/// What a metatable's `__mode` makes weak, see [`crate::Heap::weak_mode`].
+pub const WEAK_KEYS: u8 = 1;
+pub const WEAK_VALUES: u8 = 2;
+
 /// Approximate heap bytes, for GC accounting.
 pub const TABLE_BASE_BYTES: usize = 64;
 const ARRAY_SLOT_BYTES: usize = 16;
@@ -209,6 +213,32 @@ impl Table {
 
     pub fn set_meta(&mut self, meta: Option<TableRef>) {
         self.meta = meta;
+    }
+
+    /// Drops an entry whose key or value got collected, frozen or not.
+    pub(crate) fn clear_dead(&mut self, key: Value) {
+        let frozen = std::mem::replace(&mut self.frozen, false);
+        let _ = self.set(key, Value::Nil);
+        self.frozen = frozen;
+    }
+
+    /// Like [`Table::for_each_ref`], but gives each entry as a pair, the array
+    /// part's keys as numbers.
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "array indices are far below 2^53"
+    )]
+    pub(crate) fn for_each_entry(&self, mut f: impl FnMut(Value, Value)) {
+        for (i, v) in self.array.iter().enumerate() {
+            if *v != Value::Nil {
+                f(Value::Number((i + 1) as f64), *v);
+            }
+        }
+        for (k, v) in self.hash.iter() {
+            if *v != Value::Nil {
+                f(k.to_value(), *v);
+            }
+        }
     }
 
     /// Makes the table read-only for good (`table.freeze`).

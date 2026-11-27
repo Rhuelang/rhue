@@ -925,6 +925,7 @@ impl Vm {
     pub fn bare() -> Self {
         let mut heap = Heap::new();
         let events = meta::Events::intern(&mut heap);
+        heap.set_mode_key(events.get(meta::Event::Mode));
         let main_thread = heap.alloc_thread(heap::ThreadState::default(), CoStatus::Running);
         let interrupt: Arc<Interrupt> = Arc::default();
         Vm {
@@ -1406,7 +1407,35 @@ impl Vm {
 
     pub fn new_userdata(&mut self, ty: u32, data: Rc<dyn std::any::Any>) -> Value {
         assert!((ty as usize) < self.ud_types.len(), "unknown userdata type");
-        Value::UserData(self.heap.alloc_userdata(UserData { type_id: ty, data }))
+        Value::UserData(self.heap.alloc_userdata(UserData {
+            type_id: ty,
+            data,
+            key: None,
+        }))
+    }
+
+    /// The live userdata for host object `id` in class `ty`'s tree, made with
+    /// `make` if there isn't one. Asking for the same id again gives the same
+    /// userdata (so `==` and table keys work) for as long as a script holds
+    /// it. The id is scoped to the tree's root class, so classes in one tree
+    /// share ids and different trees don't.
+    pub fn interned_userdata(
+        &mut self,
+        ty: u32,
+        id: u64,
+        make: impl FnOnce() -> Rc<dyn std::any::Any>,
+    ) -> Value {
+        assert!((ty as usize) < self.ud_types.len(), "unknown userdata type");
+        let key = (self.class_root(ty), id);
+        if let Some(u) = self.heap.interned_object(key) {
+            return Value::UserData(u);
+        }
+        let ud = UserData {
+            type_id: ty,
+            data: make(),
+            key: None,
+        };
+        Value::UserData(self.heap.alloc_interned(ud, key))
     }
 
     fn ud_member(
