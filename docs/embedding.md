@@ -93,6 +93,32 @@ engine.set_global("thing", engine.context().create_object(&shape, handle));
 
 A child has everything its parent has, and the checker takes a `Shape` wherever a `Node` goes. `typeof(thing)` is the root's name, `"Node"`, and `tostring` shows the class's own. `engine.extend_class(&node)` adds members later, and the classes under it get them too.
 
+`getter_with` and `setter_with` take the `Context` too and return a `Result`, so a setter can refuse a value or fire a changed signal, and an `Err` raises in the script at the read or write.
+
+```rust
+engine.extend_class(&node)
+    .setter_with("Size", |cx: &mut Context, h: &Handle, v: f64| {
+        if v < 0.0 {
+            return Err(ScriptError::new("Size can't be negative"));
+        }
+        h.set_size(v);
+        h.fire_changed(cx, "Size")
+    });
+```
+
+A host that registers its classes from its own reflection data can't write a closure per Rust type, so `getter_dyn`, `setter_dyn`, `property_dyn` and `method_dyn` take the script type as a string and work in `Value`s. They return an `Err` when the type string doesn't parse.
+
+```rust
+let mut class = engine.define_class::<Handle>(&info.name);
+for prop in &info.props {
+    class.getter_dyn(&prop.name, &prop.ty, read(prop))?;
+    if prop.writable {
+        class.setter_dyn(&prop.name, &prop.ty, write(prop))?;
+    }
+}
+class.method_dyn("FindFirstChild", "(Node, string, boolean?) -> Node?", find_first_child)?;
+```
+
 ## Tasks
 
 A native can pause a script by returning `ScriptError::yield_with(values)`. The host gets the values, and whatever it passes to `resume` becomes the call's result. Scripts stay straight-line code and the host decides when they move on (a dialog waiting on the player, a request waiting on the network).

@@ -66,9 +66,12 @@ let obj = engine.context().create_object(&boxed, handle);
 A host that registers its classes in a loop over reflection data can't write a closure per type, so the builder takes the script type as a string too:
 
 ```rust
-class.property_dyn("Size", "Vector3", true, getter, setter); // getter and setter take a Context and can fail
-class.method_dyn("FindFirstChild", "(Node, string, boolean?) -> Node?", call);
+class.property_dyn("Size", "Vector3", getter, setter)?; // getter and setter take a Context and can fail
+class.getter_dyn("ClassName", "string", getter)?;       // read-only, no setter
+class.method_dyn("FindFirstChild", "(Node, string, boolean?) -> Node?", call)?;
 ```
+
+A read-only property is `getter_dyn` on its own instead of a `writable` flag, and a type string that doesn't parse is an `Err` for the host to report. A name the checker hasn't seen yet becomes a class, so classes can name each other in any order.
 
 An object whose class was never registered gets handed over as the root class.
 

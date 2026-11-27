@@ -173,6 +173,136 @@ fn a_class_belongs_to_its_engine() {
     let _ = b.context().create_object(&node, Handle::new("x"));
 }
 
+#[test]
+fn accessors_can_fail_and_call_back() {
+    let mut e = Engine::new();
+    let node = e
+        .define_class::<Handle>("Node")
+        .getter_with("Name", |_: &mut Context, h: &Handle| {
+            let name = h.name.borrow();
+            if name.is_empty() {
+                return Err(ScriptError::new("the object was destroyed"));
+            }
+            Ok(name.clone())
+        })
+        .getter("Size", |h: &Handle| h.size.get())
+        .setter_with("Size", |cx: &mut Context, h: &Handle, v: f64| {
+            if v < 0.0 {
+                return Err(ScriptError::new("Size can't be negative"));
+            }
+            h.size.set(v);
+            // a changed signal, more or less: the handler reads the same
+            // object, which needs no borrow to be free
+            let changed: Function = cx.global("changed")?;
+            cx.call::<()>(&changed, ())
+        })
+        .finish();
+    let n = e.context().create_object(&node, Handle::new("n"));
+    let gone = e.context().create_object(&node, Handle::new(""));
+    e.set_global("n", n);
+    e.set_global("gone", gone);
+    let got = e
+        .eval(
+            "local seen
+changed = function() seen = n.Size end
+n.Size = 4
+local ok, err = pcall(function() n.Size = -1 end)
+local ok2, err2 = pcall(function() return gone.Name end)
+return seen, n.Size, ok, err, ok2, err2",
+        )
+        .unwrap();
+    assert_eq!(
+        got[..3],
+        [Value::Number(4.0), Value::Number(4.0), Value::Bool(false)]
+    );
+    let err = got[3].to_string();
+    assert!(err.contains("Size can't be negative"), "{err}");
+    // raised where the script wrote it, like any native's error
+    assert!(err.contains(":4:"), "{err}");
+    assert_eq!(got[4], Value::Bool(false));
+    assert!(got[5].to_string().contains("the object was destroyed"));
+}
+
+#[test]
+fn members_can_come_from_data() {
+    // what a host reading its own reflection data does: a loop, no closure per
+    // Rust type, and the script types as strings
+    let props = [("Size", "number", true), ("Id", "number", false)];
+    let mut e = Engine::new();
+    let mut b = e.define_class::<Handle>("Node");
+    for (name, ty, writable) in props {
+        let key = name.to_string();
+        b.getter_dyn(name, ty, move |_, h: &Handle| {
+            Ok(match &*key {
+                "Size" => Value::Number(h.size.get()),
+                _ => Value::Number(7.0),
+            })
+        })
+        .unwrap();
+        if writable {
+            b.setter_dyn(name, ty, |_, h: &Handle, v| match v {
+                Value::Number(n) => {
+                    h.size.set(n);
+                    Ok(())
+                }
+                other => Err(ScriptError::new(format!(
+                    "Size wants a number, got {}",
+                    other.type_of()
+                ))),
+            })
+            .unwrap();
+        }
+    }
+    b.method_dyn(
+        "Rename",
+        "(Node, string, boolean?) -> string",
+        |_, h: &Handle, args| {
+            let mut name = args.first().map(|v| v.to_string()).unwrap_or_default();
+            if args.get(1) == Some(&Value::Bool(true)) {
+                name = name.to_uppercase();
+            }
+            *h.name.borrow_mut() = name.clone();
+            Ok(vec![Value::from(name.as_str())])
+        },
+    )
+    .unwrap();
+    // a type string the checker can't read is the host's error, not a panic
+    let err = b
+        .getter_dyn("Bad", "number |", |_, _| Ok(Value::Nil))
+        .err()
+        .unwrap();
+    assert_eq!(err.kind, rhue::ErrorKind::Syntax);
+    let err = b
+        .method_dyn("Bad", "(Node) ->", |_, _, _| Ok(vec![]))
+        .err()
+        .unwrap();
+    assert_eq!(err.kind, rhue::ErrorKind::Syntax);
+    let node = b.finish();
+
+    let n = e.context().create_object(&node, Handle::new("n"));
+    e.set_global("n", n);
+    let got = e
+        .eval("n.Size = 3 return n.Size, n.Id, n:Rename('lid', true)")
+        .unwrap();
+    assert_eq!(got, [Value::Number(3.0), Value::Number(7.0), s("LID")]);
+    let err = e.eval("n.Size = 'big'").unwrap_err().to_string();
+    assert!(err.contains("Size wants a number, got string"), "{err}");
+    let err = e.eval("n.Id = 1").unwrap_err().to_string();
+    assert!(err.contains("'Id' is a read-only member of Node"), "{err}");
+
+    // and the checker knows them from the strings
+    e.declare("m", "Node").unwrap();
+    e.check(
+        "ok.rhue",
+        "--!strict\nlocal z: number = m.Size + m.Id\nlocal r: string = m:Rename('x')",
+    )
+    .unwrap();
+    let err = e
+        .check("bad.rhue", "--!strict\nlocal r: number = m:Rename('x')")
+        .unwrap_err();
+    assert!(err.to_string().contains("string"), "{err}");
+}
+
 // ─ In the Checker ────────────────────────────────────────────────────────────
 
 #[test]

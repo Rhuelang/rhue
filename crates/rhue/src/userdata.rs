@@ -10,7 +10,7 @@ use std::rc::Rc;
 use rhue_vm::NativeFn;
 
 use crate::context::ScriptError;
-use crate::convert::{ConversionError, FromArg, FromValue, IntoValue};
+use crate::convert::{Args, ConversionError, FromArg, FromValue, IntoValue};
 use crate::native::{IntoNative, IntoNativeResult, WithContext, fn_signature, run_native};
 use crate::{AnyUserData, Context, Table, Value};
 
@@ -573,41 +573,48 @@ impl<H: 'static> ClassBuilder<'_, H> {
         id
     }
 
-    /// A read-only property: `obj.name` returns `get(&obj)`.
-    pub fn getter<V: IntoValue>(
+    /// Declares a `_dyn` member to the checker, under the class's name, and
+    /// reports a type string it couldn't resolve.
+    fn declare_dyn(
+        &mut self,
+        result: impl FnOnce(&mut rhue_types::Env, &str) -> Result<(), Vec<rhue_common::Diagnostic>>,
+        ty: &str,
+    ) -> Result<(), crate::Error> {
+        let class = self.name.clone();
+        result(crate::type_env(self.vm), &class).map_err(|d| {
+            crate::Error::new(
+                crate::ErrorKind::Syntax,
+                d,
+                &rhue_common::SourceFile::new("<declaration>", ty),
+            )
+        })
+    }
+
+    fn install_getter(
         &mut self,
         name: &str,
-        get: impl Fn(&H) -> V + 'static,
-    ) -> &mut Self {
+        get: impl Fn(&mut Context<'_>, &H, &mut rhue_vm::Rets) -> Result<(), ScriptError> + 'static,
+    ) {
         let ty = self.id();
-        V::declare_types(self.vm);
-        let luau = V::luau_type();
-        declare(
-            crate::type_env(self.vm).declare_property(&self.name, name, &luau, false),
-            &luau,
-        );
         let field: Rc<str> = Rc::from(name);
         let class = self.name.clone();
         let native: NativeFn = Rc::new(move |ctx, args| {
             run_native(ctx, &args[..1], 1, |cx, _, out| {
                 let this = handle_receiver::<H>(cx, &args[..1], &field, &class)?;
-                crate::convert::IntoValues::lower_into(get(&this), cx, out);
-                Ok(())
+                get(cx, &this, out)
             })
         });
         self.vm.add_getter(ty, name, native);
-        self
     }
 
-    /// Makes a property writable: `obj.name = v` calls `set(&obj, v)`.
-    pub fn setter<V: FromValue>(&mut self, name: &str, set: impl Fn(&H, V) + 'static) -> &mut Self {
+    /// `set` gets the arguments with the receiver skipped, so the value is
+    /// next, and the property's and class's names for errors.
+    fn install_setter(
+        &mut self,
+        name: &str,
+        set: impl Fn(&mut Context<'_>, &H, &mut Args, &str, &str) -> Result<(), ScriptError> + 'static,
+    ) {
         let ty = self.id();
-        V::declare_types(self.vm);
-        let luau = V::luau_type();
-        declare(
-            crate::type_env(self.vm).declare_property(&self.name, name, &luau, true),
-            &luau,
-        );
         let field: Rc<str> = Rc::from(name);
         let class = self.name.clone();
         let native: NativeFn = Rc::new(move |ctx, args| {
@@ -615,17 +622,76 @@ impl<H: 'static> ClassBuilder<'_, H> {
                 let this = handle_receiver::<H>(cx, args, &field, &class)?;
                 // skip the receiver, the value is argument #2
                 let _ = Value::from_arg(args_in, cx);
-                let v = V::from_arg(args_in, cx).map_err(|e| {
-                    ScriptError::new(format!(
-                        "invalid value for '{field}' of {class} ({})",
-                        e.error
-                    ))
-                })?;
-                set(&this, v);
-                Ok(())
+                set(cx, &this, args_in, &field, &class)
             })
         });
         self.vm.add_setter(ty, name, native);
+    }
+
+    /// A read-only property: `obj.name` returns `get(&obj)`.
+    pub fn getter<V: IntoValue>(
+        &mut self,
+        name: &str,
+        get: impl Fn(&H) -> V + 'static,
+    ) -> &mut Self {
+        self.getter_with(name, move |_, h| Ok(get(h)))
+    }
+
+    /// A read-only property whose getter takes the [`Context`] and can fail.
+    /// An `Err` raises in the script where it read the property.
+    pub fn getter_with<V: IntoValue>(
+        &mut self,
+        name: &str,
+        get: impl Fn(&mut Context<'_>, &H) -> Result<V, ScriptError> + 'static,
+    ) -> &mut Self {
+        self.id();
+        V::declare_types(self.vm);
+        let luau = V::luau_type();
+        declare(
+            crate::type_env(self.vm).declare_property(&self.name, name, &luau, false),
+            &luau,
+        );
+        self.install_getter(name, move |cx, h, out| {
+            let v = get(cx, h)?;
+            crate::convert::IntoValues::lower_into(v, cx, out);
+            Ok(())
+        });
+        self
+    }
+
+    /// Makes a property writable: `obj.name = v` calls `set(&obj, v)`.
+    pub fn setter<V: FromValue>(&mut self, name: &str, set: impl Fn(&H, V) + 'static) -> &mut Self {
+        self.setter_with(name, move |_, h, v| {
+            set(h, v);
+            Ok(())
+        })
+    }
+
+    /// Makes a property writable, with a setter that takes the [`Context`]
+    /// and can fail, so it can refuse a value or call back into scripts (fire
+    /// a changed signal, say). An `Err` raises in the script where it wrote
+    /// the property.
+    pub fn setter_with<V: FromValue>(
+        &mut self,
+        name: &str,
+        set: impl Fn(&mut Context<'_>, &H, V) -> Result<(), ScriptError> + 'static,
+    ) -> &mut Self {
+        self.id();
+        V::declare_types(self.vm);
+        let luau = V::luau_type();
+        declare(
+            crate::type_env(self.vm).declare_property(&self.name, name, &luau, true),
+            &luau,
+        );
+        self.install_setter(name, move |cx, h, args, field, class| {
+            let v = V::from_arg(args, cx).map_err(|e| {
+                ScriptError::new(format!(
+                    "invalid value for '{field}' of {class} ({})",
+                    e.error
+                ))
+            })?;
+            set(cx, h, v)
+        });
         self
     }
 
@@ -637,6 +703,109 @@ impl<H: 'static> ClassBuilder<'_, H> {
         set: impl Fn(&H, V) + 'static,
     ) -> &mut Self {
         self.getter(name, get).setter(name, set)
+    }
+
+    /// A read-only property with its script type as a string, for a host
+    /// that registers classes from its own reflection data instead of a
+    /// closure per Rust type. The getter returns any [`Value`], and nothing
+    /// checks it against `ty` at run time.
+    ///
+    /// # Errors
+    ///
+    /// If `ty` doesn't parse. A name the checker hasn't seen becomes a class,
+    /// so classes can name each other in any order.
+    pub fn getter_dyn(
+        &mut self,
+        name: &str,
+        ty: &str,
+        get: impl Fn(&mut Context<'_>, &H) -> Result<Value, ScriptError> + 'static,
+    ) -> Result<&mut Self, crate::Error> {
+        self.id();
+        self.declare_dyn(
+            |env, class| env.declare_property(class, name, ty, false),
+            ty,
+        )?;
+        self.install_getter(name, move |cx, h, out| {
+            let v = get(cx, h)?;
+            out.push(cx.lower(v));
+            Ok(())
+        });
+        Ok(self)
+    }
+
+    /// Makes a property writable, with its script type as a string (see
+    /// [`getter_dyn`](Self::getter_dyn)). The setter gets whatever the script
+    /// wrote, so a host that wants it to match `ty` checks it there.
+    ///
+    /// # Errors
+    ///
+    /// If `ty` doesn't parse. A name the checker hasn't seen becomes a class,
+    /// so classes can name each other in any order.
+    pub fn setter_dyn(
+        &mut self,
+        name: &str,
+        ty: &str,
+        set: impl Fn(&mut Context<'_>, &H, Value) -> Result<(), ScriptError> + 'static,
+    ) -> Result<&mut Self, crate::Error> {
+        self.id();
+        self.declare_dyn(|env, class| env.declare_property(class, name, ty, true), ty)?;
+        self.install_setter(name, move |cx, h, args, _, _| {
+            let v = Value::from_arg(args, cx).unwrap_or(Value::Nil);
+            set(cx, h, v)
+        });
+        Ok(self)
+    }
+
+    /// [`getter_dyn`](Self::getter_dyn) and [`setter_dyn`](Self::setter_dyn)
+    /// in one.
+    ///
+    /// # Errors
+    ///
+    /// If `ty` doesn't parse. A name the checker hasn't seen becomes a class,
+    /// so classes can name each other in any order.
+    pub fn property_dyn(
+        &mut self,
+        name: &str,
+        ty: &str,
+        get: impl Fn(&mut Context<'_>, &H) -> Result<Value, ScriptError> + 'static,
+        set: impl Fn(&mut Context<'_>, &H, Value) -> Result<(), ScriptError> + 'static,
+    ) -> Result<&mut Self, crate::Error> {
+        self.getter_dyn(name, ty, get)?.setter_dyn(name, ty, set)
+    }
+
+    /// `obj:name(...)` with its script type as a string, the object first:
+    /// `"(Node, string, boolean?) -> Node?"`. `call` gets the arguments after
+    /// the object, as the script passed them, and returns the results.
+    ///
+    /// # Errors
+    ///
+    /// If `sig` doesn't parse. A name the checker hasn't seen becomes a class,
+    /// so classes can name each other in any order.
+    pub fn method_dyn(
+        &mut self,
+        name: &str,
+        sig: &str,
+        call: impl Fn(&mut Context<'_>, &H, Vec<Value>) -> Result<Vec<Value>, ScriptError> + 'static,
+    ) -> Result<&mut Self, crate::Error> {
+        let ty = self.id();
+        self.declare_dyn(|env, class| env.declare_method(class, name, sig), sig)?;
+        let method: Rc<str> = Rc::from(name);
+        let class = self.name.clone();
+        let native: NativeFn = Rc::new(move |ctx, args| {
+            let receiver_arg = &args[..args.len().min(1)];
+            run_native(ctx, receiver_arg, 1, |cx, _, out| {
+                let this = handle_receiver::<H>(cx, receiver_arg, &method, &class)?;
+                let given = args.iter().skip(1).map(|&v| cx.lift(v)).collect();
+                for v in call(cx, &this, given)? {
+                    let v = cx.lower(v);
+                    out.push(v);
+                }
+                Ok(())
+            })
+        });
+        let v = self.vm.native(name, native);
+        self.vm.add_method(ty, name, v);
+        Ok(self)
     }
 
     /// `obj:name(...)`. The closure takes `&H` first, then any arguments, and
