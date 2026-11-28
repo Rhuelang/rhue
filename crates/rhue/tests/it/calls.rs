@@ -6,8 +6,9 @@
 
 use rhue::{Engine, Value};
 
+// unfrozen so the tests can swap a builtin out from under its fast path
 fn run(src: &str) -> String {
-    let mut e = Engine::new();
+    let mut e = Engine::unfrozen();
     let vals: Vec<Value> = e
         .eval_as::<rhue::Variadic<Value>>(src)
         .unwrap_or_else(|err| panic!("{src}\n{}", err.render(false)))
@@ -134,6 +135,40 @@ fn shadowed_builtins_are_called_as_written() {
     assert_eq!(
         run("local s = 'hello' return s:len(), s:byte(2), s:sub(2, 3), s:sub(1), s:sub(-3)"),
         "5 | 101 | el | hello | llo"
+    );
+}
+
+/// The default engine freezes the libraries, so a script can't swap a builtin
+/// out from under its fast path at all. The write fails and both ways of
+/// calling it still give the real thing.
+#[test]
+fn frozen_builtins_keep_their_fast_paths() {
+    let mut e = Engine::new();
+    for write in [
+        "math.floor = function(x) return 'mine ' .. x end",
+        "rawset(string, 'len', function() return -1 end)",
+    ] {
+        let err = e.eval(write).expect_err(write);
+        assert!(err.to_string().contains("readonly table"), "{write}: {err}");
+    }
+    assert_eq!(
+        e.eval("return math.floor(2.5), select(2, pcall(math.floor, 2.5)), ('abc'):len(), string.len('abc')")
+            .unwrap(),
+        [
+            Value::Number(2.0),
+            Value::Number(2.0),
+            Value::Number(3.0),
+            Value::Number(3.0)
+        ]
+    );
+    // a local with the same name is the script's own, frozen or not
+    assert_eq!(
+        e.eval_as::<String>(
+            "local type = function() return 'shadowed' end
+return type(1)"
+        )
+        .unwrap(),
+        "shadowed"
     );
 }
 

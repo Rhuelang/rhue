@@ -1,6 +1,6 @@
 # Moving to 3.0
 
-3.0 is the class model: one Rust type behind a whole tree of classes, objects that keep their identity, weak tables, and definitions files so the tools know your host. It's all new API, so a 2.x host that just bumps the version keeps building and running. This is what to check, and how to move over if you want to.
+3.0 is the class model: one Rust type behind a whole tree of classes, objects that keep their identity, weak tables, and definitions files so the tools know your host. It's nearly all new API, so a 2.x host that just bumps the version keeps building, and keeps running unless its scripts write to the standard libraries. This is what to check, and how to move over if you want to.
 
 ## What you have to check
 
@@ -8,6 +8,7 @@ Nothing in `rhue` got removed or renamed. `#[derive(UserData)]`, `register_type`
 
 What scripts can tell:
 
+- The library tables (`math`, `string`, `table`, `task` and the rest) and the metatable strings share come frozen now, so `function string.trim(s)` or `math.floor = nil` is `attempt to modify a readonly table`. Every environment shares them, so that write used to reach every other script and the host. If your scripts add their own helpers there, make the engine with `Engine::unfrozen()` instead of `Engine::new()`, or add the helpers from the host first and call `freeze_libraries()` after.
 - `__mode` on a metatable does something now. `"k"`, `"v"` or `"kv"` make a table weak, like Luau. A script that used `__mode` as a plain field for something else gets weak tables it didn't ask for.
 - `@` is a token, for `@class` in definitions files. A stray `@` in a script used to be an `unexpected character` error and is a parse error now (``expected an expression, found `@` ``). Still an error, different words.
 

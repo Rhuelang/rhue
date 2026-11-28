@@ -5,7 +5,7 @@
 - Feat: `Engine::resume_error` and `Context::resume_error` resume a waiting script so the call it waited in raises instead. Under `pcall` that gives `false, err`, for a native that waited on the host and then failed.
 - Fix: Async natives are plain natives now, without the script wrapper they used to sit in. Tracebacks lose the `[async name]` frame, and an error from one is raised at the script's own call.
 - Feat: `Context::kill_thread` and `cancel_thread` stop a thread in any state, and scripts can't catch it. `coroutine.resume` sees a dead coroutine, the host gets an error with `is_killed()`, and a killed task isn't an error `step()` reports. `Context::thread_end` says how a thread ended.
-- Feat: `Engine::freeze_libraries` makes `math`, `string`, `table` and the other library tables read-only, along with the metatable strings share. Without it a script in one environment could replace `math.floor` or `string.format` for every other environment and the host. It's opt-in until 3.0.
+- Feat: `Engine::freeze_libraries` makes `math`, `string`, `table` and the other library tables read-only, along with the metatable strings share. Without it a script in one environment could replace `math.floor` or `string.format` for every other environment and the host.
 - Feat: Userdata methods can take `&T` instead of `&mut T`. They borrow the object shared, so a callback the method calls can read the same object without getting "already in use".
 - Fix: The "attempt to yield across a C-call boundary" error says R-call now, since Rhue is Rust and not C, and it names the native in the way (`table.sort`'s comparator says 'sort') and says to wait before or after calling it. Yielding outside a coroutine says what to use instead.
 - Feat: `Engine::define_class` makes classes whose objects are all one host handle type, with parents: a `Box` that's a `Shape` that's a `Node`. Members get `&H` and no `RefCell`, a child has its parent's members, and the checker takes a child wherever its parent goes. `extend_class` adds members later.
@@ -21,6 +21,7 @@
 - Feat: `Engine::vector` gives the built-in `vector` host properties and methods (`v.Magnitude`, `v:Dot(w)`) and a constructor table under a name the host picks (`Vector3.new`). The checker knows them too, and `v.x` costs the same.
 - Feat: Operators on host classes. `TypeBuilder::operator` and `ClassBuilder::operator` take an `Operator` (arithmetic, `Unm`, `Concat`, `Len`, `Eq`, `Lt`, `Le`, `ToString`, `Call`, `Iter`), and giving one more than once overloads it by operand type, so `Vec2 * Vec2`, `Vec2 * number` and `number * Vec2` all work. The checker picks the same overload, and errors when none takes the operands.
 - Feat: Definitions files can have operators, `function __add(self, arg1: Vec2): Vec2`, and one with the object second (`2 * v`) can leave out `self`.
+- Changed: `Engine::new` freezes the library tables, so scripts can't write to `math`, `string` and the rest. `Engine::unfrozen` makes an engine that doesn't, for scripts that add their own helpers there.
 - Changed: `rhue_types::ClassType` has an `operators` field, and `Env::declare_operator` adds to it.
 - Changed: `@` is a token, so a stray one in a script is a parse error now instead of a lex error.
 - Changed: `rhue_types::ClassType` has a `class_params` field, the methods that take a class name.

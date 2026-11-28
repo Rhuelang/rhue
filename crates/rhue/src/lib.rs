@@ -97,8 +97,7 @@
 //! engine.eval_in(&a, "secret = 42").unwrap();
 //! assert_eq!(engine.eval_in(&b, "return secret").unwrap(), [rhue::Value::Nil]);
 //!
-//! // but they share `math` and `string`, so lock those down
-//! engine.freeze_libraries();
+//! // they share `math` and `string` though, which is why those come frozen
 //! assert!(engine.eval_in(&a, "math.floor = nil").is_err());
 //! ```
 //!
@@ -403,8 +402,20 @@ impl Default for Engine {
 impl Engine {
     /// An engine with the standard library: base functions (`print`, `type`,
     /// `tostring`, `tonumber`, `pairs`, `ipairs`, `pcall`, `error`, ...) and
-    /// the `table`, `string` and `math` libraries.
+    /// the `table`, `string` and `math` libraries. The library tables come
+    /// frozen (see [`freeze_libraries`](Self::freeze_libraries)), use
+    /// [`unfrozen`](Self::unfrozen) for scripts that add their own helpers to
+    /// `string` or `math`.
     pub fn new() -> Self {
+        let mut engine = Self::unfrozen();
+        engine.freeze_libraries();
+        engine
+    }
+
+    /// The same as [`new`](Self::new) with the library tables left writable,
+    /// so `function string.trim(s)` works. Every environment shares those
+    /// tables, so only use it when the scripts trust each other.
+    pub fn unfrozen() -> Self {
         let mut vm = rhue_vm::Vm::new();
         *vm.host_data() = Some(Box::new(modules::HostState::new(rhue_types::Env::new())));
         let mut engine = Engine {
@@ -661,7 +672,9 @@ impl Engine {
     /// globals but share these, so without this one script can do
     /// `math.floor = nil` and break it for everyone. Libraries opened after
     /// this get frozen too, there's no undo, and tables you added yourself are
-    /// left alone (`table.freeze` them if you want).
+    /// left alone (`table.freeze` them if you want). [`new`](Self::new) does
+    /// this already, so it's for [`unfrozen`](Self::unfrozen) and
+    /// [`bare`](Self::bare) engines.
     pub fn freeze_libraries(&mut self) {
         self.vm.freeze_libraries();
     }

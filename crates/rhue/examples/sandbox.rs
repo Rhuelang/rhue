@@ -39,8 +39,8 @@ fn main() -> Result<(), rhue::Error> {
     engine.set_memory_limit(Some(8 << 20));
     // something every plugin can use
     engine.register("log", |msg: String| println!("  [log] {msg}"));
-    // plugins get their own globals but share `math`, `string` and friends
-    engine.freeze_libraries();
+    // plugins get their own globals but share `math`, `string` and friends,
+    // which come frozen so one plugin can't break them for the rest
 
     let mut loaded: Vec<(&str, Environment)> = Vec::new();
     for &(name, source) in PLUGINS {

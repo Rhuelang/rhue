@@ -369,15 +369,14 @@ for player in players {
 }
 ```
 
-The libraries are shared though. `math`, `string` and the rest are one table each, so a plugin doing `math.floor = nil` breaks it for every other plugin and for the host too. `freeze_libraries` stops that:
+The libraries are shared though. `math`, `string` and the rest are one table each, so a plugin doing `math.floor = nil` would break it for every other plugin and for the host too. That's why `Engine::new` freezes them:
 
 ```rust
-engine.freeze_libraries();
 assert!(engine.eval_in(&plugin_a, "math.floor = nil").is_err());  // attempt to modify a readonly table
 engine.eval_in(&plugin_a, "math = {}")?;  // fine, that's plugin_a's own `math` now
 ```
 
-Every library table and the metatable strings share go read-only. Libraries opened after it (`open_tasks`) get frozen too, tables you added yourself don't (`table.freeze` those if you want). It's opt-in for now and turns on by default in 3.0, since plenty of Lua code likes adding its own helpers to `string`.
+Every library table and the metatable strings share go read-only. Libraries opened after it (`open_tasks`) get frozen too, tables you added yourself don't (`table.freeze` those if you want). Plenty of Lua code likes adding its own helpers to `string` though, so `Engine::unfrozen()` gives an engine with them writable, and `freeze_libraries()` freezes one later (after the host adds its own helpers, say).
 
 ## serde
 
