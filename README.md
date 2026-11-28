@@ -59,12 +59,12 @@ heap after churn: 82 KB
 
 ## ✨ Status
 
-2.2.0 is out, 26 milestones in (2.0 was a quick API cleanup right after 1.0). What's in it:
+3.0.0 is out, 26 milestones in (2.0 was a quick API cleanup right after 1.0, 3.0 is the class model). What's in it:
 
 - **Language** — Luau syntax, string interpolation, metatables and `setmetatable` classes, tail calls, coroutines, generic `for` with `__iter`, vectors
 - **Types** — gradual typing with `--!strict` and `--!nonstrict`, generics and type packs, narrowing and flow typing, read-only and write-only properties
 - **Standard library** — `table`, `string` with Lua patterns, `math`, `utf8`, a sandbox-safe `os`, `bit32`, `buffer`, `vector`, `debug`, frozen tables
-- **Embedding** — typed `register`, `#[derive(UserData)]`, calling scripts from Rust, natives that pause scripts, the `task` library, separate environments for plugins, `serde`, instruction and memory limits
+- **Embedding** — typed `register`, `#[derive(UserData)]`, host class trees with operators and object identity, definitions files for the tools, calling scripts from Rust, natives that pause scripts, the `task` library, separate environments for plugins, `serde`, instruction and memory limits
 - **Async** — async Rust functions scripts can wait on, `eval_async`, `task.wait` on real time, stopping scripts from any thread
 - **Hot reload** — swap a module for new code while scripts run, functions change in place and state carries over
 - **Modules and chunks** — `require` with typed modules, saved bytecode that goes through a verifier before it runs

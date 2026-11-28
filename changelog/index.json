@@ -1,6 +1,13 @@
 {
   "entries": [
     {
+      "file": "v3.0.0.md",
+      "tag": "3.0.0",
+      "title": "Host classes",
+      "version": "3.0.0",
+      "date": "2026-11-28"
+    },
+    {
       "file": "v2.2.0.md",
       "tag": "2.2.0",
       "title": "Tech debt",
