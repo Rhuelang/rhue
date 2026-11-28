@@ -1,5 +1,6 @@
-//! Freezing the library tables (2.3), so one environment can't break `math` or
-//! `string` for every other one.
+//! Freezing the library tables, so one environment can't break `math` or
+//! `string` for every other one. `Engine::new` does it, `Engine::unfrozen`
+//! leaves it to `freeze_libraries`.
 
 use rhue::{Engine, Value};
 
@@ -37,19 +38,28 @@ fn originals() -> Vec<Value> {
 }
 
 #[test]
-fn without_the_switch_libraries_leak_between_environments() {
+fn new_engines_start_frozen() {
     let mut e = Engine::new();
+    let a = e.create_environment();
+    assert!(e.eval_in(&a, "math.floor = nil").is_err());
+    assert_eq!(
+        e.eval("return table.isfrozen(math), table.isfrozen(string)")
+            .unwrap(),
+        [Value::Bool(true), Value::Bool(true)]
+    );
+}
+
+#[test]
+fn unfrozen_libraries_leak_between_environments() {
+    let mut e = Engine::unfrozen();
     let (a, b) = (e.create_environment(), e.create_environment());
     e.eval_in(&a, "math.floor = nil").unwrap();
     assert_eq!(e.eval_in(&b, "return math.floor").unwrap(), [Value::Nil]);
     assert_eq!(e.eval("return math.floor").unwrap(), [Value::Nil]);
 }
 
-#[test]
-fn frozen_libraries_refuse_every_write() {
-    let mut e = Engine::new();
-    e.open_tasks();
-    e.freeze_libraries();
+// every write fails, and nothing changed in any environment or the host's
+fn assert_refuses_every_write(mut e: Engine) {
     let (a, b) = (e.create_environment(), e.create_environment());
     for write in WRITES {
         let err = e
@@ -66,10 +76,24 @@ fn frozen_libraries_refuse_every_write() {
 }
 
 #[test]
+fn new_engines_refuse_every_write() {
+    let mut e = Engine::new();
+    e.open_tasks();
+    assert_refuses_every_write(e);
+}
+
+#[test]
+fn freezing_an_unfrozen_engine_refuses_every_write() {
+    let mut e = Engine::unfrozen();
+    e.open_tasks();
+    e.freeze_libraries();
+    assert_refuses_every_write(e);
+}
+
+#[test]
 fn every_library_is_frozen() {
     let mut e = Engine::new();
-    e.freeze_libraries();
-    // opened after the freeze, so it gets frozen on the way in
+    // opened after the engine froze its libraries, so it gets frozen on the way in
     e.open_tasks();
     let all = e
         .eval(
