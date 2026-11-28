@@ -46,6 +46,15 @@ let hero: Player = engine.get("hero")?;                     // a copy; Ud<Player
 
 Wrong argument types turn into script errors like `invalid argument #1 to 'add' (number expected, got string)`. `cargo run -p rhue --example embed` has a fuller version.
 
+A method that takes `&mut Player` has the player to itself while it runs, so a callback it calls that touches the same player gets `Player is already in use`. One that only reads it can take `&Player` instead, and then callbacks can read it too.
+
+```rust
+engine.register_type::<Player>()
+    .method("each_turn", |cx: &mut Context, p: &Player, f: Function| -> Result<(), ScriptError> {
+        cx.call::<()>(&f, p.hp) // f can read p.hp, call other &Player methods, and so on
+    });
+```
+
 ```rust
 use rhue::{Engine, Value};
 

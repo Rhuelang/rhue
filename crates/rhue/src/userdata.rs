@@ -261,9 +261,14 @@ fn busy<T: UserData>() -> ScriptError {
 }
 
 impl<T: UserData> TypeBuilder<'_, T> {
-    /// `obj:name(...)`. The closure takes `&mut T` first, then any arguments,
-    /// like a registered function. It can also take `&mut Context` before `&mut
-    /// T`.
+    /// `obj:name(...)`. The closure takes `&mut T` or `&T` first, then any
+    /// arguments, like a registered function. It can also take `&mut Context`
+    /// before that.
+    ///
+    /// A `&mut T` method has the object to itself while it runs, so a callback
+    /// that reaches the same object errors with "already in use". A `&T` method
+    /// only reads it, so callbacks can read it too (through other `&T` methods
+    /// and getters). Use `&T` unless the method changes the object.
     pub fn method<M, F: IntoMethod<T, M>>(&mut self, name: &str, f: F) -> &mut Self {
         F::declare_types(self.vm);
         let sig = F::signature();
@@ -386,8 +391,9 @@ impl<T: UserData> TypeBuilder<'_, T> {
     }
 }
 
-/// A Rust function usable as a method of `T`: `Fn(&mut T, args...)`, or
-/// `Fn(&mut Context, &mut T, args...)`. See [`TypeBuilder::method`].
+/// A Rust function usable as a method of `T`: `Fn(&mut T, args...)` or
+/// `Fn(&T, args...)`, either one with `&mut Context` first. See
+/// [`TypeBuilder::method`].
 pub trait IntoMethod<T, Marker> {
     /// Wraps the function as a method named `name` (the name shows up in
     /// argument errors).
@@ -415,8 +421,84 @@ pub(crate) fn declare(result: Result<(), Vec<rhue_common::Diagnostic>>, ty: &str
     }
 }
 
+/// Marks methods whose receiver is `&T`, borrowed shared.
+#[doc(hidden)]
+pub struct Shared;
+
 macro_rules! methods {
     ($($A:ident),*) => {
+        impl<T, Func, Ret, $($A,)*> IntoMethod<T, (Shared, Ret, $($A,)*)> for Func
+        where
+            T: UserData,
+            Func: for<'t> Fn(&'t T, $($A),*) -> Ret + 'static,
+            Ret: IntoNativeResult,
+            $($A: FromArg,)*
+        {
+            #[allow(non_snake_case, unused_variables, unused_mut)]
+            fn into_method(self, name: Rc<str>) -> NativeFn {
+                Rc::new(move |ctx, args| {
+                    let rest = args.get(1..).unwrap_or(&[]);
+                    let receiver_arg = &args[..args.len().min(1)];
+                    run_native(ctx, rest, 2, |cx, it, out| {
+                        let this = receiver::<T>(cx, receiver_arg, &name)?;
+                        $(let $A = $A::from_arg(it, cx)
+                            .map_err(|e| ScriptError::argument(&name, e))?;)*
+                        let ret = {
+                            let guard = this.try_borrow().map_err(|_| busy::<T>())?;
+                            (self)(&guard, $($A),*)
+                        };
+                        ret.lower_result(cx, out)
+                    })
+                })
+            }
+
+            fn signature() -> String {
+                fn_signature(&[T::NAME.to_string(), $($A::param_type()),*], &Ret::result_type())
+            }
+
+            #[allow(unused_variables)]
+            fn declare_types(vm: &mut rhue_vm::Vm) {
+                $($A::declare_types(vm);)*
+                Ret::declare_types(vm);
+            }
+        }
+
+        impl<T, Func, Ret, $($A,)*> IntoMethod<T, (WithContext, Shared, Ret, $($A,)*)> for Func
+        where
+            T: UserData,
+            Func: for<'a, 'b, 't> Fn(&'a mut Context<'b>, &'t T, $($A),*) -> Ret + 'static,
+            Ret: IntoNativeResult,
+            $($A: FromArg,)*
+        {
+            #[allow(non_snake_case, unused_variables, unused_mut)]
+            fn into_method(self, name: Rc<str>) -> NativeFn {
+                Rc::new(move |ctx, args| {
+                    let rest = args.get(1..).unwrap_or(&[]);
+                    let receiver_arg = &args[..args.len().min(1)];
+                    run_native(ctx, rest, 2, |cx, it, out| {
+                        let this = receiver::<T>(cx, receiver_arg, &name)?;
+                        $(let $A = $A::from_arg(it, cx)
+                            .map_err(|e| ScriptError::argument(&name, e))?;)*
+                        let ret = {
+                            let guard = this.try_borrow().map_err(|_| busy::<T>())?;
+                            (self)(cx, &guard, $($A),*)
+                        };
+                        ret.lower_result(cx, out)
+                    })
+                })
+            }
+
+            fn signature() -> String {
+                fn_signature(&[T::NAME.to_string(), $($A::param_type()),*], &Ret::result_type())
+            }
+
+            #[allow(unused_variables)]
+            fn declare_types(vm: &mut rhue_vm::Vm) {
+                $($A::declare_types(vm);)*
+                Ret::declare_types(vm);
+            }
+        }
+
         impl<T, Func, Ret, $($A,)*> IntoMethod<T, (Ret, $($A,)*)> for Func
         where
             T: UserData,

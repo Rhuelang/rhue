@@ -742,6 +742,36 @@ fn methods_can_call_back_and_reentry_is_an_error() {
     );
 }
 
+#[test]
+fn shared_methods_let_callbacks_read_the_same_object() {
+    let [mut e, _] = player_engine();
+    e.register_type::<Player>()
+        .method(
+            "watch",
+            |cx: &mut Context, p: &Player, f: Function| -> Result<f64, ScriptError> {
+                cx.call::<f64>(&f, p.hp)
+            },
+        )
+        .method("hp_plus", |p: &Player, n: f64| p.hp + n);
+    e.set_global("p", Player::new("A"));
+    // reading it from the callback is fine now, getters and other &T methods
+    assert_eq!(
+        e.eval_as::<f64>("return p:watch(function(hp) return p.hp + p:hp_plus(1) + hp end)")
+            .unwrap(),
+        301.0
+    );
+    // changing it still isn't: a &mut method needs the object to itself
+    let err = eval_err(&mut e, "p:watch(function() p:heal(1) return 0 end)");
+    assert_eq!(
+        err,
+        "Player is already in use (a method on it is still running)"
+    );
+    // and the checker sees a &T method like any other
+    assert_eq!(e.global_type("p").as_deref(), Some("Player"));
+    e.check("t.rhue", "--!strict\nlocal n: number = p:hp_plus(2)")
+        .unwrap();
+}
+
 /// Counts drops, to see when the collector frees userdata.
 struct Tracked(Rc<Cell<u32>>);
 
