@@ -1522,7 +1522,9 @@ impl Checker<'_> {
                 vars
             }
             // a host object with `__iter`: what the iterator it gives returns
-            Type::Class(c) if let Some(iter) = self.env.class_operator(&c, "__iter") => {
+            // the lookup runs twice since `if let` guards need a newer Rust than the MSRV
+            Type::Class(c) if self.env.class_operator(&c, "__iter").is_some() => {
+                let iter = self.env.class_operator(&c, "__iter").unwrap();
                 let Type::Function(f) = self.expand(&iter) else {
                     return vec![Type::Any; n];
                 };
