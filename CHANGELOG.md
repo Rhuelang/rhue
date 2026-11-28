@@ -28,6 +28,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Feat: `docs/migrating.md` says what a 2.x host has to check for 3.0, and walks a host with one handle type over to class trees.
 - Feat: Method calls on host objects (`obj:Method()`) are cached per call site, about 1.4% fewer instructions on `bench/instances.rhue`.
 - Feat: `Engine::vector` gives the built-in `vector` host properties and methods (`v.Magnitude`, `v:Dot(w)`) and a constructor table under a name the host picks (`Vector3.new`). The checker knows them too, and `v.x` costs the same.
+- Feat: Operators on host classes. `TypeBuilder::operator` and `ClassBuilder::operator` take an `Operator` (arithmetic, `Unm`, `Concat`, `Len`, `Eq`, `Lt`, `Le`, `ToString`, `Call`, `Iter`), and giving one more than once overloads it by operand type, so `Vec2 * Vec2`, `Vec2 * number` and `number * Vec2` all work. The checker picks the same overload, and errors when none takes the operands.
+- Feat: Definitions files can have operators, `function __add(self, arg1: Vec2): Vec2`, and one with the object second (`2 * v`) can leave out `self`.
+- Changed: `rhue_types::ClassType` has an `operators` field, and `Env::declare_operator` adds to it.
 - Changed: `@` is a token, so a stray one in a script is a parse error now instead of a lex error.
 - Changed: `rhue_types::ClassType` has a `class_params` field, the methods that take a class name.
 - Changed: `rhue_types::Env::declare_class` takes the class's parent, `None` for a class without one.

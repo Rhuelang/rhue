@@ -345,6 +345,20 @@ impl<T: UserData> TypeBuilder<'_, T> {
         self.getter(name, get).setter(name, set)
     }
 
+    /// Operator `op` on these objects: `Operator::Add` makes `a + b` call
+    /// `f(a, b)`, and so on. Give one operator more than once for overloads,
+    /// they get picked by the operands' types (`Vec2 * Vec2` and
+    /// `Vec2 * number`), the same way the checker picks them. Lua tries the
+    /// left operand's handler first and then the right's, so `2 * v` comes
+    /// here as `f(2, v)` and needs its own `(f64, T)` overload.
+    ///
+    /// `==` only gets here for two different objects, the same object is
+    /// always equal to itself, and table keys stay on identity.
+    pub fn operator<M, F: IntoNative<M>>(&mut self, op: crate::Operator, f: F) -> &mut Self {
+        crate::operators::add(self.vm, self.ty, T::NAME, op, f);
+        self
+    }
+
     /// A function in the global table named after the type, like a constructor
     /// `Player.new(...)`.
     pub fn function<M, F: IntoNative<M>>(&mut self, name: &str, f: F) -> &mut Self {
@@ -806,6 +820,17 @@ impl<H: 'static> ClassBuilder<'_, H> {
         let v = self.vm.native(name, native);
         self.vm.add_method(ty, name, v);
         Ok(self)
+    }
+
+    /// Operator `op` on this class's objects (and its children's), the same
+    /// as [`TypeBuilder::operator`]. Operands come in as plain values, take
+    /// [`AnyUserData`](crate::AnyUserData) and use its `handle` to get at
+    /// the handle.
+    pub fn operator<M, F: IntoNative<M>>(&mut self, op: crate::Operator, f: F) -> &mut Self {
+        let ty = self.id();
+        let name = self.name.clone();
+        crate::operators::add(self.vm, ty, &name, op, f);
+        self
     }
 
     /// `obj:name(...)`. The closure takes `&H` first, then any arguments, and

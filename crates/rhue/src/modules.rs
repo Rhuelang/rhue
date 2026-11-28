@@ -51,6 +51,8 @@ pub(crate) struct HostState {
     /// Every environment's globals table, to find the environment a native's
     /// caller runs in. Weak, so dropping an environment still frees it.
     pub environments: Vec<(rhue_vm::TableRef, std::rc::Weak<crate::environment::Shared>)>,
+    /// Each class's overloads for each operator, see [`crate::Operator`].
+    pub operators: HashMap<(u32, &'static str), crate::operators::Overloads>,
 }
 
 impl HostState {
@@ -67,6 +69,7 @@ impl HostState {
             loading: Vec::new(),
             checking: HashSet::new(),
             environments: Vec::new(),
+            operators: HashMap::new(),
         }
     }
 

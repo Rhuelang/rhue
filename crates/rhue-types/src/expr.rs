@@ -55,7 +55,7 @@ impl Checker<'_> {
                 let t = self.expr(operand);
                 match op {
                     UnOp::Neg if self.is_vector(&t) => t,
-                    UnOp::Neg => match self.meta_operator(&t, &t, "__unm") {
+                    UnOp::Neg => match self.meta_operator(&t, &t, "__unm", *op_span) {
                         Some(result) => result,
                         None => {
                             self.expect(operand.span, &t, &Type::Number);
@@ -63,6 +63,18 @@ impl Checker<'_> {
                         }
                     },
                     UnOp::Not => Type::Boolean,
+                    UnOp::Len if matches!(self.expand(&t), Type::Class(_)) => {
+                        match self.meta_operator(&t, &t, "__len", *op_span) {
+                            Some(result) => result,
+                            None => {
+                                self.error(
+                                    *op_span,
+                                    format!("Cannot get the length of a value of type '{t}'"),
+                                );
+                                Type::Number
+                            }
+                        }
+                    }
                     UnOp::Len => {
                         let e = self.expand(&t);
                         let ok = e.is_any()
@@ -292,7 +304,7 @@ impl Checker<'_> {
             return t;
         }
         if !event.is_empty()
-            && let Some(result) = self.meta_operator(l, r, event)
+            && let Some(result) = self.meta_operator(l, r, event, op_span)
         {
             return if matches!(op, Lt | Gt | Le | Ge) {
                 Type::Boolean
@@ -1508,6 +1520,22 @@ impl Checker<'_> {
                     *v = v.strip_nil();
                 }
                 vars
+            }
+            // a host object with `__iter`: what the iterator it gives returns
+            Type::Class(c) if let Some(iter) = self.env.class_operator(&c, "__iter") => {
+                let Type::Function(f) = self.expand(&iter) else {
+                    return vec![Type::Any; n];
+                };
+                match self.expand(&f.rets.get(0)) {
+                    Type::Function(g) => {
+                        let mut vars: Vec<Type> = (0..n).map(|i| g.rets.get(i)).collect();
+                        if let Some(v) = vars.first_mut() {
+                            *v = v.strip_nil();
+                        }
+                        vars
+                    }
+                    _ => vec![Type::Any; n],
+                }
             }
             u @ Type::Union(_) if u.can_be_nil() => {
                 if self.strict {

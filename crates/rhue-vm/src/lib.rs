@@ -270,9 +270,12 @@ impl NativeCtx<'_> {
     /// `tostring` through `__tostring`. The string it returned, or `None` when
     /// `v` has no `__tostring`.
     pub fn tostring_meta(&mut self, v: Value) -> Result<Option<Value>, NativeError> {
-        if let Value::Table(t) = v
-            && self.vm.heap.table(t).meta().is_some()
-        {
+        let has_meta = match v {
+            Value::Table(t) => self.vm.heap.table(t).meta().is_some(),
+            Value::UserData(u) => self.vm.ud_meta(u).is_some(),
+            _ => false,
+        };
+        if has_meta {
             self.park();
             return self.vm.tostring_meta(v);
         }
@@ -542,7 +545,32 @@ struct Class {
     /// own or the nearest ancestor's, copied down like members are.
     index: Option<NativeFn>,
     own_index: bool,
+    /// The operators (`__add`, `__eq`, ...), as a metatable scripts can't get
+    /// at. Made with the first one, copied down like members are.
+    meta: Option<TableRef>,
+    /// The operators this class defines itself.
+    own_ops: std::collections::HashSet<StrRef, hash::FxBuildHasher>,
 }
+
+/// The metamethods a host class can have.
+pub const CLASS_OPERATORS: [&str; 16] = [
+    "__add",
+    "__sub",
+    "__mul",
+    "__div",
+    "__idiv",
+    "__mod",
+    "__pow",
+    "__unm",
+    "__concat",
+    "__len",
+    "__eq",
+    "__lt",
+    "__le",
+    "__tostring",
+    "__call",
+    "__iter",
+];
 
 #[derive(Clone)]
 enum Member {
@@ -1285,6 +1313,11 @@ impl Vm {
                 }
             }
         }
+        for class in &self.ud_types {
+            if let Some(m) = class.meta {
+                roots.push(GcRoot::Value(Value::Table(m)));
+            }
+        }
         for (k, m) in &self.vector_members {
             roots.push(GcRoot::Value(Value::String(*k)));
             if let Member::Method(v) = m {
@@ -1332,7 +1365,7 @@ impl Vm {
 
     fn new_class(&mut self, name: &str, parent: Option<u32>, holds: std::any::TypeId) -> u32 {
         let name: Rc<str> = Rc::from(name);
-        let (members, by_name, typeof_name, index) = match parent {
+        let (members, by_name, typeof_name, index, parent_meta) = match parent {
             Some(p) => {
                 let pc = &self.ud_types[p as usize];
                 let root = self.class_root(p);
@@ -1341,10 +1374,16 @@ impl Vm {
                     pc.by_name.clone(),
                     self.ud_types[root as usize].name.clone(),
                     pc.index.clone(),
+                    pc.meta,
                 )
             }
-            None => (Vec::new(), FxHashMap::default(), name.clone(), None),
+            None => (Vec::new(), FxHashMap::default(), name.clone(), None, None),
         };
+        // a child gets its own copy, so its own operators don't land on the parent
+        let meta = parent_meta.map(|m| {
+            let copy = self.heap.table(m).clone();
+            self.heap.alloc_table(copy)
+        });
         let id = self.heap.add_userdata_type(typeof_name, name.clone());
         self.ud_types.push(Class {
             name,
@@ -1356,6 +1395,8 @@ impl Vm {
             own: Default::default(),
             index,
             own_index: false,
+            meta,
+            own_ops: Default::default(),
         });
         if let Some(p) = parent {
             self.ud_types[p as usize].children.push(id);
@@ -1378,6 +1419,27 @@ impl Vm {
     /// The name of class `c`.
     pub fn class_name(&self, c: u32) -> &str {
         &self.ud_types[c as usize].name
+    }
+
+    /// The class called `name`, if there is one.
+    pub fn class_by_name(&self, name: &str) -> Option<u32> {
+        self.ud_types
+            .iter()
+            .position(|c| &*c.name == name)
+            .and_then(|i| u32::try_from(i).ok())
+    }
+
+    /// Whether class `c` is `ancestor` or under it.
+    pub fn class_is_under(&self, mut c: u32, ancestor: u32) -> bool {
+        loop {
+            if c == ancestor {
+                return true;
+            }
+            match self.ud_types[c as usize].parent {
+                Some(p) => c = p,
+                None => return false,
+            }
+        }
     }
 
     /// Changes member `name` of class `c` with `change`, and gives every class
@@ -1421,6 +1483,54 @@ impl Vm {
             class.index = Some(hook.clone());
             todo.extend_from_slice(&class.children);
         }
+    }
+
+    /// Gives class `ty` (and the classes under it without their own) operator
+    /// `event`, one of [`CLASS_OPERATORS`]: `__add` makes `a + b` call
+    /// `handler(a, b)` when either side is one of these objects, and so on,
+    /// the way a table's metatable does it. `getmetatable` on the objects
+    /// gives a string, so scripts can't change them.
+    pub fn set_class_operator(
+        &mut self,
+        ty: u32,
+        event: &str,
+        handler: Value,
+    ) -> Result<(), String> {
+        if !CLASS_OPERATORS.contains(&event) {
+            return Err(format!("'{event}' isn't an operator a class can have"));
+        }
+        let k = self.heap.intern(event);
+        self.ud_types[ty as usize].own_ops.insert(k);
+        let mut todo = vec![ty];
+        while let Some(c) = todo.pop() {
+            if c != ty && self.ud_types[c as usize].own_ops.contains(&k) {
+                continue;
+            }
+            let meta = self.class_meta(c);
+            let _ = self.heap.table_mut(meta).set(Value::String(k), handler);
+            todo.extend_from_slice(&self.ud_types[c as usize].children);
+        }
+        Ok(())
+    }
+
+    /// Class `c`'s operator metatable, made (and locked) if it has none yet.
+    fn class_meta(&mut self, c: u32) -> TableRef {
+        if let Some(m) = self.ud_types[c as usize].meta {
+            return m;
+        }
+        let lock = self.events.get(meta::Event::Metatable);
+        let text = Value::String(self.heap.intern("The metatable is locked"));
+        let mut t = Table::default();
+        let _ = t.set(Value::String(lock), text);
+        let m = self.heap.alloc_table(t);
+        self.ud_types[c as usize].meta = Some(m);
+        m
+    }
+
+    /// The operator metatable of host object `u`'s class.
+    #[inline]
+    pub(crate) fn ud_meta(&self, u: UdRef) -> Option<TableRef> {
+        self.ud_types[self.heap.userdata(u).type_id as usize].meta
     }
 
     /// Makes `obj:name(...)` find `method` on objects of class `ty` (and the
@@ -2412,6 +2522,9 @@ impl Vm {
         match (l, r) {
             (Value::Table(x), Value::Table(y)) => {
                 self.heap.table(x).meta().is_some() || self.heap.table(y).meta().is_some()
+            }
+            (Value::UserData(x), Value::UserData(y)) => {
+                self.ud_meta(x).is_some() || self.ud_meta(y).is_some()
             }
             _ => false,
         }
@@ -3494,8 +3607,15 @@ impl Vm {
                         match regs[a] {
                             // `__iter` gives the iterator triple once on the
                             // first step, then the loop calls it
-                            Value::Table(t)
-                                if self.heap.table(t).meta().is_some_and(|m| {
+                            v @ (Value::Table(_) | Value::UserData(_))
+                                if match v {
+                                    Value::Table(t) => self.heap.table(t).meta(),
+                                    Value::UserData(u) => {
+                                        self.ud_types[self.heap.userdata(u).type_id as usize].meta
+                                    }
+                                    _ => None,
+                                }
+                                .is_some_and(|m| {
                                     self.heap
                                         .table(m)
                                         .get_str(self.events.get(meta::Event::Iter))
@@ -3566,7 +3686,9 @@ impl Vm {
                                 Value::String(s) => out.push_str(self.heap.get(s)),
                                 Value::Number(x) => out.push_str(&format_number(x)),
                                 // might have `__tostring`
-                                Value::Table(t) if self.heap.table(t).meta().is_some() => {
+                                v @ (Value::Table(_) | Value::UserData(_))
+                                    if self.metatable_of(v).is_some() =>
+                                {
                                     sync!();
                                     let v = self.interp_meta(f, at, from, c)?;
                                     self.stack[base + a] = v;

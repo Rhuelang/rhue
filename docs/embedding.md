@@ -144,6 +144,28 @@ engine.declare_index("Node", "Node")?; // so strict scripts know world.Box is a 
 
 `create_object` makes a new script object every time. When the same host object can come back more than once (a child found by name, a handler's argument), use `cx.object(&class, id, || handle)` instead. It gives back the object scripts already have for that `u64` id, so `==` and table keys work, and only calls the closure when there isn't one. Ids are per class tree. Nothing on the host side keeps the object alive, so once no script holds it, it gets collected and the next call makes a fresh one. A weak-keyed table entry for it goes too, even if the host still has the thing.
 
+## Operators
+
+Value types want math. `.operator` works on `register_type` and on `define_class`:
+
+```rust
+use rhue::Operator;
+
+engine.register_type::<Vec2>()
+    .operator(Operator::Add, |a: Vec2, b: Vec2| Vec2::new(a.x + b.x, a.y + b.y))
+    .operator(Operator::Mul, |a: Vec2, b: Vec2| Vec2::new(a.x * b.x, a.y * b.y))
+    .operator(Operator::Mul, |a: Vec2, n: f64| Vec2::new(a.x * n, a.y * n))
+    .operator(Operator::Mul, |n: f64, a: Vec2| Vec2::new(a.x * n, a.y * n))
+    .operator(Operator::Eq, |a: Vec2, b: Vec2| a == b)
+    .operator(Operator::ToString, |a: Vec2| format!("{}, {}", a.x, a.y));
+```
+
+The same operator given twice is overloaded, and the operands' types pick one, the same way at run time and in the checker. It works like a metatable, so the left operand's handler goes first and then the right's: `2 * v` reaches `v`'s `__mul` as `(2, v)` and needs that `(f64, Vec2)` overload. There's arithmetic, `Unm`, `Concat`, `Len`, `Eq`, `Lt`, `Le`, `ToString` (which `print` and `` `{v}` `` use too), `Call` and `Iter`. A child class has its parent's, and its own go first.
+
+`==` only reaches `Eq` for two different objects. The same object is always equal to itself, so objects from `cx.object` keep their identity no matter what `Eq` says. Table keys stay on identity too, like in Luau, so two equal `Vec2`s are still two keys.
+
+Scripts can't change any of this, `getmetatable(v)` gives `"The metatable is locked"`.
+
 ## Definitions files
 
 `rhue --check` and `rhue-lsp` don't have your host, so they don't know `Node` or `world`. Write what the engine knows out as a `.d.rhue` file and they will:
@@ -182,7 +204,9 @@ let missing = engine.check_definitions("host.d.rhue", include_str!("host.d.rhue"
 assert!(missing.is_empty(), "host.d.rhue has things the host doesn't: {missing:?}");
 ```
 
-That compares names (classes, parents, members, which properties can be set, index hooks, globals), not types.
+That compares names (classes, parents, members, operators, which properties can be set, index hooks, globals), not types.
+
+Operators go in as Luau writes them, `function __add(self, arg1: Vec2): Vec2`, one line an overload. One with the object second skips `self` and names everything: `function __mul(arg1: number, arg2: Vec2): Vec2`.
 
 A method that takes a class's name gets `@class(param)` in a file, or `declare_class_param` from Rust (the argument counts from 0 after the object):
 

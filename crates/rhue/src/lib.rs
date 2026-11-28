@@ -164,6 +164,7 @@ mod environment;
 mod hints;
 mod modules;
 mod native;
+mod operators;
 #[cfg(feature = "tooling")]
 mod outline;
 #[cfg(feature = "serde")]
@@ -195,6 +196,7 @@ pub use hints::{HintKind, InlayHint};
 pub use modules::Analysis;
 pub use modules::Reloaded;
 pub use native::{IntoAsyncNative, IntoNative, IntoNativeResult, WithContext};
+pub use operators::Operator;
 #[cfg(feature = "tooling")]
 pub use outline::{
     Base, Exports, FieldUse, Outline, SemanticToken, Symbol, SymbolKind, TokenKind, outline,

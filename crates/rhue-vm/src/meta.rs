@@ -145,6 +145,7 @@ impl Vm {
         match v {
             Value::Table(t) => self.heap.table(t).meta(),
             Value::String(_) => self.string_meta,
+            Value::UserData(u) => self.ud_meta(u),
             _ => None,
         }
     }
@@ -439,7 +440,8 @@ impl Vm {
     }
 
     /// `l == r` for two values that aren't raw-equal (`expect` is the
-    /// instruction's `A`). `__eq` only applies when both are tables.
+    /// instruction's `A`). `__eq` only applies when both are tables, or both
+    /// host objects.
     #[inline(never)]
     pub(crate) fn eq_meta(
         &mut self,
@@ -448,7 +450,10 @@ impl Vm {
         (l, r): (Value, Value),
         expect: bool,
     ) -> Result<(), Thrown> {
-        let h = if matches!((l, r), (Value::Table(_), Value::Table(_))) {
+        let h = if matches!(
+            (l, r),
+            (Value::Table(_), Value::Table(_)) | (Value::UserData(_), Value::UserData(_))
+        ) {
             self.binary_metamethod(l, r, Event::Eq)
         } else {
             Value::Nil
@@ -535,7 +540,7 @@ impl Vm {
         for i in 0..count {
             let v = self.stack[from + i];
             let handler = match v {
-                Value::Table(_) => self.metamethod(v, Event::ToString),
+                Value::Table(_) | Value::UserData(_) => self.metamethod(v, Event::ToString),
                 _ => Value::Nil,
             };
             if handler == Value::Nil {
@@ -555,7 +560,7 @@ impl Vm {
     /// `tostring(v)` with `__tostring`, for natives (`tostring`, `print`).
     pub(crate) fn tostring_meta(&mut self, v: Value) -> Result<Option<Value>, crate::NativeError> {
         let handler = match v {
-            Value::Table(_) => self.metamethod(v, Event::ToString),
+            Value::Table(_) | Value::UserData(_) => self.metamethod(v, Event::ToString),
             _ => Value::Nil,
         };
         if handler == Value::Nil {

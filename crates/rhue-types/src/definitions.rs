@@ -226,6 +226,11 @@ impl Env {
         }
         for ((class, name), (ts, arg)) in methods {
             let c = env.classes.get_mut(&class).expect("declared above");
+            if crate::env::is_operator(&name) {
+                c.operators.retain(|(n, _)| *n != name);
+                c.operators.push((name, intersection(ts)));
+                continue;
+            }
             c.methods.retain(|(n, _)| *n != name);
             c.class_params.retain(|(n, _)| *n != name);
             if let Some(i) = arg {
@@ -404,6 +409,18 @@ impl Env {
                 }
             }
         }
+        let mut ops: Vec<_> = c.operators.iter().collect();
+        ops.sort_by(|a, b| a.0.cmp(&b.0));
+        for (n, t) in ops {
+            for f in functions(t).into_iter().flatten() {
+                // `self` when the object comes first, every operand named when
+                // it doesn't (`2 * v`)
+                let method = matches!(f.params.first(), Some(Type::Class(c)) if c == name);
+                let _ = write!(out, "    function {n}");
+                write_signature(out, f, method);
+                out.push('\n');
+            }
+        }
         if let Some(t) = &c.index {
             let _ = writeln!(out, "    [string]: {}", with_names(t));
         }
@@ -460,6 +477,11 @@ impl Env {
                     && self.class_param(name, n) != Some(i)
                 {
                     missing.push(format!("{name}:{n} takes a class name"));
+                }
+            }
+            for (n, _) in &fc.operators {
+                if self.class_operator(name, n).is_none() {
+                    missing.push(format!("{name} {n}"));
                 }
             }
             if fc.index.is_some() && self.class_index(name).is_none() {

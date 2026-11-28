@@ -184,7 +184,9 @@ impl Parser<'_> {
         }
         if self.eat(Token::Function).is_some() {
             let name = self.expect(Token::Ident, "after `function`")?;
-            let ty = self.function_decl(Some(class))?;
+            // an operator can have the object second (`2 * v`), so no `self`
+            let operator = self.text(name.span).starts_with("__") && !self.at_self_param();
+            let ty = self.function_decl(if operator { None } else { Some(class) })?;
             return Ok(ClassItem::Method {
                 name: Rc::from(self.text(name.span)),
                 span: start.to(ty.span),
@@ -240,6 +242,14 @@ impl Parser<'_> {
     /// `<T>(a: T, ...: U): R` after a declared function's name, as a function
     /// type. In a class (`class` is where its name is) the first parameter
     /// has to be `self`, and it becomes the class.
+    /// Whether the parameters coming up start with `self`.
+    fn at_self_param(&self) -> bool {
+        self.at(Token::LParen) && {
+            let next = self.peek_nth(1);
+            next.token == Token::Ident && self.text(next.span) == "self"
+        }
+    }
+
     fn function_decl(&mut self, class: Option<Span>) -> PResult<TypeExpr> {
         let start = self.peek().span;
         let generics = self.generic_params(false)?;

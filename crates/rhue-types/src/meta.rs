@@ -90,8 +90,10 @@ impl Checker<'_> {
 
     /// The type of `t`'s metamethod `event` (a raw field of its metatable).
     pub fn metamethod(&mut self, t: &Type, event: &str) -> Option<Type> {
-        let Type::Table(table) = self.expand(t) else {
-            return None;
+        let table = match self.expand(t) {
+            Type::Table(table) => table,
+            Type::Class(c) => return self.env.class_operator(&c, event),
+            _ => return None,
         };
         match self.meta_table(&table) {
             Ok(Some(m)) => m.prop(event).cloned(),
@@ -100,15 +102,47 @@ impl Checker<'_> {
         }
     }
 
-    /// The result of an operator defined by a metamethod on either side.
-    pub fn meta_operator(&mut self, l: &Type, r: &Type, event: &str) -> Option<Type> {
+    /// The result of an operator defined by a metamethod on either side, the
+    /// left one first like at run time. An overloaded one picks the overload
+    /// that takes both operands, and none taking them is an error at `span`.
+    pub fn meta_operator(&mut self, l: &Type, r: &Type, event: &str, span: Span) -> Option<Type> {
         let mm = self
             .metamethod(l, event)
             .or_else(|| self.metamethod(r, event))?;
-        Some(match self.expand(&mm) {
-            Type::Function(f) => f.rets.get(0),
-            _ => Type::Any,
-        })
+        let overloads: Vec<Type> = match self.expand(&mm) {
+            Type::Intersection(ms) => ms.to_vec(),
+            one => vec![one],
+        };
+        let unary = matches!(event, "__unm" | "__len");
+        let mut typed = false;
+        for o in &overloads {
+            let Type::Function(f) = self.expand(o) else {
+                return Some(Type::Any);
+            };
+            // a handler written without types (a table's `function(a, b)`)
+            // takes anything
+            let (p0, p1) = (f.params.first().cloned(), f.params.get(1).cloned());
+            let takes = |c: &mut Self, p: Option<Type>, t: &Type| match p {
+                Some(p) => c.sub(t, &p),
+                None => true,
+            };
+            typed |= f.params.iter().any(|p| !p.is_any());
+            if takes(self, p0, l) && (unary || takes(self, p1, r)) {
+                return Some(f.rets.get(0));
+            }
+        }
+        if typed {
+            let what = if unary {
+                format!("({l})")
+            } else {
+                format!("({l}, {r})")
+            };
+            self.error(
+                span,
+                format!("No overload of '{event}' accepts operands of type {what}"),
+            );
+        }
+        Some(Type::Any)
     }
 
     /// Whether assigning a missing field of `t` goes to a `__newindex`.

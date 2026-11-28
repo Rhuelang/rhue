@@ -32,6 +32,35 @@ pub struct ClassType {
     /// position after the object (0 is the first). A literal there gives a
     /// more exact type, see [`Env::declare_class_param`].
     pub class_params: Vec<(Rc<str>, usize)>,
+    /// Operators (`__add`, `__eq`, ...), each a function type or an
+    /// intersection of overloads. The object isn't always the first operand,
+    /// `2 * v` calls `v`'s `__mul` with `(number, Vec)`.
+    pub operators: Vec<(Rc<str>, Type)>,
+}
+
+/// The metamethods a host class can have.
+pub const CLASS_OPERATORS: [&str; 16] = [
+    "__add",
+    "__sub",
+    "__mul",
+    "__div",
+    "__idiv",
+    "__mod",
+    "__pow",
+    "__unm",
+    "__concat",
+    "__len",
+    "__eq",
+    "__lt",
+    "__le",
+    "__tostring",
+    "__call",
+    "__iter",
+];
+
+/// Whether `name` is one of [`CLASS_OPERATORS`].
+pub fn is_operator(name: &str) -> bool {
+    CLASS_OPERATORS.contains(&name)
 }
 
 /// A class member found by [`Env::class_member`].
@@ -515,6 +544,52 @@ impl Env {
                 prop.or(method)
             }
         })
+    }
+
+    /// Adds an overload of operator `event` to a host class. `ty` is the
+    /// handler's type, operands in the order the operator gets them:
+    /// `(Vec, Vec) -> Vec` for `a + b`, `(number, Vec) -> Vec` for `2 * v`.
+    /// Gives back the overload's type.
+    pub fn declare_operator(
+        &mut self,
+        class: &str,
+        event: &str,
+        ty: &str,
+    ) -> Result<Type, Vec<Diagnostic>> {
+        self.declare_class(class, None);
+        let t = self.resolve(ty)?;
+        let c = self.classes.get_mut(class).expect("declared above");
+        match c.operators.iter_mut().find(|(n, _)| &**n == event) {
+            Some(op) => {
+                let mut ts: Vec<Type> = match &op.1 {
+                    Type::Intersection(ms) => ms.to_vec(),
+                    one => vec![one.clone()],
+                };
+                ts.push(t.clone());
+                op.1 = crate::types::intersection(ts);
+            }
+            None => c.operators.push((Rc::from(event), t.clone())),
+        }
+        Ok(t)
+    }
+
+    /// Operator `event` of `class`: its own overloads and then the ones of
+    /// the classes above it, the order the runtime tries them in.
+    pub fn class_operator(&self, class: &str, event: &str) -> Option<Type> {
+        let mut ts = Vec::new();
+        for c in self.class_chain(class) {
+            if let Some((_, t)) = c.operators.iter().find(|(n, _)| &**n == event) {
+                match t {
+                    Type::Intersection(ms) => ts.extend(ms.iter().cloned()),
+                    one => ts.push(one.clone()),
+                }
+            }
+        }
+        match ts.len() {
+            0 => None,
+            1 => ts.pop(),
+            _ => Some(crate::types::intersection(ts)),
+        }
     }
 
     /// What reading a name that isn't a member of `class` gives: the nearest

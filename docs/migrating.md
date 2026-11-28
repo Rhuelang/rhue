@@ -14,7 +14,7 @@ What scripts can tell:
 If you use the guts crates (`rhue_types`, `rhue_vm`) directly, which you shouldn't need to:
 
 - `rhue_types::Env::declare_class` takes the parent, pass `None` for what you had.
-- `rhue_types::ClassType` has `index` and `class_params` fields, so a struct literal of it needs them (or `..Default::default()`).
+- `rhue_types::ClassType` has `index`, `class_params` and `operators` fields, so a struct literal of it needs them (or `..Default::default()`).
 - `rhue_parser::ast::Declaration` and friends are new, and `rhue_lexer::Token` has `At`.
 
 ## Moving a handle host over
