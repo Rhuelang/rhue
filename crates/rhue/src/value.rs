@@ -132,6 +132,12 @@ impl AnyUserData {
         self.data.is::<RefCell<T>>()
     }
 
+    /// The handle of an object of a [`Class<H>`](crate::Class), if it holds
+    /// an `H`.
+    pub fn handle<H: 'static>(&self) -> Option<Rc<H>> {
+        self.data.clone().downcast::<H>().ok()
+    }
+
     /// The object as a `T`, if that's what it holds.
     pub fn downcast<T: UserData>(&self) -> Option<Ud<T>> {
         let cell = self.data.clone().downcast::<RefCell<T>>().ok()?;

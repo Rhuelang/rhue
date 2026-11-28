@@ -364,6 +364,49 @@ impl<'a> Context<'a> {
             .collect()
     }
 
+    /// Hands `handle` to scripts as an object of `class` (see
+    /// [`Engine::define_class`](crate::Engine::define_class)).
+    ///
+    /// # Panics
+    ///
+    /// If `class` is from another engine.
+    pub fn create_object<H: 'static>(&mut self, class: &crate::Class<H>, handle: H) -> Value {
+        assert_eq!(
+            class.vm,
+            self.vm.id(),
+            "a class from one Engine was used in another"
+        );
+        let v = self.vm.new_userdata(class.id, Rc::new(handle));
+        self.lift(v)
+    }
+
+    /// The script object for host object `id`: the one scripts already have
+    /// if there is one, otherwise `make()`'s handle as a new object of
+    /// `class`. Reaching the same object twice gives the same value, so `==`
+    /// and table keys work. Ids are per class tree, so a `Box` and a `Node`
+    /// with the same id are the same object.
+    ///
+    /// Nothing here keeps it alive: once no script holds it, it gets
+    /// collected, and the next call makes a new one.
+    ///
+    /// # Panics
+    ///
+    /// If `class` is from another engine.
+    pub fn object<H: 'static>(
+        &mut self,
+        class: &crate::Class<H>,
+        id: u64,
+        make: impl FnOnce() -> H,
+    ) -> Value {
+        assert_eq!(
+            class.vm,
+            self.vm.id(),
+            "a class from one Engine was used in another"
+        );
+        let v = self.vm.interned_userdata(class.id, id, || Rc::new(make()));
+        self.lift(v)
+    }
+
     /// Moves `value` into the VM as userdata of type `T`.
     pub fn create_userdata<T: UserData>(&mut self, value: T) -> Ud<T> {
         let ty = crate::userdata::type_id_of::<T>(self.vm);

@@ -12,25 +12,47 @@
 //!   the ones it has
 //! - an alias reference or an error type becomes `any`
 
-use crate::types::{FnType, Meta, Pack, TableType, Type};
+use crate::types::{FnType, Meta, NamedType, Pack, TableType, Type};
 
 /// `t` as type syntax that parses back to (a simplified version of) it.
 pub fn portable(t: &Type) -> String {
     let mut out = String::new();
-    write_type(&mut out, t, 0);
+    write_type(&mut out, t, 0, false);
     out
+}
+
+/// `t` as type syntax, keeping the names of aliases (`Signal<Shape>`), for
+/// writing a definitions file that has the aliases too.
+pub(crate) fn with_names(t: &Type) -> String {
+    let mut out = String::new();
+    write_type(&mut out, t, 0, true);
+    out
+}
+
+/// A result pack as it goes after `->` (or `:` in a declaration), names kept.
+pub(crate) fn pack_with_names(out: &mut String, p: &Pack) {
+    write_pack(out, p, 0, true);
+}
+
+/// What goes after `...: ` in a declaration, `T` or `T...`, names kept.
+pub(crate) fn variadic_with_names(out: &mut String, v: &Type) {
+    match v.pack_var() {
+        Some(g) => out.push_str(&g.display()),
+        None => write_type(out, v, 1, true),
+    }
 }
 
 /// How deep to follow types before giving up with `any` (detached types are
 /// finite, but just in case).
 const MAX_DEPTH: u32 = 32;
 
-fn write_type(out: &mut String, t: &Type, depth: u32) {
+fn write_type(out: &mut String, t: &Type, depth: u32, names: bool) {
     if depth > MAX_DEPTH {
         out.push_str("any");
         return;
     }
     match t {
+        Type::Named(n) if names => write_named(out, n, depth),
         Type::Any | Type::Error | Type::Named(_) => out.push_str("any"),
         Type::Unknown => out.push_str("unknown"),
         Type::Never => out.push_str("never"),
@@ -42,8 +64,8 @@ fn write_type(out: &mut String, t: &Type, depth: u32) {
         Type::StrLit(s) => out.push_str(&quote(s)),
         Type::Class(name) => out.push_str(name),
         Type::Generic(g) => out.push_str(&g.display()),
-        Type::Function(f) => write_fn(out, f, depth),
-        Type::Table(tt) => write_table(out, tt, depth),
+        Type::Function(f) => write_fn(out, f, depth, names),
+        Type::Table(tt) => write_table(out, tt, depth, names),
         Type::Union(ts) if ts.len() == 2 && ts.iter().any(|m| matches!(m, Type::Nil)) => {
             let other = ts
                 .iter()
@@ -56,7 +78,7 @@ fn write_type(out: &mut String, t: &Type, depth: u32) {
             if wrap {
                 out.push('(');
             }
-            write_type(out, other, depth + 1);
+            write_type(out, other, depth + 1, names);
             if wrap {
                 out.push(')');
             }
@@ -79,7 +101,7 @@ fn write_type(out: &mut String, t: &Type, depth: u32) {
                 if wrap {
                     out.push('(');
                 }
-                write_type(out, m, depth + 1);
+                write_type(out, m, depth + 1, names);
                 if wrap {
                     out.push(')');
                 }
@@ -88,7 +110,51 @@ fn write_type(out: &mut String, t: &Type, depth: u32) {
     }
 }
 
-fn write_fn(out: &mut String, f: &FnType, depth: u32) {
+/// `Name<A, B>`, `Signal<Shape>` for an alias whose one parameter is a pack.
+fn write_named(out: &mut String, n: &NamedType, depth: u32) {
+    out.push_str(&n.alias.name);
+    if n.args.is_empty() && n.packs.is_empty() {
+        return;
+    }
+    out.push('<');
+    let mut first = true;
+    for a in &n.args {
+        if !first {
+            out.push_str(", ");
+        }
+        first = false;
+        write_type(out, a, depth + 1, true);
+    }
+    let one_pack = n.alias.generics.len() == 1 && n.args.is_empty();
+    for p in &n.packs {
+        if !first {
+            out.push_str(", ");
+        }
+        first = false;
+        let bare = one_pack && p.variadic.is_none() && !p.types.is_empty();
+        if !bare {
+            out.push('(');
+        }
+        for (i, t) in p.types.iter().enumerate() {
+            if i > 0 {
+                out.push_str(", ");
+            }
+            write_type(out, t, depth + 1, true);
+        }
+        if let Some(v) = &p.variadic {
+            if !p.types.is_empty() {
+                out.push_str(", ");
+            }
+            write_variadic(out, v, depth, true);
+        }
+        if !bare {
+            out.push(')');
+        }
+    }
+    out.push('>');
+}
+
+fn write_fn(out: &mut String, f: &FnType, depth: u32, names: bool) {
     if !f.generics.is_empty() {
         let g: Vec<String> = f.generics.iter().map(|g| g.display()).collect();
         out.push('<');
@@ -100,45 +166,47 @@ fn write_fn(out: &mut String, f: &FnType, depth: u32) {
         if i > 0 {
             out.push_str(", ");
         }
-        write_type(out, p, depth + 1);
+        write_type(out, p, depth + 1, names);
     }
     if let Some(v) = &f.variadic {
         if !f.params.is_empty() {
             out.push_str(", ");
         }
-        write_variadic(out, v, depth);
+        write_variadic(out, v, depth, names);
     }
     out.push_str(") -> ");
-    write_pack(out, &f.rets, depth);
+    write_pack(out, &f.rets, depth, names);
 }
 
-fn write_variadic(out: &mut String, v: &Type, depth: u32) {
+fn write_variadic(out: &mut String, v: &Type, depth: u32, names: bool) {
     match v.pack_var() {
         Some(g) => out.push_str(&g.display()),
         None => {
             out.push_str("...");
-            write_type(out, v, depth + 1);
+            write_type(out, v, depth + 1, names);
         }
     }
 }
 
-fn write_pack(out: &mut String, p: &Pack, depth: u32) {
+fn write_pack(out: &mut String, p: &Pack, depth: u32, names: bool) {
     match (&p.types[..], &p.variadic) {
-        ([one], None) if !matches!(one, Type::Function(_)) => write_type(out, one, depth + 1),
-        ([], Some(v)) => write_variadic(out, v, depth),
+        ([one], None) if !matches!(one, Type::Function(_)) => {
+            write_type(out, one, depth + 1, names)
+        }
+        ([], Some(v)) => write_variadic(out, v, depth, names),
         _ => {
             out.push('(');
             for (i, t) in p.types.iter().enumerate() {
                 if i > 0 {
                     out.push_str(", ");
                 }
-                write_type(out, t, depth + 1);
+                write_type(out, t, depth + 1, names);
             }
             if let Some(v) = &p.variadic {
                 if !p.types.is_empty() {
                     out.push_str(", ");
                 }
-                write_variadic(out, v, depth);
+                write_variadic(out, v, depth, names);
             }
             out.push(')');
         }
@@ -191,7 +259,7 @@ fn fields(tt: &TableType, depth: u32) -> Vec<(String, Type)> {
     out
 }
 
-fn write_table(out: &mut String, tt: &TableType, depth: u32) {
+fn write_table(out: &mut String, tt: &TableType, depth: u32, names: bool) {
     let fields = fields(tt, depth);
     match (&fields[..], &tt.indexer) {
         ([], None) => {
@@ -200,7 +268,7 @@ fn write_table(out: &mut String, tt: &TableType, depth: u32) {
         }
         ([], Some((Type::Number, v))) => {
             out.push('{');
-            write_type(out, v, depth + 1);
+            write_type(out, v, depth + 1, names);
             out.push('}');
             return;
         }
@@ -222,16 +290,16 @@ fn write_table(out: &mut String, tt: &TableType, depth: u32) {
             out.push(']');
         }
         out.push_str(": ");
-        write_type(out, t, depth + 1);
+        write_type(out, t, depth + 1, names);
     }
     if let Some((k, v)) = &tt.indexer {
         if !first {
             out.push_str(", ");
         }
         out.push('[');
-        write_type(out, k, depth + 1);
+        write_type(out, k, depth + 1, names);
         out.push_str("]: ");
-        write_type(out, v, depth + 1);
+        write_type(out, v, depth + 1, names);
     }
     out.push_str(" }");
 }

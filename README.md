@@ -82,6 +82,7 @@ Full history's in [`CHANGELOG.md`](CHANGELOG.md), and the why behind things is i
 - [The language](docs/language.md): types, classes and metatables, coroutines, patterns, buffers and vectors, modules, and where Rhue isn't quite Luau
 - [Embedding](docs/embedding.md): registering functions and types, limits, tasks, async hosts, WebAssembly, hot reload, environments, serde, saved chunks
 - [Tooling](docs/tooling.md): the `rhue` CLI, the language server and the debugger
+- [Moving to 3.0](docs/migrating.md): what a 2.x host has to check, and moving a handle host over to class trees
 - [How it works](docs/ARCHITECTURE.md): the pipeline and the VM as they are now, and [`docs/DESIGN.md`](docs/DESIGN.md) for how they got that way
 
 ## 🚀 Performance

@@ -164,6 +164,7 @@ mod environment;
 mod hints;
 mod modules;
 mod native;
+mod operators;
 #[cfg(feature = "tooling")]
 mod outline;
 #[cfg(feature = "serde")]
@@ -171,6 +172,7 @@ pub mod serde;
 mod tasks;
 mod userdata;
 mod value;
+mod vector;
 
 use std::fmt;
 use std::marker::PhantomData;
@@ -194,6 +196,7 @@ pub use hints::{HintKind, InlayHint};
 pub use modules::Analysis;
 pub use modules::Reloaded;
 pub use native::{IntoAsyncNative, IntoNative, IntoNativeResult, WithContext};
+pub use operators::Operator;
 #[cfg(feature = "tooling")]
 pub use outline::{
     Base, Exports, FieldUse, Outline, SemanticToken, Symbol, SymbolKind, TokenKind, outline,
@@ -204,8 +207,9 @@ pub use rhue_compiler::CompileOptions;
 pub use rhue_derive::UserData;
 pub use rhue_parser::ast::TypeMode;
 pub use tasks::{Task, TaskState};
-pub use userdata::{IntoMethod, TypeBuilder, Ud, UserData};
+pub use userdata::{Class, ClassBuilder, IntoHandleMethod, IntoMethod, TypeBuilder, Ud, UserData};
 pub use value::{AnyUserData, Buffer, Function, Table, Thread, Value};
+pub use vector::VectorBuilder;
 
 /// Memory statistics; see [`Engine::heap_stats`].
 pub use rhue_vm::{HeapStats, ThreadEnd};
@@ -447,6 +451,96 @@ impl Engine {
             .map_err(|d| Error::new(ErrorKind::Syntax, d, &SourceFile::new("<declaration>", ty)))
     }
 
+    /// Tells the checker what reading a name that isn't a member of class
+    /// `class` gives, for a class with an index hook
+    /// ([`ClassBuilder::index`]): `declare_index("Node", "Node")` makes
+    /// `world.Box` a `Node` in strict scripts. Classes under it get it too.
+    pub fn declare_index(&mut self, class: &str, ty: &str) -> Result<(), Error> {
+        type_env(&mut self.vm)
+            .declare_index(class, ty)
+            .map_err(|d| Error::new(ErrorKind::Syntax, d, &SourceFile::new("<declaration>", ty)))
+    }
+
+    /// Tells the checker argument `arg` (0 is the first after the object) of
+    /// class `class`'s method `method` names a class, as `@class(param)` does
+    /// in a definitions file. A string literal naming a class there makes a
+    /// method that returns a class return that one
+    /// (`FindFirstChildOfClass("Box")` is a `Box?`), and makes one that
+    /// returns a boolean narrow the object in an `if` (`if n:IsA("Box")
+    /// then`). A literal that isn't a class is an error in strict scripts.
+    /// The method has to be the class's own and take a string there.
+    pub fn declare_class_param(
+        &mut self,
+        class: &str,
+        method: &str,
+        arg: usize,
+    ) -> Result<(), Error> {
+        type_env(&mut self.vm)
+            .declare_class_param(class, method, arg)
+            .map_err(|m| {
+                let d = Diagnostic::error(m, Span::new(0, 0));
+                Error::new(
+                    ErrorKind::Type,
+                    vec![d],
+                    &SourceFile::new("<declaration>", ""),
+                )
+            })
+    }
+
+    /// The same as [`declare_class_param`](Self::declare_class_param) for a
+    /// global function, or a function in a global table: `path` is `spawn`
+    /// or `Instance.new`, and `arg` counts from 0. Then
+    /// `Instance.new("Box")` is a `Box` to the checker.
+    pub fn declare_global_class_param(&mut self, path: &str, arg: usize) -> Result<(), Error> {
+        type_env(&mut self.vm)
+            .declare_global_class_param(path, arg)
+            .map_err(|m| {
+                let d = Diagnostic::error(m, Span::new(0, 0));
+                Error::new(
+                    ErrorKind::Type,
+                    vec![d],
+                    &SourceFile::new("<declaration>", ""),
+                )
+            })
+    }
+
+    /// Everything the host declared, as a definitions file (`.d.rhue`) the
+    /// standalone tools can read: `rhue --check --definitions` and
+    /// `rhue-lsp`. Classes, their members, globals, and aliases from loaded
+    /// definitions files, each sorted by name so it diffs cleanly. Parameter
+    /// names aren't kept, so they come out as `arg1`, `arg2` and so on. The
+    /// standard library is left out. Nothing needs to have run first.
+    pub fn definitions(&mut self) -> String {
+        type_env(&mut self.vm).definitions()
+    }
+
+    /// Tells the type checker what a definitions file (`.d.rhue`) declares,
+    /// for checking scripts written for a host without the host. Types only,
+    /// nothing gets defined at run time. Its aliases (`type Signal<T...> =
+    /// ...`) can be named by scripts too. With any error nothing changes.
+    pub fn load_definitions(&mut self, name: &str, source: &str) -> Result<(), Error> {
+        let file = SourceFile::new(name, source);
+        let defs = rhue_parser::parse_definitions(source)
+            .map_err(|d| Error::new(ErrorKind::Syntax, d, &file))?;
+        type_env(&mut self.vm)
+            .load_definitions(&defs, source)
+            .map_err(|d| Error::new(ErrorKind::Type, d, &file))
+    }
+
+    /// What a definitions file declares that this engine doesn't have, for
+    /// a test in the host's own suite that keeps a checked-in `.d.rhue` in
+    /// step: `Node`, `Shape extends Node`, `Node.Name`, `Node.Name can be
+    /// set`, `Node:Destroy`, `Node[string]`, `world`. Only names get
+    /// compared, not types. Empty means everything's there.
+    pub fn check_definitions(&mut self, name: &str, source: &str) -> Result<Vec<String>, Error> {
+        let file = SourceFile::new(name, source);
+        let defs = rhue_parser::parse_definitions(source)
+            .map_err(|d| Error::new(ErrorKind::Syntax, d, &file))?;
+        type_env(&mut self.vm)
+            .check_definitions(&defs, source)
+            .map_err(|d| Error::new(ErrorKind::Type, d, &file))
+    }
+
     /// An engine that compiles with `options` (see [`CompileOptions`]).
     pub fn with_options(options: CompileOptions) -> Self {
         let mut engine = Self::new();
@@ -673,6 +767,83 @@ impl Engine {
             vm: &mut self.vm,
             ty,
             _t: PhantomData,
+        }
+    }
+
+    /// Starts a class whose objects are all handles of host type `H`, for a
+    /// host whose objects form a class tree (a `Box` that's a `Shape` that's a
+    /// `Node`) behind one Rust type. Give it a parent first if it has one, add
+    /// members, then [`finish`](ClassBuilder::finish) it. Objects get made with
+    /// [`Context::create_object`].
+    ///
+    /// ```
+    /// # use rhue::{Engine, Value};
+    /// # use std::cell::Cell;
+    /// struct Handle { size: Cell<f64> }
+    ///
+    /// let mut engine = Engine::new();
+    /// let node = engine.define_class::<Handle>("Node")
+    ///     .method("Grow", |h: &Handle, by: f64| h.size.set(h.size.get() + by))
+    ///     .finish();
+    /// let shape = engine.define_class::<Handle>("Shape")
+    ///     .parent(&node)
+    ///     .property("Size", |h: &Handle| h.size.get(), |h: &Handle, v: f64| h.size.set(v))
+    ///     .finish();
+    /// let obj = engine.context().create_object(&shape, Handle { size: Cell::new(1.0) });
+    /// engine.set_global("s", obj);
+    /// let v = engine.eval("s:Grow(2) return s.Size, typeof(s)").unwrap();
+    /// assert_eq!(v, [Value::Number(3.0), Value::from("Node")]);
+    /// ```
+    pub fn define_class<H: 'static>(&mut self, name: &str) -> ClassBuilder<'_, H> {
+        ClassBuilder {
+            vm: &mut self.vm,
+            name: std::rc::Rc::from(name),
+            parent: None,
+            id: None,
+            _h: PhantomData,
+        }
+    }
+
+    /// Adds host members to the built-in `vector`: properties like
+    /// `v.Magnitude`, methods like `v:Dot(w)`, and a constructor table if
+    /// scripts expect one. Reading `v.x` costs the same as before.
+    ///
+    /// ```
+    /// # use rhue::{Engine, Value};
+    /// let mut engine = Engine::new();
+    /// engine.vector()
+    ///     .property("Magnitude", |v: [f32; 3]| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt())
+    ///     .method("Dot", |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2])
+    ///     .constructor("Vector3");
+    /// let v = engine.eval("local v = Vector3.new(3, 4) return v.Magnitude, v:Dot(Vector3.one)").unwrap();
+    /// assert_eq!(v, [Value::Number(5.0), Value::Number(7.0)]);
+    /// ```
+    pub fn vector(&mut self) -> VectorBuilder<'_> {
+        VectorBuilder { vm: &mut self.vm }
+    }
+
+    /// Adds members to a class that's already made. Every class under it gets
+    /// them too, except where a child has a member of the same name itself.
+    ///
+    /// # Panics
+    ///
+    /// If `class` is from another engine.
+    pub fn extend_class<H: 'static>(&mut self, class: &Class<H>) -> ClassBuilder<'_, H> {
+        assert_eq!(
+            class.vm,
+            self.vm.id(),
+            "a class from one Engine was used in another"
+        );
+        let parent = self
+            .vm
+            .class_parent(class.id)
+            .map(|p| (p, std::rc::Rc::from(self.vm.class_name(p))));
+        ClassBuilder {
+            vm: &mut self.vm,
+            name: class.name.clone(),
+            parent,
+            id: Some(class.id),
+            _h: PhantomData,
         }
     }
 

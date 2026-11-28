@@ -66,7 +66,7 @@ impl Value {
             Value::String(s) => heap.get(s).to_owned(),
             Value::Function(f) => format!("function: 0x{:08x}", f.id()),
             Value::Table(t) => format!("table: 0x{:08x}", t.id()),
-            Value::UserData(u) => format!("{}: 0x{:08x}", heap.userdata_type_name(u), u.id()),
+            Value::UserData(u) => format!("{}: 0x{:08x}", heap.userdata_class_name(u), u.id()),
             Value::Thread(t) => format!("thread: 0x{:08x}", t.id()),
             Value::Buffer(b) => format!("buffer: 0x{:08x}", b.id()),
             Value::Vector(v) => vector_text(v),

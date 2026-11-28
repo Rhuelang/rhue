@@ -19,6 +19,7 @@
 //! ```
 
 mod check;
+mod definitions;
 mod env;
 mod export;
 mod expr;
@@ -29,7 +30,7 @@ mod relate;
 mod types;
 
 pub use check::{Analysis, CheckOutput, MAX_TYPE_ERRORS, analyze_chunk, check_chunk};
-pub use env::{ClassType, Env, any_function};
+pub use env::{ClassMember, ClassType, Env, any_function};
 pub use export::Exported;
 pub use portable::portable;
 

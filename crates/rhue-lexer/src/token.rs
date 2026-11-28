@@ -140,6 +140,10 @@ pub enum Token {
     Caret,
     #[token("#")]
     Hash,
+    /// Only for `@class(param)` in definitions files, scripts have no use
+    /// for it.
+    #[token("@")]
+    At,
     #[token("..")]
     DotDot,
     #[token("==")]
@@ -248,6 +252,7 @@ impl Token {
             Percent => "`%`",
             Caret => "`^`",
             Hash => "`#`",
+            At => "`@`",
             DotDot => "`..`",
             EqEq => "`==`",
             NotEq => "`~=`",

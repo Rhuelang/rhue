@@ -151,6 +151,47 @@ fn check_reports_type_errors_without_running() {
 }
 
 #[test]
+fn check_reads_a_hosts_definitions() {
+    let dir = std::env::temp_dir().join(format!("rhue-cli-defs-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let defs = dir.join("host.d.rhue");
+    std::fs::write(
+        &defs,
+        "declare class Node\n    Name: string\nend\ndeclare world: Node\n",
+    )
+    .unwrap();
+    let (defs, script) = (defs.to_str().unwrap(), "local n: string = world.Name");
+    let (ok, _, err) = run(&["--check", "-e", script]);
+    assert!(!ok, "no world without the file");
+    assert!(err.contains("Unknown global 'world'"), "{err}");
+    let (ok, _, err) = run(&["--check", "--definitions", defs, "-e", script]);
+    assert!(ok, "{err}");
+    let (ok, _, err) = run(&["--check", "--definitions", defs, "-e", "world.Nope = 1"]);
+    assert!(!ok);
+    assert!(
+        err.contains("Key 'Nope' not found in class 'Node'"),
+        "{err}"
+    );
+
+    // a bad file says where, and running with one is refused
+    let bad = dir.join("bad.d.rhue");
+    std::fs::write(&bad, "declare class Node\n    Name: Nope\nend\n").unwrap();
+    let (ok, _, err) = run(&["--check", "--definitions", bad.to_str().unwrap(), "-e", "1"]);
+    assert!(!ok);
+    assert!(
+        err.contains("Unknown type 'Nope'") && err.contains("bad.d.rhue:2"),
+        "{err}"
+    );
+    let (ok, _, err) = run(&["--definitions", defs, "-e", "1"]);
+    assert!(!ok);
+    assert!(
+        err.contains("--definitions only goes with --check"),
+        "{err}"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn strict_flag_checks_before_running() {
     let (ok, _, err) = run(&["-e", "local x: number = 'one'"]);
     assert!(ok, "unchecked by default: {err}");

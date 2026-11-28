@@ -199,7 +199,12 @@ fn expression_errors() {
         "expected end of input after expression, found number"
     );
     assert_eq!(expr_err("* 2"), "expected an expression, found `*`");
-    assert_eq!(expr_err("1 @ 2"), "unexpected character `@`");
+    assert_eq!(expr_err("1 $ 2"), "unexpected character `$`");
+    // a token, for `@class` in definitions files
+    assert_eq!(
+        expr_err("1 @ 2"),
+        "expected end of input after expression, found `@`"
+    );
     assert_eq!(
         expr_err("if a then b"),
         "expected `else` in `if` expression (the `else` branch is required), found end of input"

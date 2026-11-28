@@ -506,6 +506,29 @@ fn host_declarations() {
 }
 
 #[test]
+fn classes_have_parents() {
+    let mut env = Env::new();
+    env.declare_class("Node", None);
+    env.declare_class("Shape", Some("Node"));
+    env.declare_class("Box", Some("Shape"));
+    env.declare_property("Node", "Name", "string", true)
+        .unwrap();
+    assert!(env.is_subclass("Box", "Node") && env.is_subclass("Box", "Box"));
+    assert!(!env.is_subclass("Node", "Box"));
+    assert!(matches!(
+        env.class_member("Box", "Name", false),
+        Some(crate::ClassMember::Prop(_, true))
+    ));
+    // a parent that would make a loop is ignored
+    env.declare_class("Node", Some("Box"));
+    assert!(env.class("Node").unwrap().parent.is_none());
+    assert_eq!(env.class_chain("Box").count(), 3);
+    // declaring it again without a parent keeps the one it has
+    env.declare_class("Box", None);
+    assert!(env.is_subclass("Box", "Shape"));
+}
+
+#[test]
 fn chunks_export_their_globals() {
     let mut env = Env::new();
     let src = "function greet(n: string): string return 'hi ' .. n end counter = 0";

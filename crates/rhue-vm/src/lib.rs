@@ -270,9 +270,12 @@ impl NativeCtx<'_> {
     /// `tostring` through `__tostring`. The string it returned, or `None` when
     /// `v` has no `__tostring`.
     pub fn tostring_meta(&mut self, v: Value) -> Result<Option<Value>, NativeError> {
-        if let Value::Table(t) = v
-            && self.vm.heap.table(t).meta().is_some()
-        {
+        let has_meta = match v {
+            Value::Table(t) => self.vm.heap.table(t).meta().is_some(),
+            Value::UserData(u) => self.vm.ud_meta(u).is_some(),
+            _ => false,
+        };
+        if has_meta {
             self.park();
             return self.vm.tostring_meta(v);
         }
@@ -522,17 +525,128 @@ pub enum PinKey {
     Buffer(BufRef),
 }
 
-/// How scripts see one kind of userdata: `obj.field` calls a getter, `obj.field
-/// = v` a setter, and `obj:method(...)` finds a function here. Natives get the
-/// object itself as their first argument.
-struct UdType {
+/// A userdata class: how scripts see its objects. `obj.field` calls a
+/// getter, `obj.field = v` a setter, and `obj:method(...)` finds a function
+/// here. Natives get the object itself as their first argument.
+struct Class {
     name: Rc<str>,
-    methods: FxHashMap<StrRef, Value>,
-    getters: FxHashMap<StrRef, NativeFn>,
-    setters: FxHashMap<StrRef, NativeFn>,
+    parent: Option<u32>,
+    children: Vec<u32>,
+    /// The Rust type every object in this class tree holds.
+    holds: std::any::TypeId,
+    /// Own and inherited members, flattened. A slot never moves: inherited
+    /// members keep their parent's slot and new ones get appended.
+    members: Vec<(StrRef, Member)>,
+    by_name: FxHashMap<StrRef, u32>,
+    /// The names this class defines itself, which a parent's member of the
+    /// same name doesn't replace.
+    own: std::collections::HashSet<StrRef, hash::FxBuildHasher>,
+    /// Called with the object and the name when a read finds no member. Its
+    /// own or the nearest ancestor's, copied down like members are.
+    index: Option<NativeFn>,
+    own_index: bool,
+    /// The operators (`__add`, `__eq`, ...), as a metatable scripts can't get
+    /// at. Made with the first one, copied down like members are.
+    meta: Option<TableRef>,
+    /// The operators this class defines itself.
+    own_ops: std::collections::HashSet<StrRef, hash::FxBuildHasher>,
+}
+
+/// The metamethods a host class can have.
+pub const CLASS_OPERATORS: [&str; 16] = [
+    "__add",
+    "__sub",
+    "__mul",
+    "__div",
+    "__idiv",
+    "__mod",
+    "__pow",
+    "__unm",
+    "__concat",
+    "__len",
+    "__eq",
+    "__lt",
+    "__le",
+    "__tostring",
+    "__call",
+    "__iter",
+];
+
+#[derive(Clone)]
+enum Member {
+    Method(Value),
+    Property {
+        get: Option<NativeFn>,
+        set: Option<NativeFn>,
+    },
+}
+
+impl Class {
+    fn member(&self, k: StrRef) -> Option<&Member> {
+        self.by_name
+            .get(&k)
+            .map(|&slot| &self.members[slot as usize].1)
+    }
+
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a class has nowhere near u32::MAX members"
+    )]
+    fn put(&mut self, k: StrRef, m: Member) {
+        match self.by_name.get(&k) {
+            Some(&slot) => self.members[slot as usize].1 = m,
+            None => {
+                self.by_name.insert(k, self.members.len() as u32);
+                self.members.push((k, m));
+            }
+        }
+    }
 }
 
 type PinTable = Rc<RefCell<HashMap<PinKey, usize>>>;
+
+/// The bit marking an instruction cache cell as a userdata method's class and
+/// slot, see [`ud_method`].
+const UD_CACHED: u32 = 1 << 31;
+
+/// Method `k` of userdata `u` for `SELF`, through the instruction's cache
+/// cell `hint`, or `None` if `k` isn't a method (then the usual path
+/// handles it). A userdata cell is [`UD_CACHED`], a 15-bit class id and a
+/// 16-bit slot. Slots never move, so a matching class mostly means the
+/// slot's right, but a chunk can run in more than one VM, so the slot's
+/// name gets checked too. Tables keep a hash index in the same cell and
+/// it's never this big, so the two just miss each other. Classes past 32,767
+/// and members past 65,535 don't get cached.
+///
+/// Only `SELF` has this. An arm like it in `GETFIELD` and `SETFIELD` made
+/// the dispatch loop slower for every script, userdata or not.
+#[inline]
+fn ud_method(
+    heap: &Heap,
+    classes: &[Class],
+    u: UdRef,
+    k: StrRef,
+    hint: &Cell<u32>,
+) -> Option<Value> {
+    let id = heap.userdata(u).type_id;
+    let class = &classes[id as usize];
+    let h = hint.get();
+    if h & UD_CACHED != 0
+        && (h >> 16) & 0x7fff == id
+        && let Some((name, Member::Method(m))) = class.members.get((h & 0xffff) as usize)
+        && *name == k
+    {
+        return Some(*m);
+    }
+    let slot = *class.by_name.get(&k)?;
+    if id <= 0x7fff && slot <= 0xffff {
+        hint.set(UD_CACHED | id << 16 | slot);
+    }
+    match &class.members[slot as usize].1 {
+        Member::Method(m) => Some(*m),
+        Member::Property { .. } => None,
+    }
+}
 
 /// How much of the instruction budget gets handed out at once. Every time a
 /// slice runs out the VM checks for an [`Interrupt`], so scripts notice one
@@ -840,8 +954,10 @@ pub struct Vm {
     /// Stands in for the current frame while it sits in `frames` during a
     /// native call.
     placeholder: Rc<LuaClosure>,
-    ud_types: Vec<UdType>,
+    ud_types: Vec<Class>,
     ud_type_ids: HashMap<std::any::TypeId, u32>,
+    /// What the host put on `vector` past `x`, `y` and `z`.
+    vector_members: HashMap<StrRef, Member>,
     /// Data the embedding layer keeps with the VM (the `rhue` crate keeps its
     /// type-checking environment here).
     host_data: Option<Box<dyn std::any::Any>>,
@@ -882,6 +998,7 @@ impl Vm {
     pub fn bare() -> Self {
         let mut heap = Heap::new();
         let events = meta::Events::intern(&mut heap);
+        heap.set_mode_key(events.get(meta::Event::Mode));
         let main_thread = heap.alloc_thread(heap::ThreadState::default(), CoStatus::Running);
         let interrupt: Arc<Interrupt> = Arc::default();
         Vm {
@@ -929,6 +1046,7 @@ impl Vm {
             }),
             ud_types: Vec::new(),
             ud_type_ids: HashMap::new(),
+            vector_members: HashMap::new(),
             host_data: None,
         }
     }
@@ -1187,13 +1305,23 @@ impl Vm {
         roots.extend(self.events.all().map(|s| GcRoot::Value(Value::String(s))));
         roots.extend(self.internal_roots.iter().map(|&v| GcRoot::Value(v)));
         roots.extend(self.native_roots.iter().map(|&v| GcRoot::Value(v)));
-        for ty in &self.ud_types {
-            for (&k, &m) in &ty.methods {
-                roots.push(GcRoot::Value(Value::String(k)));
-                roots.push(GcRoot::Value(m));
+        for class in &self.ud_types {
+            for (k, m) in &class.members {
+                roots.push(GcRoot::Value(Value::String(*k)));
+                if let Member::Method(v) = m {
+                    roots.push(GcRoot::Value(*v));
+                }
             }
-            for &k in ty.getters.keys().chain(ty.setters.keys()) {
-                roots.push(GcRoot::Value(Value::String(k)));
+        }
+        for class in &self.ud_types {
+            if let Some(m) = class.meta {
+                roots.push(GcRoot::Value(Value::Table(m)));
+            }
+        }
+        for (k, m) in &self.vector_members {
+            roots.push(GcRoot::Value(Value::String(*k)));
+            if let Member::Method(v) = m {
+                roots.push(GcRoot::Value(*v));
             }
         }
         self.heap.collect(roots);
@@ -1201,44 +1329,321 @@ impl Vm {
 
     // ─ Userdata ──────────────────────────────────────────────────────────────
 
-    /// The id of the userdata type for Rust type `rust`, making it (named
-    /// `name`) on first use. The flag's `true` when it was just made.
+    /// The id of the root class for Rust type `rust` (what derive types use),
+    /// making it (named `name`) on first use. The flag's `true` when it was
+    /// just made.
     pub fn userdata_type(&mut self, rust: std::any::TypeId, name: &str) -> (u32, bool) {
         if let Some(&id) = self.ud_type_ids.get(&rust) {
             return (id, false);
         }
-        let id = self.heap.add_userdata_type(name);
-        self.ud_types.push(UdType {
-            name: Rc::from(name),
-            methods: FxHashMap::default(),
-            getters: FxHashMap::default(),
-            setters: FxHashMap::default(),
-        });
+        let id = self.new_class(name, None, rust);
         self.ud_type_ids.insert(rust, id);
         (id, true)
     }
 
-    /// Makes `obj:name(...)` find `method` on userdata of type `ty`.
-    pub fn add_method(&mut self, ty: u32, name: &str, method: Value) {
+    /// A new class named `name` whose objects hold a `holds`, under `parent`
+    /// if there is one. It starts with everything the parent has, and `typeof`
+    /// gives its root class's name. A parent holding a different Rust type is
+    /// an error, every class in a tree holds the same one.
+    pub fn define_class(
+        &mut self,
+        name: &str,
+        parent: Option<u32>,
+        holds: std::any::TypeId,
+    ) -> Result<u32, String> {
+        if let Some(p) = parent {
+            let pc = &self.ud_types[p as usize];
+            if pc.holds != holds {
+                return Err(format!(
+                    "'{name}' can't be a child of '{}', whose objects hold a different Rust type",
+                    pc.name
+                ));
+            }
+        }
+        Ok(self.new_class(name, parent, holds))
+    }
+
+    fn new_class(&mut self, name: &str, parent: Option<u32>, holds: std::any::TypeId) -> u32 {
+        let name: Rc<str> = Rc::from(name);
+        let (members, by_name, typeof_name, index, parent_meta) = match parent {
+            Some(p) => {
+                let pc = &self.ud_types[p as usize];
+                let root = self.class_root(p);
+                (
+                    pc.members.clone(),
+                    pc.by_name.clone(),
+                    self.ud_types[root as usize].name.clone(),
+                    pc.index.clone(),
+                    pc.meta,
+                )
+            }
+            None => (Vec::new(), FxHashMap::default(), name.clone(), None, None),
+        };
+        // a child gets its own copy, so its own operators don't land on the parent
+        let meta = parent_meta.map(|m| {
+            let copy = self.heap.table(m).clone();
+            self.heap.alloc_table(copy)
+        });
+        let id = self.heap.add_userdata_type(typeof_name, name.clone());
+        self.ud_types.push(Class {
+            name,
+            parent,
+            children: Vec::new(),
+            holds,
+            members,
+            by_name,
+            own: Default::default(),
+            index,
+            own_index: false,
+            meta,
+            own_ops: Default::default(),
+        });
+        if let Some(p) = parent {
+            self.ud_types[p as usize].children.push(id);
+        }
+        id
+    }
+
+    fn class_root(&self, mut c: u32) -> u32 {
+        while let Some(p) = self.ud_types[c as usize].parent {
+            c = p;
+        }
+        c
+    }
+
+    /// The parent of class `c`.
+    pub fn class_parent(&self, c: u32) -> Option<u32> {
+        self.ud_types[c as usize].parent
+    }
+
+    /// The name of class `c`.
+    pub fn class_name(&self, c: u32) -> &str {
+        &self.ud_types[c as usize].name
+    }
+
+    /// The class called `name`, if there is one.
+    pub fn class_by_name(&self, name: &str) -> Option<u32> {
+        self.ud_types
+            .iter()
+            .position(|c| &*c.name == name)
+            .and_then(|i| u32::try_from(i).ok())
+    }
+
+    /// Whether class `c` is `ancestor` or under it.
+    pub fn class_is_under(&self, mut c: u32, ancestor: u32) -> bool {
+        loop {
+            if c == ancestor {
+                return true;
+            }
+            match self.ud_types[c as usize].parent {
+                Some(p) => c = p,
+                None => return false,
+            }
+        }
+    }
+
+    /// Changes member `name` of class `c` with `change`, and gives every class
+    /// under it that doesn't define `name` itself the result too.
+    fn change_member(
+        &mut self,
+        c: u32,
+        name: &str,
+        change: impl FnOnce(Option<&Member>) -> Member,
+    ) {
         let k = self.heap.intern(name);
-        self.ud_types[ty as usize].methods.insert(k, method);
+        let class = &mut self.ud_types[c as usize];
+        let m = change(class.member(k));
+        class.put(k, m.clone());
+        class.own.insert(k);
+        let mut todo = class.children.clone();
+        while let Some(child) = todo.pop() {
+            let class = &mut self.ud_types[child as usize];
+            if class.own.contains(&k) {
+                continue;
+            }
+            class.put(k, m.clone());
+            todo.extend_from_slice(&class.children);
+        }
+    }
+
+    /// Gives class `ty` (and the classes under it without their own) an index
+    /// hook: a read of a name that isn't a member calls `hook(obj, name)`, and
+    /// its first result is the value. No results means there's no such member
+    /// after all, and the read errors the way it would without a hook.
+    pub fn set_index_hook(&mut self, ty: u32, hook: NativeFn) {
+        let class = &mut self.ud_types[ty as usize];
+        class.index = Some(hook.clone());
+        class.own_index = true;
+        let mut todo = class.children.clone();
+        while let Some(child) = todo.pop() {
+            let class = &mut self.ud_types[child as usize];
+            if class.own_index {
+                continue;
+            }
+            class.index = Some(hook.clone());
+            todo.extend_from_slice(&class.children);
+        }
+    }
+
+    /// Gives class `ty` (and the classes under it without their own) operator
+    /// `event`, one of [`CLASS_OPERATORS`]: `__add` makes `a + b` call
+    /// `handler(a, b)` when either side is one of these objects, and so on,
+    /// the way a table's metatable does it. `getmetatable` on the objects
+    /// gives a string, so scripts can't change them.
+    pub fn set_class_operator(
+        &mut self,
+        ty: u32,
+        event: &str,
+        handler: Value,
+    ) -> Result<(), String> {
+        if !CLASS_OPERATORS.contains(&event) {
+            return Err(format!("'{event}' isn't an operator a class can have"));
+        }
+        let k = self.heap.intern(event);
+        self.ud_types[ty as usize].own_ops.insert(k);
+        let mut todo = vec![ty];
+        while let Some(c) = todo.pop() {
+            if c != ty && self.ud_types[c as usize].own_ops.contains(&k) {
+                continue;
+            }
+            let meta = self.class_meta(c);
+            let _ = self.heap.table_mut(meta).set(Value::String(k), handler);
+            todo.extend_from_slice(&self.ud_types[c as usize].children);
+        }
+        Ok(())
+    }
+
+    /// Class `c`'s operator metatable, made (and locked) if it has none yet.
+    fn class_meta(&mut self, c: u32) -> TableRef {
+        if let Some(m) = self.ud_types[c as usize].meta {
+            return m;
+        }
+        let lock = self.events.get(meta::Event::Metatable);
+        let text = Value::String(self.heap.intern("The metatable is locked"));
+        let mut t = Table::default();
+        let _ = t.set(Value::String(lock), text);
+        let m = self.heap.alloc_table(t);
+        self.ud_types[c as usize].meta = Some(m);
+        m
+    }
+
+    /// The operator metatable of host object `u`'s class.
+    #[inline]
+    pub(crate) fn ud_meta(&self, u: UdRef) -> Option<TableRef> {
+        self.ud_types[self.heap.userdata(u).type_id as usize].meta
+    }
+
+    /// Makes `obj:name(...)` find `method` on objects of class `ty` (and the
+    /// classes under it).
+    pub fn add_method(&mut self, ty: u32, name: &str, method: Value) {
+        self.change_member(ty, name, |_| Member::Method(method));
     }
 
     /// `obj.name` calls `get(obj)` and takes its first result.
     pub fn add_getter(&mut self, ty: u32, name: &str, get: NativeFn) {
+        self.change_member(ty, name, |old| match old {
+            Some(Member::Property { set, .. }) => Member::Property {
+                get: Some(get),
+                set: set.clone(),
+            },
+            _ => Member::Property {
+                get: Some(get),
+                set: None,
+            },
+        });
+    }
+
+    /// `v:name(...)` on every vector. Components (`x`, `y`, `z` and the
+    /// capitals) always win over a member with the same name.
+    pub fn add_vector_method(&mut self, name: &str, method: Value) {
         let k = self.heap.intern(name);
-        self.ud_types[ty as usize].getters.insert(k, get);
+        self.vector_members.insert(k, Member::Method(method));
+    }
+
+    /// `v.name` on every vector calls `get(v)` and takes its first result.
+    pub fn add_vector_getter(&mut self, name: &str, get: NativeFn) {
+        let k = self.heap.intern(name);
+        self.vector_members.insert(
+            k,
+            Member::Property {
+                get: Some(get),
+                set: None,
+            },
+        );
+    }
+
+    /// A host member of `vector`, for when `key` isn't a component.
+    #[cold]
+    pub(crate) fn vector_member(
+        &mut self,
+        f: &mut Frame,
+        pc: usize,
+        v: [f32; 3],
+        key: Value,
+    ) -> Result<Value, Thrown> {
+        let get = match key {
+            Value::String(k) => match self.vector_members.get(&k) {
+                Some(Member::Method(m)) => return Ok(*m),
+                Some(Member::Property { get: Some(get), .. }) => Some(get.clone()),
+                _ => None,
+            },
+            _ => None,
+        };
+        let Some(get) = get else {
+            let m = format!("attempt to index vector with {}", self.describe_key(key));
+            return Err(self.throw(f, pc, m));
+        };
+        match self.native_from(f, &get, &[Value::Vector(v)]) {
+            Ok(values) => Ok(values.first().copied().unwrap_or(Value::Nil)),
+            Err(e) => Err(self.native_throw(f, pc, e)),
+        }
     }
 
     /// `obj.name = v` calls `set(obj, v)`.
     pub fn add_setter(&mut self, ty: u32, name: &str, set: NativeFn) {
-        let k = self.heap.intern(name);
-        self.ud_types[ty as usize].setters.insert(k, set);
+        self.change_member(ty, name, |old| match old {
+            Some(Member::Property { get, .. }) => Member::Property {
+                get: get.clone(),
+                set: Some(set),
+            },
+            _ => Member::Property {
+                get: None,
+                set: Some(set),
+            },
+        });
     }
 
     pub fn new_userdata(&mut self, ty: u32, data: Rc<dyn std::any::Any>) -> Value {
         assert!((ty as usize) < self.ud_types.len(), "unknown userdata type");
-        Value::UserData(self.heap.alloc_userdata(UserData { type_id: ty, data }))
+        Value::UserData(self.heap.alloc_userdata(UserData {
+            type_id: ty,
+            data,
+            key: None,
+        }))
+    }
+
+    /// The live userdata for host object `id` in class `ty`'s tree, made with
+    /// `make` if there isn't one. Asking for the same id again gives the same
+    /// userdata (so `==` and table keys work) for as long as a script holds
+    /// it. The id is scoped to the tree's root class, so classes in one tree
+    /// share ids and different trees don't.
+    pub fn interned_userdata(
+        &mut self,
+        ty: u32,
+        id: u64,
+        make: impl FnOnce() -> Rc<dyn std::any::Any>,
+    ) -> Value {
+        assert!((ty as usize) < self.ud_types.len(), "unknown userdata type");
+        let key = (self.class_root(ty), id);
+        if let Some(u) = self.heap.interned_object(key) {
+            return Value::UserData(u);
+        }
+        let ud = UserData {
+            type_id: ty,
+            data: make(),
+            key: None,
+        };
+        Value::UserData(self.heap.alloc_interned(ud, key))
     }
 
     fn ud_member(
@@ -1257,21 +1662,48 @@ impl Vm {
             );
             return Err(self.throw(f, pc, msg));
         };
-        if let Some(&m) = ty.methods.get(&k) {
-            return Ok(m);
-        }
-        let Some(get) = ty.getters.get(&k).cloned() else {
-            let msg = format!(
-                "'{}' is not a valid member of {}",
-                self.heap.get(k),
-                ty.name
-            );
-            return Err(self.throw(f, pc, msg));
+        let get = match ty.member(k) {
+            Some(Member::Method(m)) => return Ok(*m),
+            Some(Member::Property { get: Some(get), .. }) => get.clone(),
+            Some(Member::Property { get: None, .. }) => return Err(self.no_member(f, pc, u, k)),
+            None => match ty.index.clone() {
+                Some(hook) => return self.ud_index_hook(f, pc, u, k, &hook),
+                None => return Err(self.no_member(f, pc, u, k)),
+            },
         };
         match self.native_from(f, &get, &[Value::UserData(u)]) {
             Ok(values) => Ok(values.first().copied().unwrap_or(Value::Nil)),
             Err(e) => Err(self.native_throw(f, pc, e)),
         }
+    }
+
+    #[cold]
+    fn ud_index_hook(
+        &mut self,
+        f: &mut Frame,
+        pc: usize,
+        u: UdRef,
+        k: StrRef,
+        hook: &NativeFn,
+    ) -> Result<Value, Thrown> {
+        match self.native_from(f, hook, &[Value::UserData(u), Value::String(k)]) {
+            Ok(values) => match values.first() {
+                Some(&v) => Ok(v),
+                None => Err(self.no_member(f, pc, u, k)),
+            },
+            Err(e) => Err(self.native_throw(f, pc, e)),
+        }
+    }
+
+    #[cold]
+    fn no_member(&mut self, f: &mut Frame, pc: usize, u: UdRef, k: StrRef) -> Thrown {
+        let ty = &self.ud_types[self.heap.userdata(u).type_id as usize];
+        let msg = format!(
+            "'{}' is not a valid member of {}",
+            self.heap.get(k),
+            ty.name
+        );
+        self.throw(f, pc, msg)
     }
 
     fn ud_assign(
@@ -1291,16 +1723,17 @@ impl Vm {
             );
             return Err(self.throw(f, pc, msg));
         };
-        let Some(set) = ty.setters.get(&k).cloned() else {
-            let what = if ty.getters.contains_key(&k) {
-                "a read-only member"
-            } else if ty.methods.contains_key(&k) {
-                "a method, and can't be assigned,"
-            } else {
-                "not a valid member"
-            };
-            let msg = format!("'{}' is {what} of {}", self.heap.get(k), ty.name);
-            return Err(self.throw(f, pc, msg));
+        let set = match ty.member(k) {
+            Some(Member::Property { set: Some(set), .. }) => set.clone(),
+            other => {
+                let what = match other {
+                    Some(Member::Property { .. }) => "a read-only member",
+                    Some(Member::Method(_)) => "a method, and can't be assigned,",
+                    None => "not a valid member",
+                };
+                let msg = format!("'{}' is {what} of {}", self.heap.get(k), ty.name);
+                return Err(self.throw(f, pc, msg));
+            }
         };
         match self.native_from(f, &set, &[Value::UserData(u), value]) {
             Ok(_) => Ok(()),
@@ -2089,6 +2522,9 @@ impl Vm {
         match (l, r) {
             (Value::Table(x), Value::Table(y)) => {
                 self.heap.table(x).meta().is_some() || self.heap.table(y).meta().is_some()
+            }
+            (Value::UserData(x), Value::UserData(y)) => {
+                self.ud_meta(x).is_some() || self.ud_meta(y).is_some()
             }
             _ => false,
         }
@@ -3126,6 +3562,26 @@ impl Vm {
                                 regs[a] = method;
                                 regs[a + 1] = obj;
                             }
+                            // a match instead of an `if let` guard, those need a newer Rust than the MSRV
+                            (Value::UserData(u), Value::String(s)) => match ud_method(
+                                &self.heap,
+                                &self.ud_types,
+                                u,
+                                s,
+                                cache.slot(at, code.len()),
+                            ) {
+                                Some(m) => {
+                                    regs[a] = m;
+                                    regs[a + 1] = obj;
+                                }
+                                None => {
+                                    sync!();
+                                    self.stack[base + a + 1] = obj;
+                                    self.index_meta(f, at, obj, key, base + a)?;
+                                    gc!();
+                                    continue 'frame;
+                                }
+                            },
                             _ => {
                                 sync!();
                                 self.stack[base + a + 1] = obj;
@@ -3159,8 +3615,15 @@ impl Vm {
                         match regs[a] {
                             // `__iter` gives the iterator triple once on the
                             // first step, then the loop calls it
-                            Value::Table(t)
-                                if self.heap.table(t).meta().is_some_and(|m| {
+                            v @ (Value::Table(_) | Value::UserData(_))
+                                if match v {
+                                    Value::Table(t) => self.heap.table(t).meta(),
+                                    Value::UserData(u) => {
+                                        self.ud_types[self.heap.userdata(u).type_id as usize].meta
+                                    }
+                                    _ => None,
+                                }
+                                .is_some_and(|m| {
                                     self.heap
                                         .table(m)
                                         .get_str(self.events.get(meta::Event::Iter))
@@ -3231,7 +3694,9 @@ impl Vm {
                                 Value::String(s) => out.push_str(self.heap.get(s)),
                                 Value::Number(x) => out.push_str(&format_number(x)),
                                 // might have `__tostring`
-                                Value::Table(t) if self.heap.table(t).meta().is_some() => {
+                                v @ (Value::Table(_) | Value::UserData(_))
+                                    if self.metatable_of(v).is_some() =>
+                                {
                                     sync!();
                                     let v = self.interp_meta(f, at, from, c)?;
                                     self.stack[base + a] = v;

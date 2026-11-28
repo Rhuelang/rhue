@@ -6,6 +6,9 @@ use rhue_lexer::{Spanned, Token, lex};
 use crate::ast::*;
 use crate::strings;
 
+mod definitions;
+pub use definitions::parse_definitions;
+
 /// Max nesting (recursion plus left-associative operator chains) before the
 /// parser gives up, so hostile input can't build an endlessly deep tree.
 pub const MAX_DEPTH: u32 = 1000;

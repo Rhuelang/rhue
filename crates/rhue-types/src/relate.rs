@@ -334,7 +334,8 @@ impl Checker<'_> {
         let alias = self.alias_scopes[..alias_limit]
             .iter()
             .rev()
-            .find_map(|s| s.get(name).cloned());
+            .find_map(|s| s.get(name).cloned())
+            .or_else(|| self.env.aliases.get(name).cloned());
         if let Some(alias) = alias {
             return match self.alias_args(&alias, args, span) {
                 Some((args, packs)) => Type::Named(Rc::new(NamedType {
@@ -584,7 +585,7 @@ impl Checker<'_> {
             (BoolLit(x), BoolLit(y)) => x == y,
             (StrLit(x), StrLit(y)) => x == y,
             (Generic(x), Generic(y)) => x.id == y.id,
-            (Class(x), Class(y)) => x == y,
+            (Class(x), Class(y)) => self.env.is_subclass(x, y),
             (Function(f), Function(g)) => {
                 let (f, g) = (f.clone(), g.clone());
                 self.fn_sub(&f, &g, assumed)

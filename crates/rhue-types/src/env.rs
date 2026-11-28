@@ -14,13 +14,59 @@ use crate::check::Checker;
 use crate::types::{AliasDef, ClosedScope, FnType, GenericVar, NamedType, Pack, Type};
 use rhue_parser::ast::StmtKind;
 
-/// A host type's members.
+/// A host type's members. Inherited ones live on the parent, see
+/// [`Env::class_member`].
 #[derive(Clone, Debug, Default)]
 pub struct ClassType {
+    /// The class it inherits from: a `Box` goes wherever its parent `Shape`
+    /// does, and has its members.
+    pub parent: Option<Rc<str>>,
     /// `(name, type, writable)`
     pub props: Vec<(Rc<str>, Type, bool)>,
     /// Function types whose first parameter is the object.
     pub methods: Vec<(Rc<str>, Type)>,
+    /// What reading a name that isn't a member gives, when the host has an
+    /// index hook for the class (children by name, say).
+    pub index: Option<Type>,
+    /// Methods with an argument that names a class, by the argument's
+    /// position after the object (0 is the first). A literal there gives a
+    /// more exact type, see [`Env::declare_class_param`].
+    pub class_params: Vec<(Rc<str>, usize)>,
+    /// Operators (`__add`, `__eq`, ...), each a function type or an
+    /// intersection of overloads. The object isn't always the first operand,
+    /// `2 * v` calls `v`'s `__mul` with `(number, Vec)`.
+    pub operators: Vec<(Rc<str>, Type)>,
+}
+
+/// The metamethods a host class can have.
+pub const CLASS_OPERATORS: [&str; 16] = [
+    "__add",
+    "__sub",
+    "__mul",
+    "__div",
+    "__idiv",
+    "__mod",
+    "__pow",
+    "__unm",
+    "__concat",
+    "__len",
+    "__eq",
+    "__lt",
+    "__le",
+    "__tostring",
+    "__call",
+    "__iter",
+];
+
+/// Whether `name` is one of [`CLASS_OPERATORS`].
+pub fn is_operator(name: &str) -> bool {
+    CLASS_OPERATORS.contains(&name)
+}
+
+/// A class member found by [`Env::class_member`].
+pub enum ClassMember<'a> {
+    Prop(&'a Type, bool),
+    Method(&'a Type),
 }
 
 impl ClassType {
@@ -52,6 +98,14 @@ pub struct Env {
     /// The aliases of imported types (see [`Env::import`]), kept alive here
     /// since the aliases only point at their scope weakly.
     pub(crate) imported: Vec<Rc<ClosedScope>>,
+    /// Aliases from definitions files, which scripts can name too (see
+    /// [`Env::load_definitions`]).
+    pub(crate) aliases: HashMap<Rc<str>, Rc<AliasDef>>,
+    /// Their source, for writing them back out.
+    pub(crate) alias_text: std::collections::BTreeMap<Rc<str>, String>,
+    /// Global functions (`f`, or `Table.f`) with an argument that names a
+    /// class, see [`Env::declare_global_class_param`].
+    pub(crate) global_class_params: HashMap<Rc<str>, usize>,
 }
 
 /// The standard library in Luau type syntax. Overloads are intersections.
@@ -350,7 +404,7 @@ impl Env {
                     return Err(errors);
                 }
                 for name in unknown {
-                    self.declare_class(&name);
+                    self.declare_class(&name, None);
                 }
                 Checker::for_declarations(self).resolve_declaration(&t)
             }
@@ -442,9 +496,227 @@ impl Env {
     }
 
     /// Declares a host type (fine to call twice). Its name can then be used in
-    /// types: `(Player) -> number`.
-    pub fn declare_class(&mut self, name: &str) {
-        self.classes.entry(Rc::from(name)).or_default();
+    /// types: `(Player) -> number`. With a parent it's a subtype of it and has
+    /// its members. A later call with a parent sets it, one without leaves it
+    /// alone, and a parent that would make a loop is ignored.
+    pub fn declare_class(&mut self, name: &str, parent: Option<&str>) {
+        if let Some(p) = parent {
+            self.declare_class(p, None);
+        }
+        let loops = parent.is_some_and(|p| self.is_subclass(p, name));
+        let c = self.classes.entry(Rc::from(name)).or_default();
+        if let Some(p) = parent
+            && !loops
+        {
+            c.parent = Some(Rc::from(p));
+        }
+    }
+
+    /// Class `name` and its ancestors, nearest first.
+    pub fn class_chain<'a>(&'a self, name: &str) -> impl Iterator<Item = &'a ClassType> + 'a {
+        let mut next = self.classes.get(name);
+        // classes can't loop (see declare_class), the cap is a backstop
+        let mut left = 1000;
+        std::iter::from_fn(move || {
+            let c = next.take()?;
+            left -= 1;
+            if left > 0 {
+                next = c.parent.as_deref().and_then(|p| self.classes.get(p));
+            }
+            Some(c)
+        })
+    }
+
+    /// Member `name` of class `class`, its own or the nearest ancestor's. A
+    /// class having both a method and a property by that name gives `prefer`.
+    pub fn class_member(
+        &self,
+        class: &str,
+        name: &str,
+        prefer_method: bool,
+    ) -> Option<ClassMember<'_>> {
+        self.class_chain(class).find_map(|c| {
+            let prop = c.prop(name).map(|(t, w)| ClassMember::Prop(t, w));
+            let method = c.method(name).map(ClassMember::Method);
+            if prefer_method {
+                method.or(prop)
+            } else {
+                prop.or(method)
+            }
+        })
+    }
+
+    /// Adds an overload of operator `event` to a host class. `ty` is the
+    /// handler's type, operands in the order the operator gets them:
+    /// `(Vec, Vec) -> Vec` for `a + b`, `(number, Vec) -> Vec` for `2 * v`.
+    /// Gives back the overload's type.
+    pub fn declare_operator(
+        &mut self,
+        class: &str,
+        event: &str,
+        ty: &str,
+    ) -> Result<Type, Vec<Diagnostic>> {
+        self.declare_class(class, None);
+        let t = self.resolve(ty)?;
+        let c = self.classes.get_mut(class).expect("declared above");
+        match c.operators.iter_mut().find(|(n, _)| &**n == event) {
+            Some(op) => {
+                let mut ts: Vec<Type> = match &op.1 {
+                    Type::Intersection(ms) => ms.to_vec(),
+                    one => vec![one.clone()],
+                };
+                ts.push(t.clone());
+                op.1 = crate::types::intersection(ts);
+            }
+            None => c.operators.push((Rc::from(event), t.clone())),
+        }
+        Ok(t)
+    }
+
+    /// Operator `event` of `class`: its own overloads and then the ones of
+    /// the classes above it, the order the runtime tries them in.
+    pub fn class_operator(&self, class: &str, event: &str) -> Option<Type> {
+        let mut ts = Vec::new();
+        for c in self.class_chain(class) {
+            if let Some((_, t)) = c.operators.iter().find(|(n, _)| &**n == event) {
+                match t {
+                    Type::Intersection(ms) => ts.extend(ms.iter().cloned()),
+                    one => ts.push(one.clone()),
+                }
+            }
+        }
+        match ts.len() {
+            0 => None,
+            1 => ts.pop(),
+            _ => Some(crate::types::intersection(ts)),
+        }
+    }
+
+    /// What reading a name that isn't a member of `class` gives: the nearest
+    /// index type up the chain, if there's one.
+    pub fn class_index(&self, class: &str) -> Option<&Type> {
+        self.class_chain(class).find_map(|c| c.index.as_ref())
+    }
+
+    /// Says reading a name that isn't a member of class `class` gives `ty`
+    /// (and the classes under it, unless they say otherwise). Goes with an
+    /// index hook on the class at run time.
+    pub fn declare_index(&mut self, class: &str, ty: &str) -> Result<(), Vec<Diagnostic>> {
+        self.declare_class(class, None);
+        let t = self.resolve(ty)?;
+        self.classes.get_mut(class).expect("declared above").index = Some(t);
+        Ok(())
+    }
+
+    /// Says argument `arg` (0 is the first after the object) of method
+    /// `method` of class `class` names a class, like `IsA("Box")`. With a
+    /// string literal naming a class there, a method that returns a class
+    /// returns that one instead (`FindFirstChildOfClass("Box")` is a `Box?`),
+    /// and one that returns a boolean narrows the object in an `if`. The
+    /// method has to be the class's own. Classes under it get it too, unless
+    /// they have their own method by that name.
+    pub fn declare_class_param(
+        &mut self,
+        class: &str,
+        method: &str,
+        arg: usize,
+    ) -> Result<(), String> {
+        let Some(t) = self.class(class).and_then(|c| c.method(method)) else {
+            return Err(format!(
+                "class '{class}' has no method '{method}' of its own"
+            ));
+        };
+        let takes_string = |t: &Type| match t {
+            Type::Function(f) => matches!(f.params.get(arg + 1), Some(Type::String)),
+            _ => false,
+        };
+        let ok = match t {
+            Type::Intersection(ts) => ts.iter().any(takes_string),
+            t => takes_string(t),
+        };
+        if !ok {
+            return Err(format!(
+                "argument {} of '{class}:{method}' isn't a string",
+                arg + 1
+            ));
+        }
+        let c = self.classes.get_mut(class).expect("it has a method");
+        c.class_params.retain(|(n, _)| &**n != method);
+        c.class_params.push((Rc::from(method), arg));
+        Ok(())
+    }
+
+    /// Says argument `arg` (0 is the first) of global function `path` names
+    /// a class, like [`Env::declare_class_param`] for a method. `path` is a
+    /// global's name, or a global table's field: `Instance.new`.
+    pub fn declare_global_class_param(&mut self, path: &str, arg: usize) -> Result<(), String> {
+        let Some(t) = self.global_path(path) else {
+            return Err(format!("there's no global function '{path}'"));
+        };
+        let takes_string = |t: &Type| match t {
+            Type::Function(f) => matches!(f.params.get(arg), Some(Type::String)),
+            _ => false,
+        };
+        let ok = match t {
+            Type::Intersection(ts) => ts.iter().any(takes_string),
+            t => takes_string(t),
+        };
+        if !ok {
+            return Err(format!("argument {} of '{path}' isn't a string", arg + 1));
+        }
+        self.global_class_params.insert(Rc::from(path), arg);
+        Ok(())
+    }
+
+    /// Which argument of global function `path` names a class, if one does.
+    pub fn global_class_param(&self, path: &str) -> Option<usize> {
+        self.global_class_params.get(path).copied()
+    }
+
+    /// The type of global `f` or global table field `T.f`.
+    pub(crate) fn global_path(&self, path: &str) -> Option<&Type> {
+        match path.split_once('.') {
+            None => self.globals.get(path),
+            Some((t, f)) => match self.globals.get(t)? {
+                Type::Table(tt) => tt.prop(f),
+                _ => None,
+            },
+        }
+    }
+
+    /// Which argument of `class:method(...)` names a class, if one does
+    /// (see [`Env::declare_class_param`]).
+    pub fn class_param(&self, class: &str, method: &str) -> Option<usize> {
+        for c in self.class_chain(class) {
+            if let Some((_, i)) = c.class_params.iter().find(|(n, _)| &**n == method) {
+                return Some(*i);
+            }
+            // a class with its own method by that name and no `@class`
+            if c.method(method).is_some() {
+                return None;
+            }
+        }
+        None
+    }
+
+    /// Whether class `x` is `y` or has it among its ancestors.
+    pub fn is_subclass(&self, x: &str, y: &str) -> bool {
+        if x == y {
+            return true;
+        }
+        let mut cur = self.classes.get(x).and_then(|c| c.parent.clone());
+        let mut left = 1000;
+        while let Some(p) = cur {
+            if &*p == y {
+                return true;
+            }
+            left -= 1;
+            if left == 0 {
+                return false;
+            }
+            cur = self.classes.get(&*p).and_then(|c| c.parent.clone());
+        }
+        false
     }
 
     /// A property on a host type.
@@ -455,7 +727,7 @@ impl Env {
         ty: &str,
         writable: bool,
     ) -> Result<(), Vec<Diagnostic>> {
-        self.declare_class(class);
+        self.declare_class(class, None);
         let t = self.resolve(ty)?;
         let c = self.classes.get_mut(class).expect("declared above");
         match c.props.iter_mut().find(|(n, _, _)| &**n == name) {
@@ -476,7 +748,7 @@ impl Env {
         name: &str,
         ty: &str,
     ) -> Result<(), Vec<Diagnostic>> {
-        self.declare_class(class);
+        self.declare_class(class, None);
         let t = self.resolve(ty)?;
         let c = self.classes.get_mut(class).expect("declared above");
         c.methods.retain(|(n, _)| &**n != name);

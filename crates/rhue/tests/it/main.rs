@@ -6,9 +6,11 @@ mod calls;
 mod checker;
 mod checker_scaling;
 mod chunks;
+mod classes;
 mod clock;
 mod coroutines;
 mod debug_hooks;
+mod definitions;
 mod embedding;
 mod expression_type;
 mod expressions;
@@ -17,6 +19,7 @@ mod functions;
 mod hot_reload;
 mod metatables;
 mod native_budget;
+mod operators;
 // the editor API is behind the `tooling` feature
 #[cfg(feature = "tooling")]
 mod outline;

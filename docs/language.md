@@ -87,7 +87,7 @@ print(joint)                          -- Aalto&Fern: $16
 -- joint:withdraw(1)  -- type error: Key 'withdraw' not found in table '{ owner: string, balance: number } with metatable Account'
 ```
 
-Metatables work like Lua 5.4 and Luau, every event plus `__iter`, `__tostring` and `__metatable`. Strings share a metatable, so `s:upper()` works. The checker gets `setmetatable` classes, inheritance through `__index`, and fields that only a method adds (those come out optional).
+Metatables work like Lua 5.4 and Luau, every event plus `__iter`, `__tostring` and `__metatable`. `__mode` makes a table weak (`"k"`, `"v"` or `"kv"`), checked every collection like Luau. Strings and numbers never get cleared out of one. Strings share a metatable, so `s:upper()` works. The checker gets `setmetatable` classes, inheritance through `__index`, and fields that only a method adds (those come out optional).
 
 Tail calls are real tail calls, and `Engine::set_memory_limit` caps the heap with an out-of-memory error `pcall` can't swallow.
 
