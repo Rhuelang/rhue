@@ -3562,18 +3562,26 @@ impl Vm {
                                 regs[a] = method;
                                 regs[a + 1] = obj;
                             }
-                            (Value::UserData(u), Value::String(s))
-                                if let Some(m) = ud_method(
-                                    &self.heap,
-                                    &self.ud_types,
-                                    u,
-                                    s,
-                                    cache.slot(at, code.len()),
-                                ) =>
-                            {
-                                regs[a] = m;
-                                regs[a + 1] = obj;
-                            }
+                            // a match instead of an `if let` guard, those need a newer Rust than the MSRV
+                            (Value::UserData(u), Value::String(s)) => match ud_method(
+                                &self.heap,
+                                &self.ud_types,
+                                u,
+                                s,
+                                cache.slot(at, code.len()),
+                            ) {
+                                Some(m) => {
+                                    regs[a] = m;
+                                    regs[a + 1] = obj;
+                                }
+                                None => {
+                                    sync!();
+                                    self.stack[base + a + 1] = obj;
+                                    self.index_meta(f, at, obj, key, base + a)?;
+                                    gc!();
+                                    continue 'frame;
+                                }
+                            },
                             _ => {
                                 sync!();
                                 self.stack[base + a + 1] = obj;
